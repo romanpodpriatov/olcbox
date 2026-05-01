@@ -290,10 +290,7 @@ jobs:
           fi
 
           if gh release view nightly >/dev/null 2>&1; then
-            for asset in "${assets[@]}"; do
-              gh release delete-asset nightly "$(basename "$asset")" -y >/dev/null 2>&1 || true
-            done
-            gh release upload nightly "${assets[@]}"
+            gh release upload nightly "${assets[@]}" --clobber
           else
             gh release create nightly "${assets[@]}" \
               --title "Nightly Turnbox builds" \
