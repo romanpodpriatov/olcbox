@@ -12,6 +12,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -44,7 +45,10 @@ fun HomeScreen(
         }
     },
     onCopyConfigRequested: () -> Unit = { viewModel.onCopyFullConfigClicked() },
-    onSaveLogsRequested: (onSaved: (String) -> Unit, onError: (String) -> Unit) -> Unit = { _, _ -> }
+    onSaveLogsRequested: (onSaved: (String) -> Unit, onError: (String) -> Unit) -> Unit = { _, _ -> },
+    logsOpenRequest: Int = 0,
+    showAppSettingsButton: Boolean = false,
+    onAppSettingsClick: () -> Unit = {}
 ) {
     val scrollState = rememberScrollState()
     var isLocationSettingsOpen by remember { mutableStateOf(false) }
@@ -56,11 +60,19 @@ fun HomeScreen(
 
     val pingsState = locationViewModel.pingsState
 
+    LaunchedEffect(logsOpenRequest) {
+        if (logsOpenRequest > 0) {
+            isLogsSheetOpen = true
+        }
+    }
+
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             HomeScreenAppBar(
                 onHistoryClick = { isLogsSheetOpen = true },
+                showAppSettingsButton = showAppSettingsButton,
+                onAppSettingsClick = onAppSettingsClick,
                 onImportFileClick = onImportFileRequested,
                 onImportClipboardClick = {
                     onImportFromClipboardRequested()

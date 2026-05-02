@@ -36,12 +36,17 @@ import org.turnbox.app.data.datasource.LocationsDataSourceImpl
 import org.turnbox.app.data.datasource.LocationsRepositoryImpl
 import org.turnbox.app.data.model.LocationConfig
 import org.turnbox.app.data.repository.LocationsRepository
+import org.turnbox.app.vpn.AndroidConnectionMode
+import org.turnbox.app.vpn.AndroidSocksProxySettings
 import org.turnbox.app.vpn.UpstreamCandidate
 import org.turnbox.app.vpn.UpstreamNetworkSelector
 import org.turnbox.app.vpn.UpstreamTransport
 import org.turnbox.app.vpn.VpnStatus
+import java.io.DataInputStream
+import java.io.DataOutputStream
 import java.io.File
 import java.net.InetSocketAddress
+import java.net.ServerSocket
 import java.net.Socket
 import kotlin.concurrent.thread
 import kotlin.coroutines.coroutineContext
@@ -78,6 +83,10 @@ class TurnboxVpnService : VpnService() {
     private var isCallbackRegistered = false
     private var localSocksPort = LOCAL_SOCKS_PORT_BASE
     private var nextSocksPort = LOCAL_SOCKS_PORT_BASE
+    private var connectionMode = AndroidConnectionMode.Tun
+    private var socksUsername = AndroidSocksProxySettings.DEFAULT_USERNAME
+    private var socksPassword = ""
+    private var socksProxy: AuthenticatedSocksProxy? = null
 
     private val networkCallback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) {
@@ -163,7 +172,20 @@ class TurnboxVpnService : VpnService() {
             }
         }
 
-        startForeground()
+        connectionMode = AndroidConnectionMode.fromValue(
+            intent.getStringExtra(TurnboxVpnActions.EXTRA_CONNECTION_MODE)
+        )
+        socksUsername = intent.getStringExtra(TurnboxVpnActions.EXTRA_SOCKS_USERNAME)
+            ?.takeIf { it.isNotBlank() }
+            ?: AndroidSocksProxySettings.DEFAULT_USERNAME
+        socksPassword = intent.getStringExtra(TurnboxVpnActions.EXTRA_SOCKS_PASSWORD).orEmpty()
+        startForeground(
+            if (connectionMode == AndroidConnectionMode.Proxy) {
+                "Starting proxy..."
+            } else {
+                "Protecting your connection"
+            }
+        )
         wakeLock?.acquire(WAKE_LOCK_TIMEOUT_MS)
         registerNetworkMonitor()
         updateUnderlyingNetwork(findActiveUpstreamNetwork())
@@ -186,6 +208,7 @@ class TurnboxVpnService : VpnService() {
     private fun installMobileCallbacks() {
         Mobile.setProtector(object : SocketProtector {
             override fun protect(fd: Long): Boolean {
+                if (connectionMode == AndroidConnectionMode.Proxy) return true
                 return this@TurnboxVpnService.protect(fd.toInt())
             }
         })
@@ -236,7 +259,7 @@ class TurnboxVpnService : VpnService() {
                     return@withLock
                 }
 
-                if (isMigration && vpnInterface != null && tun2socksThread?.isAlive == true) {
+                if (isMigration && canReconnectTransportInPlace()) {
                     reconnectTransport(location, requestedGeneration)
                 } else {
                     startFullTunnel(location, requestedGeneration, isMigration)
@@ -265,8 +288,8 @@ class TurnboxVpnService : VpnService() {
         if (startMobile(location, upstream, setErrorOnFailure = false)) {
             setStatus(VpnStatus.Connected)
             recoveryRequestedForGeneration = 0L
-            updateNotification("VPN Connected")
-            addLog("Transport reconnected")
+            updateNotification(connectedNotificationText())
+            addLog("${activeModeLabel()} transport reconnected")
             startWatchdog()
         } else {
             updateUnderlyingNetwork(null)
@@ -314,6 +337,22 @@ class TurnboxVpnService : VpnService() {
             return
         }
 
+        coroutineContext.ensureActive()
+        if (requestedGeneration != generation) return
+
+        if (connectionMode == AndroidConnectionMode.Proxy) {
+            if (!startAuthenticatedSocksProxy()) {
+                stopTransportProcesses(closeTun = true)
+                return
+            }
+            setStatus(VpnStatus.Connected)
+            recoveryRequestedForGeneration = 0L
+            updateNotification(connectedNotificationText())
+            addLog("Proxy mode connected on SOCKS ${AndroidSocksProxySettings.DEFAULT_HOST}:${AndroidSocksProxySettings.DEFAULT_PORT}")
+            startWatchdog()
+            return
+        }
+
         delay(TUNNEL_HANDOFF_DELAY_MS)
         coroutineContext.ensureActive()
 
@@ -334,7 +373,7 @@ class TurnboxVpnService : VpnService() {
 
         setStatus(VpnStatus.Connected)
         recoveryRequestedForGeneration = 0L
-        updateNotification("VPN Connected")
+        updateNotification(connectedNotificationText())
         addLog("VPN tunnel established")
         startWatchdog()
     }
@@ -498,6 +537,7 @@ class TurnboxVpnService : VpnService() {
 
     private fun startWatchdog() {
         watchdogJob?.cancel()
+        val mode = connectionMode
         watchdogJob = scope.launch {
             while (isActive && TurnboxVpnState.status.value is VpnStatus.Connected) {
                 delay(WATCHDOG_INTERVAL_MS)
@@ -508,9 +548,15 @@ class TurnboxVpnService : VpnService() {
                         return@launch
                     }
 
-                    tun2socksThread?.isAlive != true -> {
+                    mode == AndroidConnectionMode.Tun && tun2socksThread?.isAlive != true -> {
                         addLog("Watchdog: tun2socks stopped")
                         requestTransportRecovery("tun2socks stopped", fullRestart = true)
+                        return@launch
+                    }
+
+                    mode == AndroidConnectionMode.Proxy && socksProxy?.isRunning != true -> {
+                        addLog("Watchdog: SOCKS proxy stopped")
+                        requestTransportRecovery("SOCKS proxy stopped", fullRestart = true)
                         return@launch
                     }
                 }
@@ -523,6 +569,7 @@ class TurnboxVpnService : VpnService() {
         if (status is VpnStatus.Disconnected &&
             vpnInterface == null &&
             tun2socksThread == null &&
+            socksProxy == null &&
             cleanupJob?.isActive != true
         ) {
             if (stopService) stopSelf()
@@ -540,6 +587,7 @@ class TurnboxVpnService : VpnService() {
             runCatching { connectivityManager.unregisterNetworkCallback(networkCallback) }
             isCallbackRegistered = false
         }
+        stopAuthenticatedSocksProxy()
         updateUnderlyingNetwork(null)
         unbindProcessFromNetwork()
 
@@ -553,7 +601,7 @@ class TurnboxVpnService : VpnService() {
                 recoveryRequestedForGeneration = 0L
                 if (generation == cleanupGeneration) {
                     setStatus(VpnStatus.Disconnected)
-                    addLog("VPN stopped")
+                    addLog("${activeModeLabel()} stopped")
                 }
             } finally {
                 if (stopService && generation == cleanupGeneration) stopSelf()
@@ -565,6 +613,7 @@ class TurnboxVpnService : VpnService() {
         closeTun: Boolean,
         waitForSocksPort: Boolean = true
     ) {
+        stopAuthenticatedSocksProxy()
         stopTun2socks()
         if (closeTun) cleanupVpnInterface()
         tun2socksThread?.interrupt()
@@ -588,6 +637,37 @@ class TurnboxVpnService : VpnService() {
 
     private fun stopMobile() {
         runCatching { Mobile.stop() }
+    }
+
+    private fun startAuthenticatedSocksProxy(): Boolean {
+        if (socksPassword.isBlank()) {
+            addLog("SOCKS proxy password is missing")
+            setStatus(VpnStatus.Error("SOCKS proxy password is missing"))
+            updateNotification("Proxy failed")
+            return false
+        }
+
+        return try {
+            stopAuthenticatedSocksProxy()
+            socksProxy = AuthenticatedSocksProxy(
+                listenPort = AndroidSocksProxySettings.DEFAULT_PORT,
+                backendPort = localSocksPort,
+                username = socksUsername,
+                password = socksPassword,
+                log = ::addLog
+            ).also { it.start() }
+            true
+        } catch (e: Exception) {
+            addLog("SOCKS proxy start failed: ${e.message}")
+            setStatus(VpnStatus.Error(e.message ?: "SOCKS proxy failed"))
+            updateNotification("Proxy failed")
+            false
+        }
+    }
+
+    private fun stopAuthenticatedSocksProxy() {
+        socksProxy?.stop()
+        socksProxy = null
     }
 
     private suspend fun stopMobileAndWait() {
@@ -679,6 +759,13 @@ class TurnboxVpnService : VpnService() {
         vpnInterface = null
     }
 
+    private fun canReconnectTransportInPlace(): Boolean {
+        return when (connectionMode) {
+            AndroidConnectionMode.Tun -> vpnInterface != null && tun2socksThread?.isAlive == true
+            AndroidConnectionMode.Proxy -> Mobile.isRunning() && socksProxy?.isRunning == true
+        }
+    }
+
     private fun registerNetworkMonitor() {
         if (isCallbackRegistered) return
         try {
@@ -729,7 +816,9 @@ class TurnboxVpnService : VpnService() {
 
     private fun updateUnderlyingNetwork(network: Network?) {
         currentNetwork = network
-        setUnderlyingNetworks(if (network != null) arrayOf(network) else null)
+        if (connectionMode == AndroidConnectionMode.Tun || vpnInterface != null) {
+            setUnderlyingNetworks(if (network != null) arrayOf(network) else null)
+        }
     }
 
     private fun bindProcessToNetwork(network: Network?, successLog: String? = null) {
@@ -792,7 +881,7 @@ class TurnboxVpnService : VpnService() {
 
     private fun buildNotification(status: String) =
         NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
-            .setContentTitle("Turnbox VPN")
+            .setContentTitle("Turnbox ${activeModeLabel()}")
             .setContentText(status)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setOngoing(true)
@@ -821,6 +910,155 @@ class TurnboxVpnService : VpnService() {
 
     private fun setStatus(status: VpnStatus) {
         TurnboxVpnState.setStatus(status)
+    }
+
+    private fun activeModeLabel(): String {
+        return when (connectionMode) {
+            AndroidConnectionMode.Tun -> "VPN"
+            AndroidConnectionMode.Proxy -> "Proxy"
+        }
+    }
+
+    private fun connectedNotificationText(): String = "${activeModeLabel()} Connected"
+
+    private class AuthenticatedSocksProxy(
+        private val listenPort: Int,
+        private val backendPort: Int,
+        private val username: String,
+        private val password: String,
+        private val log: (String) -> Unit
+    ) {
+        @Volatile
+        private var stopped = false
+        @Volatile
+        private var serverSocket: ServerSocket? = null
+        private var acceptThread: Thread? = null
+        private val sockets = mutableSetOf<Socket>()
+
+        val isRunning: Boolean
+            get() = !stopped && serverSocket?.isClosed == false && acceptThread?.isAlive == true
+
+        fun start() {
+            stopped = false
+            val server = ServerSocket().apply {
+                reuseAddress = true
+                bind(InetSocketAddress(AndroidSocksProxySettings.DEFAULT_HOST, listenPort))
+            }
+            serverSocket = server
+            acceptThread = thread(name = "TurnboxSocksProxy", isDaemon = true) {
+                acceptLoop(server)
+            }
+            log("SOCKS proxy listening on ${AndroidSocksProxySettings.DEFAULT_HOST}:$listenPort")
+        }
+
+        fun stop() {
+            stopped = true
+            runCatching { serverSocket?.close() }
+            synchronized(sockets) {
+                sockets.forEach { socket -> runCatching { socket.close() } }
+                sockets.clear()
+            }
+            acceptThread?.interrupt()
+            acceptThread = null
+            serverSocket = null
+        }
+
+        private fun acceptLoop(server: ServerSocket) {
+            while (!stopped) {
+                val client = runCatching { server.accept() }
+                    .onFailure { if (!stopped) log("SOCKS proxy accept failed: ${it.message}") }
+                    .getOrNull() ?: continue
+
+                synchronized(sockets) { sockets.add(client) }
+                thread(name = "TurnboxSocksProxyClient", isDaemon = true) {
+                    try {
+                        handleClient(client)
+                    } finally {
+                        synchronized(sockets) { sockets.remove(client) }
+                        runCatching { client.close() }
+                    }
+                }
+            }
+        }
+
+        private fun handleClient(client: Socket) {
+            val clientIn = DataInputStream(client.getInputStream())
+            val clientOut = DataOutputStream(client.getOutputStream())
+            if (!authenticate(clientIn, clientOut)) return
+
+            Socket().use { backend ->
+                backend.connect(
+                    InetSocketAddress(AndroidSocksProxySettings.DEFAULT_HOST, backendPort),
+                    SOCKET_CONNECT_TIMEOUT_MS
+                )
+                val backendIn = DataInputStream(backend.getInputStream())
+                val backendOut = DataOutputStream(backend.getOutputStream())
+
+                backendOut.write(byteArrayOf(SOCKS_VERSION, 0x01, SOCKS_METHOD_NO_AUTH))
+                backendOut.flush()
+                if (backendIn.readUnsignedByte() != SOCKS_VERSION.toInt()) return
+                if (backendIn.readUnsignedByte() == SOCKS_METHOD_NO_ACCEPTABLE.toInt()) return
+
+                val c2b = relay(client, backend, "client-to-backend")
+                val b2c = relay(backend, client, "backend-to-client")
+                c2b.join()
+                runCatching { backend.close() }
+                runCatching { client.close() }
+                b2c.join(RELAY_JOIN_TIMEOUT_MS)
+            }
+        }
+
+        private fun authenticate(input: DataInputStream, output: DataOutputStream): Boolean {
+            if (input.readUnsignedByte() != SOCKS_VERSION.toInt()) return false
+            val methodCount = input.readUnsignedByte()
+            var supportsPassword = false
+            repeat(methodCount) {
+                if (input.readUnsignedByte() == SOCKS_METHOD_USERNAME_PASSWORD.toInt()) {
+                    supportsPassword = true
+                }
+            }
+            if (!supportsPassword) {
+                output.write(byteArrayOf(SOCKS_VERSION, SOCKS_METHOD_NO_ACCEPTABLE))
+                output.flush()
+                return false
+            }
+
+            output.write(byteArrayOf(SOCKS_VERSION, SOCKS_METHOD_USERNAME_PASSWORD))
+            output.flush()
+
+            if (input.readUnsignedByte() != SOCKS_AUTH_VERSION.toInt()) return false
+            val userBytes = ByteArray(input.readUnsignedByte())
+            input.readFully(userBytes)
+            val passwordBytes = ByteArray(input.readUnsignedByte())
+            input.readFully(passwordBytes)
+
+            val accepted = userBytes.decodeToString() == username &&
+                passwordBytes.decodeToString() == password
+            output.write(byteArrayOf(SOCKS_AUTH_VERSION, if (accepted) 0x00 else 0x01))
+            output.flush()
+            return accepted
+        }
+
+        private fun relay(from: Socket, to: Socket, name: String): Thread {
+            return thread(name = "TurnboxSocksRelay-$name", isDaemon = true) {
+                runCatching {
+                    from.getInputStream().copyTo(to.getOutputStream(), RELAY_BUFFER_SIZE)
+                }
+                runCatching { to.shutdownOutput() }
+                runCatching { from.shutdownInput() }
+            }
+        }
+
+        private companion object {
+            const val SOCKS_VERSION: Byte = 0x05
+            const val SOCKS_AUTH_VERSION: Byte = 0x01
+            const val SOCKS_METHOD_NO_AUTH: Byte = 0x00
+            const val SOCKS_METHOD_USERNAME_PASSWORD: Byte = 0x02
+            const val SOCKS_METHOD_NO_ACCEPTABLE: Byte = 0xFF.toByte()
+            const val SOCKET_CONNECT_TIMEOUT_MS = 1_000
+            const val RELAY_BUFFER_SIZE = 16 * 1024
+            const val RELAY_JOIN_TIMEOUT_MS = 500L
+        }
     }
 
     companion object {
@@ -854,8 +1092,8 @@ class TurnboxVpnService : VpnService() {
         const val ACTION_START_VPN = TurnboxVpnActions.ACTION_START_VPN
         const val ACTION_STOP_VPN = TurnboxVpnActions.ACTION_STOP_VPN
 
-        private const val LOCAL_SOCKS_PORT_BASE = 10808
-        private const val LOCAL_SOCKS_PORT_MAX = 10848
+        private const val LOCAL_SOCKS_PORT_BASE = 10818
+        private const val LOCAL_SOCKS_PORT_MAX = 10858
         private const val MOBILE_READY_TIMEOUT_MS = 25_000L
         private const val PREVIOUS_STOP_WAIT_MS = 2_000L
         private const val TUNNEL_HANDOFF_DELAY_MS = 300L

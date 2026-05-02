@@ -55,7 +55,8 @@ class AppActivity : ComponentActivity() {
             AppTheme({ 
                 AndroidMainScreen(
                     viewModel = viewModel,
-                    locationViewModel = locationViewModel
+                    locationViewModel = locationViewModel,
+                    vpnManager = vpnManager
                 ) 
             })
         }

@@ -8,6 +8,7 @@ import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.ContentPaste
 import androidx.compose.material.icons.outlined.FileOpen
 import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -27,6 +28,8 @@ import androidx.compose.ui.Alignment
 @Composable
 fun HomeScreenAppBar(
     onHistoryClick: () -> Unit = {},
+    showAppSettingsButton: Boolean = false,
+    onAppSettingsClick: () -> Unit = {},
     onImportFileClick: () -> Unit = {},
     onImportClipboardClick: () -> Unit = {},
     onExportClipboardClick: () -> Unit = {}
@@ -49,12 +52,22 @@ fun HomeScreenAppBar(
             }
         },
         navigationIcon = {
-            IconButton(onClick = onHistoryClick) {
-                Icon(
-                    imageVector = Icons.Outlined.History,
-                    contentDescription = "История",
-                    tint = MaterialTheme.colorScheme.onSurface
-                )
+            if (showAppSettingsButton) {
+                IconButton(onClick = onAppSettingsClick) {
+                    Icon(
+                        imageVector = Icons.Outlined.Settings,
+                        contentDescription = "Application settings",
+                        tint = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+            } else {
+                IconButton(onClick = onHistoryClick) {
+                    Icon(
+                        imageVector = Icons.Outlined.History,
+                        contentDescription = "История",
+                        tint = MaterialTheme.colorScheme.onSurface
+                    )
+                }
             }
         },
         actions = {

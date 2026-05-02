@@ -18,7 +18,10 @@ fun TurnboxAppContent(
         }
     },
     onCopyConfigRequested: () -> Unit = { homeViewModel.onCopyFullConfigClicked() },
-    onSaveLogsRequested: (onSaved: (String) -> Unit, onError: (String) -> Unit) -> Unit = { _, _ -> }
+    onSaveLogsRequested: (onSaved: (String) -> Unit, onError: (String) -> Unit) -> Unit = { _, _ -> },
+    logsOpenRequest: Int = 0,
+    showAppSettingsButton: Boolean = false,
+    onAppSettingsClick: () -> Unit = {}
 ) {
     HomeScreen(
         viewModel = homeViewModel,
@@ -27,6 +30,9 @@ fun TurnboxAppContent(
         onImportFileRequested = onImportFileRequested,
         onImportFromClipboardRequested = onImportFromClipboardRequested,
         onCopyConfigRequested = onCopyConfigRequested,
-        onSaveLogsRequested = onSaveLogsRequested
+        onSaveLogsRequested = onSaveLogsRequested,
+        logsOpenRequest = logsOpenRequest,
+        showAppSettingsButton = showAppSettingsButton,
+        onAppSettingsClick = onAppSettingsClick
     )
 }

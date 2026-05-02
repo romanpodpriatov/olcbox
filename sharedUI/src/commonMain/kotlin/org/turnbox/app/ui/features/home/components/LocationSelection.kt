@@ -1,6 +1,5 @@
 package org.turnbox.app.ui.features.home.components
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -49,13 +48,20 @@ fun LocationSelectorScreen(
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
-                    Icons.Rounded.Public,
+                    imageVector = Icons.Rounded.Public,
                     contentDescription = null,
-                    modifier = Modifier.size(24.dp)
+                    modifier = Modifier.size(24.dp),
+                    tint = MaterialTheme.colorScheme.onSurface
                 )
                 Spacer(Modifier.width(8.dp))
-                Text("LOCATION", fontWeight = FontWeight.Medium, fontSize = 14.sp)
+                Text(
+                    text = "LOCATION",
+                    fontWeight = FontWeight.Medium,
+                    fontSize = 14.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
+
             RefreshButton(
                 state = pingsState,
                 onClick = onRefreshClick,
@@ -63,29 +69,43 @@ fun LocationSelectorScreen(
             )
         }
 
+        Spacer(modifier = Modifier.height(12.dp))
+
         if (locations.isEmpty()) {
             Surface(
                 onClick = onAddLocationClick,
-                shape = RoundedCornerShape(16.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                shape = RoundedCornerShape(20.dp),
+                color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f),
+                contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                tonalElevation = 2.dp,
+                shadowElevation = 0.dp
             ) {
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(20.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp, vertical = 18.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center
                 ) {
-                    Icon(
-                        Icons.Rounded.Add,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(Modifier.width(8.dp))
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Add,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(8.dp)
+                        )
+                    }
+
+                    Spacer(Modifier.width(12.dp))
+
                     Text(
-                        "Add Your First Location",
+                        text = "Add Your First Location",
                         style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.Medium
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer
                     )
                 }
             }
@@ -115,13 +135,16 @@ fun LocationSelectorScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(54.dp),
-                shape = RoundedCornerShape(16.dp)
+                shape = RoundedCornerShape(18.dp)
             ) {
                 Icon(Icons.Rounded.Add, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
-                Text("Add Custom Location", fontSize = 16.sp, fontWeight = FontWeight.Medium)
+                Text(
+                    text = "Add Custom Location",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Medium
+                )
             }
         }
-
     }
 }

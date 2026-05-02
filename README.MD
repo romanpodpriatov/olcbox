@@ -2,7 +2,7 @@
 
 Kotlin Multiplatform app with shared Compose UI.
 
-Android uses `VpnService` with bundled `hev-socks5-tunnel` and `olcrtc`.
+Android supports TUN mode through `VpnService` with bundled `hev-socks5-tunnel` and `olcrtc`, plus proxy mode with local `olcrtc` SOCKS5.
 macOS and Windows desktop builds use proxy mode: local `olcrtc` SOCKS5 plus OS PAC proxy settings.
 Linux desktop builds use TUN mode: local `olcrtc` SOCKS5 plus bundled `hev-socks5-tunnel`.
 
@@ -76,6 +76,9 @@ androidApp/build/outputs/apk/release/androidApp-release.apk
 
 Android native libraries are built by Gradle/NDK from `androidApp/src/main/jni`.
 Configured ABIs are `arm64-v8a` and `x86_64`.
+
+Android mode selector is available from application settings in the top bar. TUN mode routes device traffic through the VPN interface. Proxy mode starts the local SOCKS5 endpoint without creating a VPN interface.
+Android proxy mode exposes authenticated SOCKS5 on `127.0.0.1:10808` with user `turnbox`; a random password is generated on first launch and can be changed from application settings.
 
 ## Desktop Development
 
