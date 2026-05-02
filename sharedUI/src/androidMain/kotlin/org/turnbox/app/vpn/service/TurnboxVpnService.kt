@@ -36,6 +36,9 @@ import org.turnbox.app.data.datasource.LocationsDataSourceImpl
 import org.turnbox.app.data.datasource.LocationsRepositoryImpl
 import org.turnbox.app.data.model.LocationConfig
 import org.turnbox.app.data.repository.LocationsRepository
+import org.turnbox.app.vpn.UpstreamCandidate
+import org.turnbox.app.vpn.UpstreamNetworkSelector
+import org.turnbox.app.vpn.UpstreamTransport
 import org.turnbox.app.vpn.VpnStatus
 import java.io.File
 import java.net.InetSocketAddress
@@ -97,20 +100,20 @@ class TurnboxVpnService : VpnService() {
                 ) {
                     setStatus(VpnStatus.Reconnecting)
                     updateNotification("Waiting for network...")
-                    addLog("Waiting for validated network")
+                    addLog("Waiting for upstream network")
                 }
             }
         }
 
         override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) {
-            if (network == currentNetwork || caps.isValidatedUpstream()) {
+            if (network == currentNetwork || caps.isUsableUpstream()) {
                 handleNetworkChange(network, "Capabilities")
             }
         }
 
         private fun handleNetworkChange(network: Network, reason: String) {
             val caps = connectivityManager.getNetworkCapabilities(network) ?: return
-            if (!caps.isValidatedUpstream()) return
+            if (!caps.isUsableUpstream()) return
 
             val upstream = findActiveUpstreamNetwork() ?: return
             if (currentNetwork == upstream) {
@@ -250,7 +253,7 @@ class TurnboxVpnService : VpnService() {
             updateUnderlyingNetwork(null)
             unbindProcessFromNetwork()
             updateNotification("Waiting for network...")
-            addLog("No validated upstream network; keeping tunnel alive")
+            addLog("No upstream network; keeping tunnel alive")
             return
         }
 
@@ -295,7 +298,7 @@ class TurnboxVpnService : VpnService() {
         if (upstream == null) {
             updateUnderlyingNetwork(null)
             unbindProcessFromNetwork()
-            addLog("No validated upstream network")
+            addLog("No upstream network")
             setStatus(VpnStatus.Reconnecting)
             updateNotification("Waiting for network...")
             return
@@ -692,21 +695,18 @@ class TurnboxVpnService : VpnService() {
     }
 
     private fun findActiveUpstreamNetwork(): Network? {
+        val active = connectivityManager.activeNetwork
         val candidates = connectivityManager.allNetworks.mapNotNull { network ->
             val caps = connectivityManager.getNetworkCapabilities(network) ?: return@mapNotNull null
-            if (!caps.isValidatedUpstream()) return@mapNotNull null
-            network to caps
+            if (!caps.isUsableUpstream()) return@mapNotNull null
+            network to UpstreamCandidate(
+                isActive = network == active,
+                isValidated = caps.isValidatedUpstream(),
+                transport = caps.upstreamTransport()
+            )
         }
-
-        val active = connectivityManager.activeNetwork
-        candidates.firstOrNull { (network, _) -> network == active }?.let { return it.first }
-        candidates.firstOrNull { (_, caps) ->
-            caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
-        }?.let { return it.first }
-        candidates.firstOrNull { (_, caps) ->
-            caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)
-        }?.let { return it.first }
-        return candidates.firstOrNull()?.first
+        val selectedIndex = UpstreamNetworkSelector.selectIndex(candidates.map { it.second }) ?: return null
+        return candidates[selectedIndex].first
     }
 
     private fun NetworkCapabilities.isUsableUpstream(): Boolean {
@@ -717,6 +717,14 @@ class TurnboxVpnService : VpnService() {
     private fun NetworkCapabilities.isValidatedUpstream(): Boolean {
         return isUsableUpstream() &&
             hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+    }
+
+    private fun NetworkCapabilities.upstreamTransport(): UpstreamTransport {
+        return when {
+            hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> UpstreamTransport.Wifi
+            hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> UpstreamTransport.Cellular
+            else -> UpstreamTransport.Other
+        }
     }
 
     private fun updateUnderlyingNetwork(network: Network?) {
