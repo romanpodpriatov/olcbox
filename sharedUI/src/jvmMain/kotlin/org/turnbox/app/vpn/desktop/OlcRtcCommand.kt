@@ -11,12 +11,13 @@ internal data class OlcRtcCommand(
 ) {
     fun args(): List<String> {
         val config = location.normalized()
+        val provider = desktopProviderArg(config.bypassProvider)
         return listOf(
             binary.toString(),
             "-mode", "cnc",
             "-link", "direct",
             "-transport", config.transport,
-            "-provider", config.bypassProvider,
+            "-provider", provider,
             "-id", config.id,
             "-key", config.key,
             "-socks-host", socksHost,
@@ -25,5 +26,15 @@ internal data class OlcRtcCommand(
             "-vp8-fps", config.vp8Fps.toString(),
             "-vp8-batch", config.vp8Batch.toString()
         )
+    }
+
+    companion object {
+        fun desktopProviderArg(provider: String): String {
+            val normalizedProvider = LocationConfig.normalizeProvider(provider)
+            return when (normalizedProvider) {
+                LocationConfig.PROVIDER_WB_STREAM -> "wbstream"
+                else -> normalizedProvider
+            }
+        }
     }
 }

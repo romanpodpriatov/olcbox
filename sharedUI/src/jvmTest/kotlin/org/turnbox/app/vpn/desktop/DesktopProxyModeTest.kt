@@ -35,7 +35,7 @@ class DesktopProxyModeTest {
             assertContains(command, "60")
             assertContains(command, "-vp8-batch")
             assertContains(command, "8")
-            assertContains(command, provider)
+            assertEquals(OlcRtcCommand.desktopProviderArg(provider), command[command.indexOf("-provider") + 1])
             assertContains(command, "room-$provider")
             assertContains(command, "10808")
         }
@@ -55,6 +55,21 @@ class DesktopProxyModeTest {
         ).args()
 
         assertContains(command, LocationConfig.TRANSPORT_DATACHANNEL)
+    }
+
+    @Test
+    fun olcRtcCommandUsesDesktopWbStreamProviderAlias() {
+        val command = OlcRtcCommand(
+            binary = Path.of("/tmp/olcrtc"),
+            location = LocationConfig(
+                name = "WB",
+                id = "room-wb",
+                key = "b".repeat(64),
+                bypassProvider = LocationConfig.PROVIDER_WB_STREAM
+            )
+        ).args()
+
+        assertEquals("wbstream", command[command.indexOf("-provider") + 1])
     }
 
     @Test
