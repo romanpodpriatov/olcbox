@@ -1,6 +1,6 @@
 # Olcbox
 
-`olcrtc` configurator built with Kotlin Multiplatform and Compose.
+`olcrtc` configurator built with Kotlin Multiplatform and Compose. ALPHA version for now
 
 <p align="center">
   <img src="docs/screenshots/photo_2026-05-05_15-40-57.jpg" alt="Olcbox home screen" width="200">
