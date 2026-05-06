@@ -77,6 +77,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -102,7 +103,7 @@ internal fun AppSettingsSheet(
     onDismiss: () -> Unit,
     onSaveLogsClick: () -> Unit,
     onModeSelected: (AndroidConnectionMode) -> Unit,
-    onProxySettingsSaved: (String, String) -> Unit,
+    onProxySettingsSaved: (String, String, Int) -> Unit,
     onProxyPasswordRegenerated: () -> Unit,
     onSplitTunnelModeSelected: (AndroidSplitTunnelMode) -> Unit,
     onSplitTunnelAppToggled: (AndroidSplitTunnelList, String) -> Unit
@@ -329,17 +330,22 @@ private fun SocksProxySettingsContent(
     enabled: Boolean,
     isConnectionActive: Boolean,
     onBack: () -> Unit,
-    onProxySettingsSaved: (String, String) -> Unit,
+    onProxySettingsSaved: (String, String, Int) -> Unit,
     onProxyPasswordRegenerated: () -> Unit
 ) {
+    var editedPort by remember(proxySettings.port) { mutableStateOf(proxySettings.port.toString()) }
     var editedUsername by remember(proxySettings.username) { mutableStateOf(proxySettings.username) }
     var editedPassword by remember(proxySettings.password) { mutableStateOf(proxySettings.password) }
+    val parsedPort = editedPort.toIntOrNull()
+    val portValid = parsedPort != null && AndroidSocksProxySettings.isValidPort(parsedPort)
+    val portChanged = parsedPort != null && parsedPort != proxySettings.port
     val usernameChanged = editedUsername != proxySettings.username
     val passwordChanged = editedPassword != proxySettings.password
-    val credentialsChanged = usernameChanged || passwordChanged
-    val canSave = editedUsername.isNotBlank() &&
+    val settingsChanged = portChanged || usernameChanged || passwordChanged
+    val canSave = portValid &&
+        editedUsername.isNotBlank() &&
         editedPassword.isNotBlank() &&
-        credentialsChanged &&
+        settingsChanged &&
         enabled
 
     Column(
@@ -358,16 +364,22 @@ private fun SocksProxySettingsContent(
 
         SocksProxySettingsCard(
             settings = proxySettings,
+            port = editedPort,
             username = editedUsername,
             password = editedPassword,
+            portValid = portValid,
+            portChanged = portChanged,
             usernameChanged = usernameChanged,
             passwordChanged = passwordChanged,
             canSave = canSave,
             enabled = enabled,
             isConnectionActive = isConnectionActive,
+            onPortChanged = { value ->
+                editedPort = value.filter { it.isDigit() }.take(MAX_PROXY_PORT_LENGTH)
+            },
             onUsernameChanged = { value -> editedUsername = value.take(MAX_PROXY_USERNAME_LENGTH) },
             onPasswordChanged = { value -> editedPassword = value.take(MAX_PROXY_PASSWORD_LENGTH) },
-            onSaveCredentials = { onProxySettingsSaved(editedUsername, editedPassword) },
+            onSaveSettings = { onProxySettingsSaved(editedUsername, editedPassword, parsedPort ?: proxySettings.port) },
             onRegeneratePassword = onProxyPasswordRegenerated
         )
     }
@@ -1087,16 +1099,20 @@ private fun SplitTunnelAppListAction(
 @Composable
 private fun SocksProxySettingsCard(
     settings: AndroidSocksProxySettings,
+    port: String,
     username: String,
     password: String,
+    portValid: Boolean,
+    portChanged: Boolean,
     usernameChanged: Boolean,
     passwordChanged: Boolean,
     canSave: Boolean,
     enabled: Boolean,
     isConnectionActive: Boolean,
+    onPortChanged: (String) -> Unit,
     onUsernameChanged: (String) -> Unit,
     onPasswordChanged: (String) -> Unit,
-    onSaveCredentials: () -> Unit,
+    onSaveSettings: () -> Unit,
     onRegeneratePassword: () -> Unit
 ) {
     Surface(
@@ -1140,6 +1156,33 @@ private fun SocksProxySettingsCard(
             }
 
             Spacer(Modifier.height(14.dp))
+
+            OutlinedTextField(
+                value = port,
+                onValueChange = onPortChanged,
+                modifier = Modifier.fillMaxWidth(),
+                enabled = enabled,
+                label = { Text("Port") },
+                singleLine = true,
+                isError = port.isBlank() || !portValid,
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Number,
+                    imeAction = ImeAction.Next
+                ),
+                supportingText = {
+                    Text(
+                        text = when {
+                            port.isBlank() -> "Port is required"
+                            !portValid -> "Use a port from ${AndroidSocksProxySettings.MIN_PORT} to ${AndroidSocksProxySettings.MAX_PORT}"
+                            portChanged && isConnectionActive -> "Saving restarts the active connection"
+                            portChanged -> "Unsaved change"
+                            else -> "Local SOCKS5 listen port"
+                        }
+                    )
+                }
+            )
+
+            Spacer(Modifier.height(8.dp))
 
             OutlinedTextField(
                 value = username,
@@ -1201,7 +1244,7 @@ private fun SocksProxySettingsCard(
 
                 Button(
                     enabled = canSave,
-                    onClick = onSaveCredentials
+                    onClick = onSaveSettings
                 ) {
                     Text("Save")
                 }
@@ -1530,3 +1573,4 @@ private fun appCount(count: Int): String {
 
 private const val MAX_PROXY_USERNAME_LENGTH = 64
 private const val MAX_PROXY_PASSWORD_LENGTH = 64
+private const val MAX_PROXY_PORT_LENGTH = 5

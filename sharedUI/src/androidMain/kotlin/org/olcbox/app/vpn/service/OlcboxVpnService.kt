@@ -85,6 +85,7 @@ class OlcboxVpnService : VpnService() {
     private var localSocksPort = LOCAL_SOCKS_PORT_BASE
     private var nextSocksPort = LOCAL_SOCKS_PORT_BASE
     private var connectionMode = AndroidConnectionMode.Tun
+    private var socksListenPort = AndroidSocksProxySettings.DEFAULT_PORT
     private var socksUsername = ""
     private var socksPassword = ""
     private var splitTunnelMode = AndroidSplitTunnelMode.AllApps
@@ -178,6 +179,12 @@ class OlcboxVpnService : VpnService() {
 
         connectionMode = AndroidConnectionMode.fromValue(
             intent.getStringExtra(OlcboxVpnActions.EXTRA_CONNECTION_MODE)
+        )
+        socksListenPort = AndroidSocksProxySettings.sanitizePort(
+            intent.getIntExtra(
+                OlcboxVpnActions.EXTRA_SOCKS_PORT,
+                AndroidSocksProxySettings.DEFAULT_PORT
+            )
         )
         socksUsername = intent.getStringExtra(OlcboxVpnActions.EXTRA_SOCKS_USERNAME)
             ?.takeIf { it.isNotBlank() }
@@ -321,7 +328,9 @@ class OlcboxVpnService : VpnService() {
         coroutineContext.ensureActive()
         if (requestedGeneration != generation) return
 
-        val socksPort = chooseAvailableSocksPort()
+        val socksPort = chooseAvailableSocksPort(
+            reservedPort = socksListenPort.takeIf { connectionMode == AndroidConnectionMode.Proxy }
+        )
         if (socksPort == null) {
             setStatus(VpnStatus.Error("No free local SOCKS port"))
             updateNotification("Connection failed")
@@ -360,7 +369,7 @@ class OlcboxVpnService : VpnService() {
             setStatus(VpnStatus.Connected)
             recoveryRequestedForGeneration = 0L
             updateNotification(connectedNotificationText())
-            addLog("Proxy mode connected on SOCKS ${AndroidSocksProxySettings.DEFAULT_HOST}:${AndroidSocksProxySettings.DEFAULT_PORT}")
+            addLog("Proxy mode connected on SOCKS ${AndroidSocksProxySettings.DEFAULT_HOST}:$socksListenPort")
             startWatchdog()
             return
         }
@@ -741,7 +750,7 @@ class OlcboxVpnService : VpnService() {
         return try {
             stopAuthenticatedSocksProxy()
             socksProxy = AuthenticatedSocksProxy(
-                listenPort = AndroidSocksProxySettings.DEFAULT_PORT,
+                listenPort = socksListenPort,
                 backendPort = localSocksPort,
                 username = socksUsername,
                 password = socksPassword,
@@ -790,7 +799,7 @@ class OlcboxVpnService : VpnService() {
         }.isSuccess
     }
 
-    private fun chooseAvailableSocksPort(): Int? {
+    private fun chooseAvailableSocksPort(reservedPort: Int? = null): Int? {
         repeat(LOCAL_SOCKS_PORT_MAX - LOCAL_SOCKS_PORT_BASE + 1) {
             val candidate = nextSocksPort
             nextSocksPort = if (candidate >= LOCAL_SOCKS_PORT_MAX) {
@@ -798,7 +807,7 @@ class OlcboxVpnService : VpnService() {
             } else {
                 candidate + 1
             }
-            if (!isLocalSocksPortOpen(candidate)) return candidate
+            if (candidate != reservedPort && !isLocalSocksPortOpen(candidate)) return candidate
         }
         return null
     }

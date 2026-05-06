@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -12,6 +13,7 @@ val Context.vpnPrefDataStore: DataStore<Preferences> by preferencesDataStore(nam
 val KEY_IS_VPN_CONFIG_READY = booleanPreferencesKey("is_vpn_config_ready")
 val KEY_VPN_CONFIG_PATH = stringPreferencesKey("vpn_config_path")
 val KEY_ANDROID_CONNECTION_MODE = stringPreferencesKey("android_connection_mode")
+val KEY_ANDROID_SOCKS_PORT = intPreferencesKey("android_socks_port")
 val KEY_ANDROID_SOCKS_USERNAME = stringPreferencesKey("android_socks_username")
 val KEY_ANDROID_SOCKS_USERNAME_INITIALIZED = booleanPreferencesKey("android_socks_username_initialized")
 val KEY_ANDROID_SOCKS_PASSWORD = stringPreferencesKey("android_socks_password")
