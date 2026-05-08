@@ -2,6 +2,11 @@
 
 `olcrtc` configurator built with Kotlin Multiplatform and Compose. ALPHA version for now
 
+If you want to support the project, you can send a donation to this card:
+
+```text
+2200 7021 6458 2509
+
 <p align="center">
   <img src="docs/screenshots/photo_2026-05-05_15-40-57.jpg" alt="Olcbox home screen" width="200">
   <img src="docs/screenshots/photo_2026-05-05_15-40-59.jpg" alt="Olcbox location settings screen" width="200">
