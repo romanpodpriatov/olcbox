@@ -34,6 +34,8 @@ import org.olcbox.app.ui.features.locations.LocationItem
 import org.olcbox.app.ui.features.locations.PingsState
 import org.olcbox.app.ui.features.locations.components.LocationRow
 import org.olcbox.app.ui.features.locations.components.RefreshButton
+import kotlin.time.Clock
+import kotlin.time.ExperimentalTime
 
 @Composable
 fun LocationSelectorScreen(
@@ -86,7 +88,7 @@ fun LocationSelectorScreen(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(6.dp))
+                    Spacer(modifier = Modifier.height(2.dp))
 
                     Column(
                         verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -314,9 +316,9 @@ private fun SubscriptionGroupHeader(
             color = MaterialTheme.colorScheme.onSurface,
             fontWeight = FontWeight.SemiBold
         )
-        if (!details.isNullOrBlank() || !subscription?.update.isNullOrBlank()) {
+        if (!details.isNullOrBlank()) {
             Text(
-                text = details ?: "Updated ${subscription?.update}",
+                text = details,
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1
@@ -367,6 +369,7 @@ private fun LocationItem.subscriptionDetails(): String? {
     val subscription = metadata?.subscription ?: return null
     return listOfNotNull(
         quotaText(subscription.used, subscription.available),
+        subscriptionUpdateText(subscription.update),
         subscription.refresh?.takeIf { it.isNotBlank() }?.let { "Refresh $it" }
     ).joinToString(" · ").takeIf { it.isNotBlank() }
 }
@@ -379,3 +382,52 @@ private fun quotaText(used: String?, available: String?): String? {
         else -> null
     }
 }
+
+@OptIn(ExperimentalTime::class)
+private fun subscriptionUpdateText(update: String?): String? {
+    val raw = update?.trim()?.takeIf { it.isNotBlank() } ?: return null
+    val epochMillis = parseEpochMillis(raw) ?: return "Updated $raw"
+    val nowMillis = Clock.System.now().toEpochMilliseconds()
+    val diffMillis = nowMillis - epochMillis
+    val durationMillis = if (diffMillis < 0) -diffMillis else diffMillis
+
+    return when {
+        durationMillis < MINUTE_MILLIS -> "Updated just now"
+        diffMillis < 0 -> "Updates in ${durationText(durationMillis)}"
+        else -> "Updated ${durationText(durationMillis)} ago"
+    }
+}
+
+private fun parseEpochMillis(value: String): Long? {
+    val timestamp = value.toLongOrNull() ?: return null
+    return when (timestamp) {
+        in 1_000_000_000L..9_999_999_999L -> timestamp * 1_000L
+        in 1_000_000_000_000L..9_999_999_999_999L -> timestamp
+        else -> null
+    }
+}
+
+private fun durationText(millis: Long): String {
+    val minutes = millis / MINUTE_MILLIS
+    val hours = millis / HOUR_MILLIS
+    val days = millis / DAY_MILLIS
+    val months = days / 30
+    val years = days / 365
+
+    return when {
+        minutes < 1 -> "less than a minute"
+        hours < 1 -> plural(minutes, "minute")
+        days < 1 -> plural(hours, "hour")
+        days < 30 -> plural(days, "day")
+        months < 12 -> plural(months, "month")
+        else -> plural(years, "year")
+    }
+}
+
+private fun plural(value: Long, unit: String): String {
+    return "$value $unit${if (value == 1L) "" else "s"}"
+}
+
+private const val MINUTE_MILLIS = 60_000L
+private const val HOUR_MILLIS = 60 * MINUTE_MILLIS
+private const val DAY_MILLIS = 24 * HOUR_MILLIS

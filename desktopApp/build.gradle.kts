@@ -21,6 +21,14 @@ val olcrtcRepo = providers.environmentVariable("OLCRTC_REPO")
 val generatedNativeResources = layout.buildDirectory.dir("generated/desktopNativeResources")
 val hevSocks5TunnelSourceDir = rootProject.layout.projectDirectory.dir("androidApp/src/main/jni/hev-socks5-tunnel")
 val currentBuildOs = OperatingSystem.current()
+val desktopPackageName = "Olcbox"
+val desktopPackageVersion = "1.0.0"
+val currentBuildTargetFormats = when {
+    currentBuildOs.isMacOsX -> arrayOf(TargetFormat.Dmg)
+    currentBuildOs.isWindows -> arrayOf(TargetFormat.Exe, TargetFormat.Msi)
+    currentBuildOs.isLinux -> arrayOf(TargetFormat.AppImage)
+    else -> emptyArray()
+}
 
 fun desktopArchName(arch: String): String = when (arch.lowercase()) {
     "x86_64", "amd64" -> "amd64"
@@ -159,9 +167,9 @@ compose.desktop {
 
         nativeDistributions {
             modules("jdk.httpserver")
-            targetFormats(TargetFormat.Dmg, TargetFormat.Exe, TargetFormat.Msi, TargetFormat.Deb)
-            packageName = "Olcbox"
-            packageVersion = "1.0.0"
+            targetFormats(*currentBuildTargetFormats)
+            packageName = desktopPackageName
+            packageVersion = desktopPackageVersion
 
             linux {
                 iconFile.set(project.file("appIcons/LinuxIcon.png"))
@@ -174,5 +182,76 @@ compose.desktop {
                 bundleID = "org.olcbox.app.desktopApp"
             }
         }
+    }
+}
+
+if (currentBuildOs.isLinux) {
+    val appImageTool = providers.environmentVariable("APPIMAGETOOL").orElse("appimagetool")
+    val jpackageAppDir = layout.buildDirectory.dir("compose/binaries/main-release/app/$desktopPackageName")
+    val appDir = layout.buildDirectory.dir("compose/binaries/main-release/appimage/AppDir")
+    val appImageFile = layout.buildDirectory.file(
+        "compose/binaries/main-release/appimage/$desktopPackageName-$desktopPackageVersion-$hostDesktopArch.AppImage"
+    )
+
+    val packageReleaseLinuxAppImage = tasks.register<Exec>("packageReleaseLinuxAppImage") {
+        group = "distribution"
+        description = "Packages the Linux desktop app as a real .AppImage file."
+
+        dependsOn("packageReleaseAppImage")
+        inputs.dir(jpackageAppDir)
+        inputs.file(project.file("appIcons/LinuxIcon.png"))
+        outputs.file(appImageFile)
+
+        doFirst {
+            val sourceDir = jpackageAppDir.get().asFile
+            val targetDir = appDir.get().asFile
+
+            delete(targetDir)
+            copy {
+                from(sourceDir)
+                into(targetDir)
+            }
+
+            targetDir.resolve("AppRun").apply {
+                writeText(
+                    """
+                    |#!/bin/sh
+                    |HERE="${'$'}(dirname "${'$'}(readlink -f "${'$'}0")")"
+                    |exec "${'$'}HERE/bin/$desktopPackageName" "${'$'}@"
+                    |""".trimMargin() + "\n"
+                )
+                setExecutable(true)
+            }
+
+            targetDir.resolve("org.olcbox.app.desktopApp.desktop").writeText(
+                """
+                |[Desktop Entry]
+                |Type=Application
+                |Name=$desktopPackageName
+                |Exec=$desktopPackageName
+                |Icon=olcbox
+                |Categories=Network;Utility;
+                |Terminal=false
+                |""".trimMargin() + "\n"
+            )
+
+            copy {
+                from(project.file("appIcons/LinuxIcon.png"))
+                into(targetDir)
+                rename { "olcbox.png" }
+            }
+
+            appImageFile.get().asFile.parentFile.mkdirs()
+        }
+
+        commandLine(
+            appImageTool.get(),
+            appDir.get().asFile.absolutePath,
+            appImageFile.get().asFile.absolutePath
+        )
+    }
+
+    tasks.named("packageReleaseDistributionForCurrentOS") {
+        dependsOn(packageReleaseLinuxAppImage)
     }
 }

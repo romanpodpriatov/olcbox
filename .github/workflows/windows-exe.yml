@@ -133,7 +133,7 @@ jobs:
       - name: Install Linux packaging deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y fakeroot dpkg-dev rpm
+          sudo apt-get install -y file
 
       - name: Setup JDK
         uses: actions/setup-java@v4
@@ -147,23 +147,31 @@ jobs:
           go-version: 'stable'
           cache-dependency-path: olcrtc/go.sum
 
-      - name: Build Linux DEB
+      - name: Setup appimagetool
+        run: |
+          curl -L -o /tmp/appimagetool.AppImage \
+            https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x /tmp/appimagetool.AppImage
+
+      - name: Build Linux AppImage
         working-directory: olcbox
         run: |
           export OLCRTC_REPO="${{ github.workspace }}/olcrtc"
-          ./gradlew :desktopApp:packageReleaseDeb --stacktrace
+          export APPIMAGETOOL=/tmp/appimagetool.AppImage
+          export APPIMAGE_EXTRACT_AND_RUN=1
+          ./gradlew :desktopApp:packageReleaseLinuxAppImage --stacktrace
 
       - name: Prepare asset
         working-directory: olcbox
         run: |
           mkdir -p dist
-          cp desktopApp/build/compose/binaries/main-release/deb/*.deb dist/Olcbox-linux-amd64.deb
+          cp desktopApp/build/compose/binaries/main-release/appimage/*.AppImage dist/Olcbox-linux-amd64.AppImage
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Olcbox-linux-amd64-deb
-          path: olcbox/dist/Olcbox-linux-amd64.deb
+          name: Olcbox-linux-amd64-appimage
+          path: olcbox/dist/Olcbox-linux-amd64.AppImage
 
   build-android:
     runs-on: ubuntu-latest
