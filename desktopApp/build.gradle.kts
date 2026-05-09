@@ -76,6 +76,13 @@ val buildOlcRtcDarwinArm64 = registerOlcRtcBuildTask(
     outputName = "olcrtc-darwin-arm64"
 )
 
+val buildOlcRtcDarwinAmd64 = registerOlcRtcBuildTask(
+    taskName = "buildOlcRtcDarwinAmd64",
+    goos = "darwin",
+    goarch = "amd64",
+    outputName = "olcrtc-darwin-amd64"
+)
+
 val buildOlcRtcWindowsAmd64 = registerOlcRtcBuildTask(
     taskName = "buildOlcRtcWindowsAmd64",
     goos = "windows",
@@ -106,6 +113,7 @@ val copyOlcRtcDataAssets = tasks.register<Copy>("copyOlcRtcDataAssets") {
 
 val desktopNativeAssetTasks = mutableListOf<Any>(
     buildOlcRtcDarwinArm64,
+    buildOlcRtcDarwinAmd64,
     buildOlcRtcWindowsAmd64,
     buildOlcRtcLinuxAmd64,
     buildOlcRtcLinuxArm64,
@@ -116,7 +124,10 @@ val hostDesktopNativeAssetTasks = mutableListOf<Any>(
 )
 
 when {
-    currentBuildOs.isMacOsX -> hostDesktopNativeAssetTasks.add(buildOlcRtcDarwinArm64)
+    currentBuildOs.isMacOsX -> when (hostDesktopArch) {
+        "amd64" -> hostDesktopNativeAssetTasks.add(buildOlcRtcDarwinAmd64)
+        "arm64" -> hostDesktopNativeAssetTasks.add(buildOlcRtcDarwinArm64)
+    }
     currentBuildOs.isWindows -> hostDesktopNativeAssetTasks.add(buildOlcRtcWindowsAmd64)
     currentBuildOs.isLinux -> when (hostDesktopArch) {
         "amd64" -> hostDesktopNativeAssetTasks.add(buildOlcRtcLinuxAmd64)

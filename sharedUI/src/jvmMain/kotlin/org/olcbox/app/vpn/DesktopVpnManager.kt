@@ -118,11 +118,9 @@ class DesktopVpnManager private constructor(
 
     private suspend fun checkConnectionOnce(location: LocationConfig): Long {
         val port = allocateLocalPort()
-        val binary = DesktopNativeAssets.resolveOlcRtcBinary()
         val ready = CompletableDeferred<Unit>()
         val bypassActiveLinuxTun = DesktopPaths.os == DesktopOs.Linux && _status.value is VpnStatus.Connected
-        val checkProcess = startOlcRtcProcess(
-            binary = binary,
+        val checkProcess = startOlcRtcProcessWithFallback(
             location = location,
             socksPort = port,
             ready = ready,
@@ -159,11 +157,9 @@ class DesktopVpnManager private constructor(
         }
 
         try {
-            val binary = DesktopNativeAssets.resolveOlcRtcBinary()
             val ready = CompletableDeferred<Unit>()
             val useLinuxTun = DesktopPaths.os == DesktopOs.Linux
-            process = startOlcRtcProcess(
-                binary = binary,
+            process = startOlcRtcProcessWithFallback(
                 location = location,
                 socksPort = PacServer.LOCAL_SOCKS_PORT,
                 ready = ready,
@@ -209,6 +205,36 @@ class DesktopVpnManager private constructor(
                 setStatus(VpnStatus.Error(e.message ?: "Desktop start failed"))
             }
         }
+    }
+
+    private fun startOlcRtcProcessWithFallback(
+        location: LocationConfig,
+        socksPort: Int,
+        ready: CompletableDeferred<Unit>,
+        logOutput: Boolean,
+        privileged: Boolean
+    ): Process {
+        val binaries = DesktopNativeAssets.resolveOlcRtcBinaryCandidates()
+        var lastException: Exception? = null
+
+        for (binary in binaries) {
+            try {
+                return startOlcRtcProcess(
+                    binary = binary,
+                    location = location,
+                    socksPort = socksPort,
+                    ready = ready,
+                    logOutput = logOutput,
+                    privileged = privileged
+                )
+            } catch (e: Exception) {
+                lastException = e
+                if (binary == binaries.last()) break
+                addLog("olcRTC start failed for ${binary.fileName}: ${e.message}. Retrying with fallback binary.")
+            }
+        }
+
+        throw lastException ?: error("olcRTC binary failed to start")
     }
 
     private suspend fun stopDesktopMode(finalStatus: Boolean) {

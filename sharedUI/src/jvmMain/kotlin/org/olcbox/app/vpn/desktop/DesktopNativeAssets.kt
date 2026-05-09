@@ -10,12 +10,50 @@ import kotlin.io.path.exists
 
 internal object DesktopNativeAssets {
     fun resolveOlcRtcBinary(): Path {
-        val fileName = olcRtcFileName()
-        return resolveBinary(
-            fileName = fileName,
-            resourceName = "native/$fileName",
-            candidates = olcRtcSourceCandidates(fileName)
-        )
+        return resolveOlcRtcBinaryCandidates().first()
+    }
+
+    fun resolveOlcRtcBinaryCandidates(): List<Path> {
+        val fileNames = olcRtcFileNames()
+        return fileNames.mapNotNull { resolveOlcRtcBinaryOrNull(it) }.also {
+            if (it.isEmpty()) {
+                error("Bundled native binary is missing: ${fileNames.joinToString(", ") { name -> "native/$name" }}")
+            }
+        }
+    }
+
+    private fun resolveOlcRtcBinaryOrNull(fileName: String): Path? {
+        return try {
+            resolveBinary(
+                fileName = fileName,
+                resourceName = "native/$fileName",
+                candidates = olcRtcSourceCandidates(fileName)
+            )
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun olcRtcFileNames(): List<String> {
+        return when (DesktopPaths.os) {
+            DesktopOs.MacOS -> listOf(
+                "olcrtc-darwin-${desktopArch()}",
+                "olcrtc-darwin-${desktopArchFallback()}"
+            ).distinct()
+            DesktopOs.Windows -> listOf("olcrtc-windows-amd64.exe")
+            DesktopOs.Linux -> listOf("olcrtc-linux-${desktopArch()}")
+            DesktopOs.Other -> error("Olcbox desktop supports macOS, Windows and Linux")
+        }
+    }
+
+    private fun olcRtcFileName(): String = olcRtcFileNames().first()
+
+    private fun desktopArchFallback(): String {
+        return when (desktopArch()) {
+            "arm64" -> "amd64"
+            "amd64" -> "arm64"
+            else -> "amd64"
+        }
     }
 
     fun resolveOlcRtcDataDir(): Path {
@@ -78,15 +116,6 @@ internal object DesktopNativeAssets {
         }
 
         error("Bundled olcRTC data file is missing: $resourceName")
-    }
-
-    fun olcRtcFileName(): String {
-        return when (DesktopPaths.os) {
-            DesktopOs.MacOS -> "olcrtc-darwin-arm64"
-            DesktopOs.Windows -> "olcrtc-windows-amd64.exe"
-            DesktopOs.Linux -> "olcrtc-linux-${desktopArch()}"
-            DesktopOs.Other -> error("Olcbox desktop supports macOS, Windows and Linux")
-        }
     }
 
     fun hevSocks5TunnelFileName(): String {
