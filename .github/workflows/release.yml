@@ -10,6 +10,9 @@ permissions:
 
 env:
   OLCBOX_VERSION_MAJOR_MINOR: "1.0"
+  # Keep release builds on the matching olcrtc ref until the universal carrier
+  # changes land in olcrtc master.
+  OLCBOX_OLCRTC_REF: "refactor/universal-carrier"
   # The alananisimov/olcbox workflow was recreated after 1.0.69, so
   # github.run_number restarted. Run #6 must publish Android versionCode 70.
   OLCBOX_RELEASE_RUN_NUMBER_BASE: "5"
@@ -40,11 +43,11 @@ jobs:
           echo "version_code=${patch}" >> "$GITHUB_OUTPUT"
 
           if [ "${GITHUB_REF_NAME}" = "universal-carrier" ]; then
-            echo "olcrtc_ref=refactor/universal-carrier" >> "$GITHUB_OUTPUT"
+            echo "olcrtc_ref=${OLCBOX_OLCRTC_REF}" >> "$GITHUB_OUTPUT"
             echo "nightly_tag=nightly-universal-carrier" >> "$GITHUB_OUTPUT"
             echo "nightly_title=Nightly Olcbox universal-carrier builds" >> "$GITHUB_OUTPUT"
           else
-            echo "olcrtc_ref=master" >> "$GITHUB_OUTPUT"
+            echo "olcrtc_ref=${OLCBOX_OLCRTC_REF}" >> "$GITHUB_OUTPUT"
             echo "nightly_tag=nightly" >> "$GITHUB_OUTPUT"
             echo "nightly_title=Nightly Olcbox builds" >> "$GITHUB_OUTPUT"
           fi
