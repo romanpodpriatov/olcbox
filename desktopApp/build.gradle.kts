@@ -13,7 +13,6 @@ import org.gradle.api.tasks.TaskAction
 import org.gradle.internal.os.OperatingSystem
 import org.gradle.api.tasks.bundling.Zip
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
-import java.io.File
 import java.net.URI
 import java.util.zip.ZipFile
 
@@ -116,6 +115,7 @@ val hevSocks5TunnelSourceDir = rootProject.layout.projectDirectory.dir("androidA
 val currentBuildOs = OperatingSystem.current()
 val desktopPackageName = "Olcbox"
 val desktopPackageVersion = providers.gradleProperty("olcbox.version").orElse("1.0.0").get()
+val tun2SocksVersion = "2.6.0"
 val wintunVersion = "0.14.1"
 val currentBuildTargetFormats = when {
     currentBuildOs.isMacOsX -> arrayOf(TargetFormat.Dmg)
@@ -131,31 +131,6 @@ fun desktopArchName(arch: String): String = when (arch.lowercase()) {
 }
 
 fun shellQuote(value: String): String = "'${value.replace("'", "'\"'\"'")}'"
-
-fun windowsPathToMsysPath(path: String): String {
-    val normalized = path.replace('\\', '/')
-    val driveMatch = Regex("^([A-Za-z]):/(.*)$").matchEntire(normalized)
-    return if (driveMatch != null) {
-        "/${driveMatch.groupValues[1].lowercase()}/${driveMatch.groupValues[2]}"
-    } else {
-        normalized
-    }
-}
-
-fun windowsMsysScriptCommand(scriptFile: File): List<String> {
-    val bash = System.getenv("MSYS2_BASH")?.takeIf { it.isNotBlank() }
-        ?: windowsMsysBashPath()
-    return listOf(bash, "--noprofile", "--norc", windowsPathToMsysPath(scriptFile.absolutePath))
-}
-
-fun windowsMsysBashPath(): String {
-    val candidates = buildList {
-        add("C:\\msys64\\usr\\bin\\bash.exe")
-    }
-
-    return candidates.firstOrNull { File(it).isFile }
-        ?: "bash"
-}
 
 val hostDesktopArch = desktopArchName(System.getProperty("os.arch"))
 
@@ -359,84 +334,22 @@ if (currentBuildOs.isLinux) {
 }
 
 if (currentBuildOs.isWindows) {
-    val hevSocks5TunnelWindowsOutput = generatedNativeResources.map {
-        it.file("native/hev-socks5-tunnel-windows-amd64.exe")
-    }
-    val msysRuntimeWindowsOutput = generatedNativeResources.map {
-        it.file("native/msys-2.0.dll")
+    val tun2SocksWindowsOutput = generatedNativeResources.map {
+        it.file("native/tun2socks-windows-amd64.exe")
     }
     val wintunWindowsOutput = generatedNativeResources.map {
         it.file("native/wintun.dll")
     }
 
-    val buildHevSocks5TunnelWindows = tasks.register<Exec>("buildHevSocks5TunnelWindows") {
-        val buildScript = layout.buildDirectory.file("tmp/buildHevSocks5TunnelWindows/build.sh")
+    val downloadTun2SocksWindowsAmd64 = tasks.register<DownloadFileTask>("downloadTun2SocksWindowsAmd64") {
+        sourceUrl.set("https://github.com/xjasonlyu/tun2socks/releases/download/v$tun2SocksVersion/tun2socks-windows-amd64.zip")
+        outputFile.set(layout.buildDirectory.file("tmp/tun2socks/tun2socks-windows-amd64-$tun2SocksVersion.zip"))
+    }
 
-        outputs.files(hevSocks5TunnelWindowsOutput, msysRuntimeWindowsOutput)
-        workingDir = rootProject.layout.projectDirectory.asFile
-        environment("MSYSTEM", "MSYS")
-        environment("CHERE_INVOKING", "1")
-
-        doFirst {
-            val scriptFile = buildScript.get().asFile
-            scriptFile.parentFile.mkdirs()
-            scriptFile.writeText(
-                """
-            #!/usr/bin/env bash
-            set -euo pipefail
-            export MSYSTEM=MSYS
-            export CHERE_INVOKING=1
-            export PATH=/usr/bin:/bin:${'$'}PATH
-            source_dir=${shellQuote(windowsPathToMsysPath(hevSocks5TunnelSourceDir.asFile.absolutePath))}
-            output_file=${shellQuote(windowsPathToMsysPath(hevSocks5TunnelWindowsOutput.get().asFile.absolutePath))}
-            msys_runtime=${shellQuote(windowsPathToMsysPath(msysRuntimeWindowsOutput.get().asFile.absolutePath))}
-            echo "MSYS2 build environment:"
-            echo "  MSYSTEM=${'$'}MSYSTEM"
-            echo "  PATH=${'$'}PATH"
-            for tool in make cpp gcc ar ld strip install cp ls; do
-              if ! command -v "${'$'}tool" >/dev/null 2>&1; then
-                echo "Missing MSYS2 tool: ${'$'}tool" >&2
-                echo "Expected setup-msys2 to install base-devel gcc make into /usr/bin" >&2
-                ls -la /usr/bin/make* /usr/bin/gcc* 2>/dev/null || true
-                exit 127
-              fi
-              echo "  ${'$'}tool=$(command -v "${'$'}tool")"
-            done
-            mkdir -p "${'$'}{output_file%/*}"
-            cd "${'$'}source_dir"
-            make clean exec V=1 LFLAGS="-static-libgcc"
-            if [ -f bin/hev-socks5-tunnel.exe ]; then
-              install -m 0755 bin/hev-socks5-tunnel.exe "${'$'}output_file"
-            else
-              install -m 0755 bin/hev-socks5-tunnel "${'$'}output_file"
-            fi
-            cp /usr/bin/msys-2.0.dll "${'$'}msys_runtime"
-            if command -v ldd >/dev/null 2>&1; then
-              echo "hev-socks5-tunnel runtime dependencies:"
-              ldd "${'$'}output_file" || true
-            fi
-            test -s "${'$'}output_file"
-            test -s "${'$'}msys_runtime"
-            ls -l "${'$'}output_file" "${'$'}msys_runtime"
-                """.trimIndent() + "\n"
-            )
-        }
-
-        commandLine(
-            windowsMsysScriptCommand(buildScript.get().asFile)
-        )
-
-        doLast {
-            val missing = listOf(
-                hevSocks5TunnelWindowsOutput.get().asFile,
-                msysRuntimeWindowsOutput.get().asFile
-            ).filterNot { it.isFile && it.length() > 0L }
-
-            require(missing.isEmpty()) {
-                "buildHevSocks5TunnelWindows did not produce expected outputs:\n" +
-                        missing.joinToString(separator = "\n") { "- ${it.absolutePath}" }
-            }
-        }
+    val extractTun2SocksWindowsAmd64 = tasks.register<ExtractZipEntryTask>("extractTun2SocksWindowsAmd64") {
+        zipFile.set(downloadTun2SocksWindowsAmd64.flatMap { it.outputFile })
+        entrySuffix.set("tun2socks-windows-amd64.exe")
+        outputFile.set(tun2SocksWindowsOutput)
     }
 
     val downloadWintunWindowsAmd64 = tasks.register<DownloadFileTask>("downloadWintunWindowsAmd64") {
@@ -450,9 +363,9 @@ if (currentBuildOs.isWindows) {
         outputFile.set(wintunWindowsOutput)
     }
 
-    desktopNativeAssetTasks.add(buildHevSocks5TunnelWindows)
+    desktopNativeAssetTasks.add(extractTun2SocksWindowsAmd64)
     desktopNativeAssetTasks.add(extractWintunWindowsAmd64)
-    hostDesktopNativeAssetTasks.add(buildHevSocks5TunnelWindows)
+    hostDesktopNativeAssetTasks.add(extractTun2SocksWindowsAmd64)
     hostDesktopNativeAssetTasks.add(extractWintunWindowsAmd64)
 }
 
@@ -467,8 +380,7 @@ fun requiredHostNativeResourcePaths(): List<String> = buildList {
         currentBuildOs.isWindows -> {
             add("native/olcrtc-windows-amd64.exe")
             add("native/olcrtc-windows-amd64.dll")
-            add("native/hev-socks5-tunnel-windows-amd64.exe")
-            add("native/msys-2.0.dll")
+            add("native/tun2socks-windows-amd64.exe")
             add("native/wintun.dll")
         }
         currentBuildOs.isLinux -> {

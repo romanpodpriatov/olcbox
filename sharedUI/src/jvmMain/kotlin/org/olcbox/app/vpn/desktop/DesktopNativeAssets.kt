@@ -66,15 +66,21 @@ internal object DesktopNativeAssets {
 
     fun resolveHevSocks5TunnelBinary(): Path {
         val fileName = hevSocks5TunnelFileName()
-        val binary = resolveBinary(
+        return resolveBinary(
             fileName = fileName,
             resourceName = "native/$fileName",
             candidates = hevSocks5TunnelSourceCandidates(fileName)
         )
-        if (DesktopPaths.os == DesktopOs.Windows) {
-            copyRuntimeAsset("wintun.dll")
-            copyRuntimeAsset("msys-2.0.dll")
-        }
+    }
+
+    fun resolveWindowsTun2SocksBinary(): Path {
+        val fileName = windowsTun2SocksFileName()
+        val binary = resolveBinary(
+            fileName = fileName,
+            resourceName = "native/$fileName",
+            candidates = windowsTun2SocksSourceCandidates(fileName)
+        )
+        copyRuntimeAsset("wintun.dll")
         return binary
     }
 
@@ -126,8 +132,14 @@ internal object DesktopNativeAssets {
     fun hevSocks5TunnelFileName(): String {
         return when (DesktopPaths.os) {
             DesktopOs.Linux -> "hev-socks5-tunnel-linux-${desktopArch()}"
-            DesktopOs.Windows -> "hev-socks5-tunnel-windows-amd64.exe"
             else -> error("hev-socks5-tunnel desktop binary is only used for TUN mode")
+        }
+    }
+
+    fun windowsTun2SocksFileName(): String {
+        return when (DesktopPaths.os) {
+            DesktopOs.Windows -> "tun2socks-windows-amd64.exe"
+            else -> error("tun2socks desktop binary is only used for Windows TUN mode")
         }
     }
 
@@ -185,6 +197,11 @@ internal object DesktopNativeAssets {
                 sourceBin.resolve("hev-socks5-tunnel")
             )
         }.distinct()
+    }
+
+    private fun windowsTun2SocksSourceCandidates(fileName: String): List<Path> {
+        val explicitBinary = System.getenv("TUN2SOCKS_BINARY")?.takeIf { it.isNotBlank() }?.let { Path(it) }
+        return listOfNotNull(explicitBinary) + desktopNativeResourceCandidates(fileName)
     }
 
     private fun copyRuntimeAsset(fileName: String): Path {

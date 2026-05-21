@@ -242,16 +242,19 @@ class DesktopProxyModeTest {
     }
 
     @Test
-    fun windowsTunConfigUsesWintunLocalSocksAndIpv4MapDns() {
-        val config = WindowsTunController.configContent(socksPort = 10812)
+    fun windowsTunCommandUsesTun2SocksWintunAndLocalSocks() {
+        val command = WindowsTunController.tun2SocksCommand(
+            tun2SocksBinary = Path.of("C:/Olcbox/bin/tun2socks-windows-amd64.exe"),
+            socksPort = 10812
+        )
 
-        assertContains(config, "name: Olcbox")
-        assertContains(config, "ipv4: 10.0.88.88")
-        assertContains(config, "address: 127.0.0.1")
-        assertContains(config, "port: 10812")
-        assertContains(config, "udp: 'tcp'")
-        assertContains(config, "mapdns:")
-        assertContains(config, "network: 100.64.0.0")
+        assertContains(command, "C:/Olcbox/bin/tun2socks-windows-amd64.exe")
+        assertContains(command, "--device")
+        assertContains(command, "Olcbox")
+        assertContains(command, "--proxy")
+        assertContains(command, "socks5://127.0.0.1:10812")
+        assertContains(command, "--mtu")
+        assertContains(command, "1500")
     }
 
     @Test

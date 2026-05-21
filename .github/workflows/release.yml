@@ -91,38 +91,9 @@ jobs:
           go-version: 'stable'
           cache-dependency-path: olcrtc/go.sum
 
-      - name: Setup MSYS2 for Windows TUN helper
-        uses: msys2/setup-msys2@v2
-        with:
-          msystem: MSYS
-          update: true
-          path-type: inherit
-          install: >-
-            base-devel
-            gcc
-            make
-
-      - name: Verify MSYS2 toolchain
-        shell: msys2 {0}
-        run: |
-          set -eux
-          export PATH=/usr/bin:/bin:$PATH
-          pacman -S --needed --noconfirm base-devel gcc make
-          command -v make
-          command -v cpp
-          command -v gcc
-          command -v ar
-          command -v ld
-          command -v strip
-          command -v install
-          make --version | head -1
-          gcc --version | head -1
-
       - name: Build Windows installers and portable zip
         shell: pwsh
         working-directory: olcbox
-        env:
-          MSYS2_BASH: C:\msys64\usr\bin\bash.exe
         run: |
           $env:OLCRTC_REPO="${{ github.workspace }}\olcrtc"
           .\gradlew.bat "-Polcbox.version=$env:OLCBOX_VERSION" :desktopApp:packageReleaseExe :desktopApp:packageReleaseMsi :desktopApp:packageReleasePortableZip --stacktrace

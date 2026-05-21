@@ -288,14 +288,14 @@ class DesktopVpnManager private constructor(
     }
 
     private suspend fun startWindowsTun(socksPort: Int, requestGeneration: Long) {
-        val hevBinary = DesktopNativeAssets.resolveHevSocks5TunnelBinary()
-        tunProcess = windowsTunController.start(hevBinary, socksPort)
+        val tun2SocksBinary = DesktopNativeAssets.resolveWindowsTun2SocksBinary()
+        tunProcess = windowsTunController.start(tun2SocksBinary, socksPort)
 
         if (requestGeneration != generation) {
             throw CancellationException("Desktop start superseded")
         }
 
-        startTunLogReader(tunProcess ?: error("hev-socks5-tunnel process is missing"))
+        startTunLogReader(tunProcess ?: error("tun2socks process is missing"))
     }
 
     private suspend fun startSystemProxy(
