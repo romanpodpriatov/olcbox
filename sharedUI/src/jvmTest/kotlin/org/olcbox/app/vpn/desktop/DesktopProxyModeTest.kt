@@ -71,6 +71,15 @@ class DesktopProxyModeTest {
             assertContains(yaml, "transport: '$expectedTransport'")
             assertContains(yaml, "id: 'room-$provider'")
             assertContains(yaml, "port: 10808")
+            if (LocationConfig.normalizeProvider(provider) == LocationConfig.PROVIDER_JITSI) {
+                assertContains(yaml, "tls:")
+                assertContains(yaml, "insecure_skip_verify: true")
+                assertContains(yaml, "jitsi:")
+                assertContains(yaml, "insecure: true")
+            } else {
+                assertTrue("insecure_skip_verify" !in yaml)
+                assertTrue("jitsi:" !in yaml)
+            }
             if (expectedTransport == LocationConfig.TRANSPORT_VP8CHANNEL) {
                 assertContains(yaml, "vp8:")
                 assertContains(yaml, "fps: 60")

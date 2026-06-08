@@ -32,6 +32,12 @@ internal data class OlcRtcCommand(
             appendLine("net:")
             appendLine("  transport: ${config.transport.yamlValue()}")
             appendLine("  dns: \"1.1.1.1:53\"")
+            if (config.bypassProvider == LocationConfig.PROVIDER_JITSI) {
+                appendLine("tls:")
+                appendLine("  insecure_skip_verify: true")
+                appendLine("jitsi:")
+                appendLine("  insecure: true")
+            }
             appendLine("socks:")
             appendLine("  host: ${socksHost.yamlValue()}")
             appendLine("  port: $socksPort")
