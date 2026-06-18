@@ -13,7 +13,6 @@ plugins {
     alias(libs.plugins.compose.multiplatform)
     alias(libs.plugins.android.kmp.library)
     alias(libs.plugins.kotlinx.serialization)
-    alias(libs.plugins.metro)
 }
 
 val olcboxVersion = providers.gradleProperty("olcbox.version").orElse("1.0.0")
