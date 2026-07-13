@@ -23,6 +23,7 @@ import org.olcbox.app.data.repository.SubscriptionFetchProxy
 import org.olcbox.app.desktop.DesktopOs
 import org.olcbox.app.desktop.DesktopPaths
 import org.olcbox.app.vpn.desktop.DesktopNativeAssets
+import org.olcbox.app.vpn.desktop.DesktopDnsResolver
 import org.olcbox.app.vpn.desktop.DesktopProxyController
 import org.olcbox.app.vpn.desktop.LinuxPrivilege
 import org.olcbox.app.vpn.desktop.LinuxTunController
@@ -330,7 +331,10 @@ class DesktopVpnManager private constructor(
         privileged: Boolean
     ): Process {
         val binaries = DesktopNativeAssets.resolveOlcRtcBinaryCandidates()
+        val dnsServer = DesktopDnsResolver.current()
         var lastException: Exception? = null
+
+        addLog("Using DNS server $dnsServer for olcRTC")
 
         for (binary in binaries) {
             try {
@@ -341,7 +345,8 @@ class DesktopVpnManager private constructor(
                     ready = ready,
                     startupFailure = startupFailure,
                     logOutput = logOutput,
-                    privileged = privileged
+                    privileged = privileged,
+                    dnsServer = dnsServer
                 )
             } catch (e: Exception) {
                 lastException = e
@@ -431,7 +436,8 @@ class DesktopVpnManager private constructor(
         ready: CompletableDeferred<Unit>,
         startupFailure: CompletableDeferred<String>,
         logOutput: Boolean,
-        privileged: Boolean
+        privileged: Boolean,
+        dnsServer: String
     ): Process {
         val config = location.normalized()
         val provider = OlcRtcCommand.desktopProviderArg(config.bypassProvider)
@@ -443,6 +449,7 @@ class DesktopVpnManager private constructor(
             socksPort = socksSettings.port,
             socksUser = socksSettings.username,
             socksPass = socksSettings.password,
+            dnsServer = dnsServer,
             dataDir = dataDir
         )
         val configPath = writeOlcRtcClientConfig(olcRtcCommand)
@@ -478,7 +485,9 @@ class DesktopVpnManager private constructor(
                         if (!isActive) break
 
                         if (logOutput) {
-                            addLog("rtc: $line")
+                            val message = "rtc: $line"
+                            addLog(message)
+                            println(message)
                         }
 
                         if (line.contains("SOCKS5 server listening", ignoreCase = true)) {
@@ -529,7 +538,9 @@ class DesktopVpnManager private constructor(
                     for (line in lines) {
                         if (!isActive) break
 
-                        addLog("tun: $line")
+                        val message = "tun: $line"
+                        addLog(message)
+                        println(message)
                     }
                 }
             } catch (_: IOException) {

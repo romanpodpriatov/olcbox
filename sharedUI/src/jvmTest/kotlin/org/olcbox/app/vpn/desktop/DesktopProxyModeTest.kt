@@ -60,7 +60,8 @@ class DesktopProxyModeTest {
                 binary = Path.of("/tmp/olcrtc"),
                 location = LocationConfig("Test", "room-$provider", "b".repeat(64), provider),
                 socksHost = "127.0.0.1",
-                socksPort = 10808
+                socksPort = 10808,
+                dnsServer = "192.168.43.1:53"
             )
             val args = command.args(Path.of("/tmp/client.yaml"))
             val yaml = command.yaml()
@@ -71,6 +72,7 @@ class DesktopProxyModeTest {
             assertContains(yaml, "transport: '$expectedTransport'")
             assertContains(yaml, "id: 'room-$provider'")
             assertContains(yaml, "port: 10808")
+            assertContains(yaml, "dns: '192.168.43.1:53'")
             if (LocationConfig.normalizeProvider(provider) == LocationConfig.PROVIDER_JITSI) {
                 assertContains(yaml, "tls:")
                 assertContains(yaml, "insecure_skip_verify: true")
@@ -100,6 +102,7 @@ class DesktopProxyModeTest {
                 bypassProvider = LocationConfig.PROVIDER_WB_STREAM,
                 transport = LocationConfig.TRANSPORT_DATACHANNEL
             ),
+            dnsServer = "192.168.43.1:53",
             dataDir = Path.of("/tmp/olcbox-data")
         ).yaml()
 
@@ -118,7 +121,8 @@ class DesktopProxyModeTest {
                 key = "c".repeat(64),
                 bypassProvider = LocationConfig.PROVIDER_TELEMOST,
                 transport = LocationConfig.TRANSPORT_SEICHANNEL
-            )
+            ),
+            dnsServer = "192.168.43.1:53"
         ).yaml()
 
         assertContains(command, "transport: '${LocationConfig.TRANSPORT_SEICHANNEL}'")
@@ -169,7 +173,8 @@ class DesktopProxyModeTest {
                     id = "room-wb",
                     key = "b".repeat(64),
                     bypassProvider = provider
-                )
+                ),
+                dnsServer = "192.168.43.1:53"
             ).yaml()
 
             assertContains(command, "provider: 'wbstream'")
@@ -290,8 +295,45 @@ class DesktopProxyModeTest {
         assertContains(up, "ip route add default dev olcbox0 table 51820")
         assertContains(up, "ip rule add lookup 51820 pref 20")
         assertContains(up, "resolvectl dns olcbox0 1.1.1.1")
+        assertContains(up, "for setting in /proc/sys/net/ipv4/conf/*/rp_filter")
+        assertContains(up, "printf '0\\n' > \"${'$'}setting\"")
         assertContains(down, "ip rule del uidrange 0-0 lookup main pref 10")
         assertContains(down, "ip route flush table 51820")
         assertContains(down, "resolvectl revert olcbox0")
+        assertContains(down, "done < \"${'$'}rp_filter_state\"")
+    }
+
+    @Test
+    fun linuxDnsResolverUsesActiveUpstreamInsteadOfSystemdStub() {
+        val dns = DesktopDnsResolver.selectLinuxDnsServer(
+            resolvectlOutput = "Link 3 (wlan0): 192.168.43.1 2a00:1234::53",
+            nmcliOutput = "192.168.43.1",
+            resolvConf = "nameserver 127.0.0.53"
+        )
+
+        assertEquals("192.168.43.1:53", dns)
+    }
+
+    @Test
+    fun linuxDnsResolverFallsBackToLocalSystemResolver() {
+        val dns = DesktopDnsResolver.selectLinuxDnsServer(
+            resolvectlOutput = "",
+            nmcliOutput = "",
+            resolvConf = "nameserver 127.0.0.53"
+        )
+
+        assertEquals("127.0.0.53:53", dns)
+    }
+
+    @Test
+    fun linuxDnsResolverFindsPhysicalDefaultRoute() {
+        val interfaceName = DesktopDnsResolver.defaultRouteInterface(
+            """
+            default dev olcbox0 metric 5
+            default via 192.168.43.1 dev wlan0 proto dhcp metric 600
+            """.trimIndent()
+        )
+
+        assertEquals("wlan0", interfaceName)
     }
 }

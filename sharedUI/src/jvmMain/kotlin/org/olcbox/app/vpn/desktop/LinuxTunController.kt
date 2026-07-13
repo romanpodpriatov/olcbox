@@ -39,12 +39,12 @@ internal class LinuxTunController(
 
         if (routesInstalled) {
             waitForRoutesRemoved()
-            if (routeRuleExists()) {
-                runCatching { runPrivilegedScript(writeDownScript()) }
-                    .onFailure { addLog("Linux TUN route cleanup failed: ${it.message}") }
-            }
-            routesInstalled = false
         }
+        if (routeRuleExists() || routeTableExists() || Files.exists(rpFilterStatePath())) {
+            runCatching { runPrivilegedScript(writeDownScript()) }
+                .onFailure { addLog("Linux TUN route cleanup failed: ${it.message}") }
+        }
+        routesInstalled = false
     }
 
     private fun writeConfig(socksPort: Int, upScript: Path, downScript: Path): Path {
@@ -63,15 +63,19 @@ internal class LinuxTunController(
     private fun writeUpScript(): Path {
         return writeScript(
             name = "linux-tun-up.sh",
-            body = upScriptContent()
+            body = upScriptContent(rpFilterStatePath().toString())
         )
     }
 
     private fun writeDownScript(): Path {
         return writeScript(
             name = "linux-tun-down.sh",
-            body = downScriptContent()
+            body = downScriptContent(rpFilterStatePath().toString())
         )
+    }
+
+    private fun rpFilterStatePath(): Path {
+        return DesktopPaths.appDataDir().resolve("linux-rp-filter.state")
     }
 
     private fun writeScript(name: String, body: String): Path {
@@ -93,7 +97,7 @@ internal class LinuxTunController(
                     }
                 )
             }
-            if (interfaceExists() && routeRuleExists()) return
+            if (interfaceExists() && routeRuleExists() && routeTableExists()) return
             delay(TUN_READY_POLL_MS)
         }
         error("$TUN_NAME routes were not installed")
@@ -123,6 +127,20 @@ internal class LinuxTunController(
                                 trimmed.contains("pref $TUN_RULE_PREF")
                             ) &&
                             trimmed.contains("lookup $ROUTE_TABLE")
+                    }
+        }.getOrDefault(false)
+    }
+
+    private suspend fun routeTableExists(): Boolean = withContext(Dispatchers.IO) {
+        runCatching {
+            val process = ProcessBuilder("ip", "route", "show", "table", ROUTE_TABLE)
+                .redirectErrorStream(true)
+                .start()
+            val output = process.inputStream.bufferedReader().use { it.readText() }
+            process.waitFor(1, TimeUnit.SECONDS) &&
+                    process.exitValue() == 0 &&
+                    output.lineSequence().any { line ->
+                        line.trim().startsWith("default dev $TUN_NAME")
                     }
         }.getOrDefault(false)
     }
@@ -227,15 +245,25 @@ internal class LinuxTunController(
             }.trimEnd()
         }
 
-        fun upScriptContent(): String {
+        fun upScriptContent(
+            rpFilterStatePath: String = "/tmp/olcbox-rp-filter.state"
+        ): String {
+            val statePath = shellSingleQuote(rpFilterStatePath)
             return """
                 #!/bin/sh
                 set -eu
+                rp_filter_state=$statePath
                 ip rule del uidrange 0-0 lookup main pref $ROOT_BYPASS_RULE_PREF 2>/dev/null || true
                 ip rule del lookup $ROUTE_TABLE pref $TUN_RULE_PREF 2>/dev/null || true
                 ip route flush table $ROUTE_TABLE 2>/dev/null || true
-                sysctl -w net.ipv4.conf.all.rp_filter=0 >/dev/null 2>&1 || true
-                sysctl -w net.ipv4.conf.$TUN_NAME.rp_filter=0 >/dev/null 2>&1 || true
+                : > "${'$'}rp_filter_state"
+                for setting in /proc/sys/net/ipv4/conf/*/rp_filter; do
+                  if [ -r "${'$'}setting" ]; then
+                    value=${'$'}(cat "${'$'}setting")
+                    printf '%s=%s\n' "${'$'}setting" "${'$'}value" >> "${'$'}rp_filter_state"
+                    printf '0\n' > "${'$'}setting" 2>/dev/null || true
+                  fi
+                done
                 ip link set $TUN_NAME up
                 ip rule add uidrange 0-0 lookup main pref $ROOT_BYPASS_RULE_PREF
                 ip route add default dev $TUN_NAME table $ROUTE_TABLE
@@ -248,16 +276,34 @@ internal class LinuxTunController(
             """.trimIndent()
         }
 
-        fun downScriptContent(): String {
+        fun downScriptContent(
+            rpFilterStatePath: String = "/tmp/olcbox-rp-filter.state"
+        ): String {
+            val statePath = shellSingleQuote(rpFilterStatePath)
             return """
                 #!/bin/sh
+                rp_filter_state=$statePath
                 ip rule del uidrange 0-0 lookup main pref $ROOT_BYPASS_RULE_PREF 2>/dev/null || true
                 ip rule del lookup $ROUTE_TABLE pref $TUN_RULE_PREF 2>/dev/null || true
                 ip route flush table $ROUTE_TABLE 2>/dev/null || true
                 if command -v resolvectl >/dev/null 2>&1; then
                   resolvectl revert $TUN_NAME >/dev/null 2>&1 || true
                 fi
+                if [ -r "${'$'}rp_filter_state" ]; then
+                  while IFS='=' read -r setting value; do
+                    case "${'$'}setting" in
+                      /proc/sys/net/ipv4/conf/*/rp_filter)
+                        [ -w "${'$'}setting" ] && printf '%s\n' "${'$'}value" > "${'$'}setting" 2>/dev/null || true
+                        ;;
+                    esac
+                  done < "${'$'}rp_filter_state"
+                  rm -f "${'$'}rp_filter_state"
+                fi
             """.trimIndent()
+        }
+
+        private fun shellSingleQuote(value: String): String {
+            return "'${value.replace("'", "'\"'\"'")}'"
         }
     }
 }

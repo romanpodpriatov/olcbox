@@ -9,7 +9,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.olcbox.app.CurrentAppInfo
 import org.olcbox.app.data.model.LocationConfig
+import org.olcbox.app.desktop.DesktopOs
+import org.olcbox.app.desktop.DesktopPaths
 import org.olcbox.app.vpn.desktop.DesktopNativeAssets
+import org.olcbox.app.vpn.desktop.DesktopDnsResolver
 import org.olcbox.app.vpn.desktop.LinuxPrivilege
 import org.olcbox.app.vpn.desktop.OlcRtcCommand
 import org.olcbox.app.vpn.desktop.PacServer
@@ -35,7 +38,7 @@ internal object OlcRtcConnectionChecker {
             val config = locationConfig.normalized()
             if (!config.isComplete()) return@withContext null
 
-            val nativeLib = OlcRtcNativeLib.INSTANCE
+            val nativeLib = if (DesktopPaths.os == DesktopOs.Linux) null else OlcRtcNativeLib.INSTANCE
             if (nativeLib != null) {
                 repeat(CONNECTION_CHECK_ATTEMPTS) {
                     val socksPort = allocateLocalPort()
@@ -87,7 +90,7 @@ internal object OlcRtcConnectionChecker {
             val config = locationConfig.normalized()
             if (!config.isComplete()) return@withContext null
 
-            val nativeLib = OlcRtcNativeLib.INSTANCE
+            val nativeLib = if (DesktopPaths.os == DesktopOs.Linux) null else OlcRtcNativeLib.INSTANCE
             if (nativeLib != null) {
                 repeat(HTTP_PING_ATTEMPTS) {
                     val socksPort = allocateLocalPort()
@@ -246,6 +249,7 @@ internal object OlcRtcConnectionChecker {
             location = normalized,
             socksHost = PacServer.LOCAL_SOCKS_HOST,
             socksPort = socksPort,
+            dnsServer = DesktopDnsResolver.current(),
             dataDir = dataDir
         )
         val configPath = writeOlcRtcClientConfig(command)
