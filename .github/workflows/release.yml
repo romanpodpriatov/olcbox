@@ -12,7 +12,7 @@ env:
   OLCBOX_VERSION_MAJOR_MINOR: "1.0"
   # Keep release builds on the matching olcrtc ref until the universal carrier
   # changes land in olcrtc master.
-  OLCBOX_OLCRTC_REF: "master"
+  OLCBOX_OLCRTC_REF: "proofkit-udp-spike"
   # The alananisimov/olcbox workflow was recreated after 1.0.69, so
   # github.run_number restarted. Run #6 must publish Android versionCode 70.
   OLCBOX_RELEASE_RUN_NUMBER_BASE: "5"
@@ -73,7 +73,7 @@ jobs:
       - name: Checkout olcrtc
         uses: actions/checkout@v7
         with:
-          repository: openlibrecommunity/olcrtc
+          repository: romanpodpriatov/olcrtc
           ref: ${{ needs.release_version.outputs.olcrtc_ref }}
           path: olcrtc
           submodules: recursive
@@ -209,7 +209,7 @@ jobs:
       - name: Checkout olcrtc
         uses: actions/checkout@v7
         with:
-          repository: openlibrecommunity/olcrtc
+          repository: romanpodpriatov/olcrtc
           ref: ${{ needs.release_version.outputs.olcrtc_ref }}
           path: olcrtc
           submodules: recursive
@@ -262,7 +262,7 @@ jobs:
       - name: Checkout olcrtc
         uses: actions/checkout@v7
         with:
-          repository: openlibrecommunity/olcrtc
+          repository: romanpodpriatov/olcrtc
           ref: ${{ needs.release_version.outputs.olcrtc_ref }}
           path: olcrtc
           submodules: recursive
@@ -334,7 +334,7 @@ jobs:
       - name: Checkout olcrtc
         uses: actions/checkout@v7
         with:
-          repository: openlibrecommunity/olcrtc
+          repository: romanpodpriatov/olcrtc
           ref: ${{ needs.release_version.outputs.olcrtc_ref }}
           path: olcrtc
           submodules: recursive
@@ -458,7 +458,7 @@ jobs:
       - name: Checkout olcrtc
         uses: actions/checkout@v7
         with:
-          repository: openlibrecommunity/olcrtc
+          repository: romanpodpriatov/olcrtc
           ref: ${{ needs.release_version.outputs.olcrtc_ref }}
           path: olcrtc
           submodules: recursive

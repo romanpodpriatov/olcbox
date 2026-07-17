@@ -29,8 +29,8 @@ jobs:
       - name: Checkout olcrtc
         uses: actions/checkout@v7
         with:
-          repository: alananisimov/olcrtc
-          ref: master
+          repository: romanpodpriatov/olcrtc
+          ref: proofkit-udp-spike
           path: olcrtc
           submodules: recursive
 

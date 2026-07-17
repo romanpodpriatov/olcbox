@@ -46,6 +46,12 @@ internal data class OlcRtcCommand(
                 appendLine("  user: ${socksUser.yamlValue()}")
                 appendLine("  pass: ${socksPass.yamlValue()}")
             }
+            // ProofKit fork: opt this client's engine into the lossy UDP relay
+            // (SOCKS5 UDP ASSOCIATE) so Telegram/Discord calls and games tunnel
+            // over olcRTC. The engine gate defaults OFF, so this line is what
+            // actually turns UDP on; a stock (pre-UDP) engine ignores the block.
+            appendLine("udp:")
+            appendLine("  enabled: true")
             when (config.transport) {
                 LocationConfig.TRANSPORT_VP8CHANNEL -> {
                     appendLine("vp8:")
