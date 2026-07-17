@@ -15,7 +15,10 @@ env:
   OLCBOX_OLCRTC_REF: "proofkit-udp-spike"
   # The alananisimov/olcbox workflow was recreated after 1.0.69, so
   # github.run_number restarted. Run #6 must publish Android versionCode 70.
-  OLCBOX_RELEASE_RUN_NUMBER_BASE: "5"
+  # ProofKit fork: run numbers reset to 1 on this fork, so rebase the versionCode
+  # formula to our counter (was "5", tuned to upstream's run history). Run #1 now
+  # yields patch 70 (> PATCH_BASE 69), staying monotonic above upstream's last.
+  OLCBOX_RELEASE_RUN_NUMBER_BASE: "0"
   OLCBOX_RELEASE_PATCH_BASE: "69"
 
 jobs:
