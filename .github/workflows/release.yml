@@ -634,9 +634,11 @@ jobs:
             gh release delete "$OLCBOX_NIGHTLY_TAG" --yes --cleanup-tag
           fi
 
-          git tag -f "$OLCBOX_NIGHTLY_TAG" "$GITHUB_SHA"
-          git push --force origin "refs/tags/$OLCBOX_NIGHTLY_TAG"
-
+          # ProofKit fork: let `gh release create --target` create the tag via the
+          # Releases API. A plain `git push` of a tag whose commit contains
+          # .github/workflows/* is rejected for the default GITHUB_TOKEN
+          # ("without workflows permission"); the API path is not subject to that
+          # git ref restriction and only needs contents:write.
           gh release create "$OLCBOX_NIGHTLY_TAG" \
             --target "$GITHUB_SHA" \
             --title "$OLCBOX_NIGHTLY_TITLE" \
