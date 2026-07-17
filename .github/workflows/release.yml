@@ -554,12 +554,14 @@ jobs:
       id-token: write
       attestations: write
     needs:
+      # ProofKit fork: iOS is deferred (no signing/distribution yet), so it must
+      # NOT block publishing the platforms we ship (Android + Desktop). The
+      # build-ios job still runs; download-artifact just picks up its IPA if present.
       - release_version
       - build-windows
       - build-macos
       - build-linux
       - build-android
-      - build-ios
     concurrency:
       group: publish-${{ github.repository }}-${{ needs.release_version.outputs.nightly_tag }}
       cancel-in-progress: false
