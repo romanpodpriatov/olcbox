@@ -30,9 +30,12 @@ data class ReleaseMirror(
             .removeSuffix("/")
 
     companion object {
+        // ProofKit fork: the in-app updater must check OUR releases, not upstream
+        // alananisimov/olcbox — otherwise it offers upstream's nightly (built from
+        // the reverted, no-UDP engine) and pulls users off the ProofKit build.
         val GitHub = ReleaseMirror(
             name = "GitHub",
-            repositoryUrl = "https://github.com/alananisimov/olcbox"
+            repositoryUrl = "https://github.com/romanpodpriatov/olcbox"
         )
     }
 }
