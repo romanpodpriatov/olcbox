@@ -392,9 +392,21 @@ jobs:
           keyPassword=${ANDROID_RELEASE_KEY_PASSWORD}
           EOF
           else
-            echo "Android production APK requires signing secrets:"
-            echo "ANDROID_RELEASE_KEYSTORE_BASE64, ANDROID_RELEASE_STORE_PASSWORD, ANDROID_RELEASE_KEY_ALIAS, ANDROID_RELEASE_KEY_PASSWORD"
-            exit 1
+            # ProofKit fork: no release secrets → generate an EPHEMERAL keystore so
+            # the release APK is self-signed and sideloadable (Android requires a
+            # signature to install at all). Not Play-Store-publishable; add the real
+            # ANDROID_RELEASE_* secrets later and the branch above takes over.
+            echo "No Android release secrets; self-signing with an ephemeral keystore (sideload only)."
+            keytool -genkeypair -v -keystore release-keystore.jks \
+              -storepass proofkit -keypass proofkit -alias proofkit \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=ProofKit olcbox, O=ProofKit, C=US"
+            cat > keystore.properties <<EOF
+          storeFile=release-keystore.jks
+          storePassword=proofkit
+          keyAlias=proofkit
+          keyPassword=proofkit
+          EOF
           fi
 
       - name: Build production APK
