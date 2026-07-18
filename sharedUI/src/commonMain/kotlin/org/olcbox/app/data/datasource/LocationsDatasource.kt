@@ -21,6 +21,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.olcbox.app.CurrentAppInfo
+import org.olcbox.app.crypt.CryptCodec
 import org.olcbox.app.data.identity.DeviceIdentityProvider
 import org.olcbox.app.data.identity.PersistentDeviceIdentityProvider
 import org.olcbox.app.data.model.LocationBundleV4
@@ -56,7 +57,8 @@ class LocationsRepositoryImpl(
     private val dataSource: LocationsDataSource,
     private val httpClient: HttpClient = createProxyHttpClient(),
     private val deviceIdentityProvider: DeviceIdentityProvider = PersistentDeviceIdentityProvider(dataSource),
-    private val nowEpochMs: () -> Long = { kotlin.time.Clock.System.now().toEpochMilliseconds() }
+    private val nowEpochMs: () -> Long = { kotlin.time.Clock.System.now().toEpochMilliseconds() },
+    private val cryptCodec: CryptCodec? = CryptCodec.default()
 ) : LocationsRepository {
     private data class ImportSource(
         val content: String,
@@ -410,14 +412,19 @@ class LocationsRepositoryImpl(
         val input = text.normalizedImportText()
         if (input.isBlank()) return null
 
+        // crypt1: a pasted `olcrtc://crypt1/<blob>` link decrypts to either an
+        // http(s) subscription URL or inline olcrtc:// lines. Marker-only, so a
+        // plain link falls straight through unchanged.
+        val effective = cryptCodec?.decryptLink(input) ?: input
+
         var source = resolveImportSource(
-            text = input,
+            text = effective,
             requestMode = SubscriptionRequestMode.Identity,
             subscriptionProxy = subscriptionProxy
         ) ?: run {
-            if (input.isHttpUrl()) {
+            if (effective.isHttpUrl()) {
                 resolveImportSource(
-                    text = input,
+                    text = effective,
                     requestMode = SubscriptionRequestMode.Compatibility,
                     subscriptionProxy = subscriptionProxy
                 )
@@ -427,9 +434,9 @@ class LocationsRepositoryImpl(
         } ?: return null
 
         var parsed = parseImportSource(source, fallbackSubscriptionInterval)
-        if (parsed == null && input.isHttpUrl() && source.requestMode != SubscriptionRequestMode.Compatibility) {
+        if (parsed == null && effective.isHttpUrl() && source.requestMode != SubscriptionRequestMode.Compatibility) {
             val fallbackSource = resolveImportSource(
-                text = input,
+                text = effective,
                 requestMode = SubscriptionRequestMode.Compatibility,
                 subscriptionProxy = subscriptionProxy
             )
@@ -473,8 +480,16 @@ class LocationsRepositoryImpl(
             requestMode = requestMode,
             subscriptionProxy = subscriptionProxy
         ) ?: return null
-        return downloaded.content
-            .normalizedImportText()
+        // crypt1: decrypt the body ONLY when the request URL carries ?crypt=1 (and
+        // a codec is baked). Never heuristic-guess — a plaintext subscription must
+        // never be mis-decrypted. On decrypt failure, fall back to the raw content.
+        val rawContent = downloaded.content.normalizedImportText()
+        val content = if (text.contains("crypt=1") && cryptCodec != null) {
+            cryptCodec.decryptBody(rawContent) ?: rawContent
+        } else {
+            rawContent
+        }
+        return content
             .takeIf { it.isNotBlank() }
             ?.let {
                 ImportSource(

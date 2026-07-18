@@ -7,6 +7,7 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.headersOf
 import kotlinx.coroutines.test.runTest
 import org.olcbox.app.CurrentAppInfo
+import org.olcbox.app.crypt.CryptCodec
 import org.olcbox.app.data.identity.DeviceIdentityProvider
 import org.olcbox.app.data.model.LocationBundleV4
 import org.olcbox.app.data.model.LocationConfig
@@ -685,6 +686,46 @@ class LocationsRepositoryImplTest {
         assertEquals(listOf("https://example.test/a", "https://example.test/b"), items.map { it.url })
         assertEquals(2, items.first().locationCount)
         assertEquals("https://example.test/b", ConfigShareService.subscriptionQrText(items[1].url))
+    }
+
+    @Test
+    fun importsCryptLinkDecryptingToInlineOlcrtc() = runTest {
+        // Fixtures from the Rust coordinator crypt_link::tests::print_fixture (key=[42;32]).
+        // FIXTURE_LINE_BLOB = encrypt("olcrtc://telemost?vp8channel@12345#deadbeefdeadbeef$DE").
+        val keyB64 = "KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKio="
+        val lineBlob =
+            "Zqjg1M-z4N-c8Tr6FkkyALBXUMbQOMBnSreruYGLPpucGBUyebLLhNxo8VqV9MXMEjfiDiJm-CB8Z0y2-4DObbUMS4Z_sJElAdEoELy2nP2LThWtmT4zTYTD7RHXyENGI6I4webacShIYERWoNE25A"
+        val source = FakeLocationsDataSource()
+        val repo = LocationsRepositoryImpl(
+            source,
+            cryptCodec = CryptCodec(CryptCodec.decodeMaster(keyB64)!!)
+        )
+
+        val ok = repo.importText("olcrtc://crypt1/$lineBlob")
+
+        assertTrue(ok)
+        val imported = source.stored
+        assertNotNull(imported)
+        val loc = imported.locations.map { it.location }.first { it.id == "12345" }
+        assertEquals("deadbeefdeadbeef", loc.key)
+        assertEquals(LocationConfig.PROVIDER_TELEMOST, loc.bypassProvider)
+    }
+
+    @Test
+    fun plainOlcrtcLinkStillImportsWithCryptCodecPresent() = runTest {
+        // Marker-only: a plain link is untouched even when a codec is baked.
+        val keyB64 = "KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKio="
+        val source = FakeLocationsDataSource()
+        val repo = LocationsRepositoryImpl(
+            source,
+            cryptCodec = CryptCodec(CryptCodec.decodeMaster(keyB64)!!)
+        )
+
+        val ok = repo.importText("olcrtc://telemost?vp8channel@99999#feedfacefeedface\$FI")
+
+        assertTrue(ok)
+        val loc = source.stored!!.locations.map { it.location }.first { it.id == "99999" }
+        assertEquals("feedfacefeedface", loc.key)
     }
 
     private class FakeLocationsDataSource(
