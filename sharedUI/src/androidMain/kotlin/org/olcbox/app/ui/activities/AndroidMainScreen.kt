@@ -20,6 +20,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.launch
+import org.olcbox.app.admin.AdminState
 import org.olcbox.app.data.share.ConfigShareService
 import org.olcbox.app.update.AndroidUpdateSettingsStore
 import org.olcbox.app.update.AppUpdateInfo
@@ -401,7 +402,7 @@ fun AndroidMainScreen(
         )
     }
 
-    if (isAppSettingsOpen) {
+    if (isAppSettingsOpen && AdminState.unlocked) {
         AppSettingsSheet(
             initialRoute = appSettingsInitialRoute,
             selectedMode = connectionMode,

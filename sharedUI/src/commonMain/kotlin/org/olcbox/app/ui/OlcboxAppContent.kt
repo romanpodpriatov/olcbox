@@ -10,6 +10,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.runtime.Composable
+import org.olcbox.app.admin.AdminState
 import org.olcbox.app.data.model.LocationConfig
 import org.olcbox.app.ui.features.home.HomeScreen
 import org.olcbox.app.ui.features.home.HomeScreenViewModel
@@ -97,15 +98,21 @@ fun OlcboxAppContent(
             }
 
             is AppScreen.LocationSettings -> {
-                LocationSettingsScreen(
-                    viewModel = locationViewModel,
-                    homeViewModel = homeViewModel,
-                    onShareLocationRequested = onShareLocationRequested,
-                    onBack = {
-                        homeViewModel.loadCurrentConfig()
-                        onNavigate(AppScreen.Home)
-                    }
-                )
+                // Defense-in-depth: even if something routes here, the settings
+                // screen is admin-only. In user mode, bounce back home.
+                if (!AdminState.unlocked) {
+                    onNavigate(AppScreen.Home)
+                } else {
+                    LocationSettingsScreen(
+                        viewModel = locationViewModel,
+                        homeViewModel = homeViewModel,
+                        onShareLocationRequested = onShareLocationRequested,
+                        onBack = {
+                            homeViewModel.loadCurrentConfig()
+                            onNavigate(AppScreen.Home)
+                        }
+                    )
+                }
             }
         }
     }

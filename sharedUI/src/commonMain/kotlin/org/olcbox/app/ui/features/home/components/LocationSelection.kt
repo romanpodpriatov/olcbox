@@ -45,7 +45,9 @@ fun LocationSelectorScreen(
     selectedLocationId: String?,
     pingsState: PingsState,
     onLocationSelected: (String) -> Unit,
-    onLocationSettingsClick: (String) -> Unit
+    onLocationSettingsClick: (String) -> Unit,
+    showSettings: Boolean = true,
+    showCustomLocation: Boolean = true
 ) {
     Column(modifier = modifier.fillMaxWidth()) {
         val subscriptionLocations = locations.filter { !it.subscriptionUrl.isNullOrBlank() }
@@ -58,7 +60,8 @@ fun LocationSelectorScreen(
         if (locations.isEmpty()) {
             RelaySetupCard(
                 onAddSubscriptionClick = onAddSubscriptionClick,
-                onAddLocationClick = onAddLocationClick
+                onAddLocationClick = onAddLocationClick,
+                showCustomLocation = showCustomLocation
             )
             return@Column
         }
@@ -100,7 +103,8 @@ fun LocationSelectorScreen(
                                 selectedLocationId = selectedLocationId,
                                 pingsState = pingsState,
                                 onLocationSelected = onLocationSelected,
-                                onLocationSettingsClick = onLocationSettingsClick
+                                onLocationSettingsClick = onLocationSettingsClick,
+                                showSettings = showSettings
                             )
                         }
                     }
@@ -142,27 +146,30 @@ fun LocationSelectorScreen(
                                 selectedLocationId = selectedLocationId,
                                 pingsState = pingsState,
                                 onLocationSelected = onLocationSelected,
-                                onLocationSettingsClick = onLocationSettingsClick
+                                onLocationSettingsClick = onLocationSettingsClick,
+                                showSettings = showSettings
                             )
                         }
                     }
                 }
             }
 
-            FilledTonalButton(
-                onClick = onAddLocationClick,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(54.dp),
-                shape = RoundedCornerShape(16.dp)
-            ) {
-                Icon(Icons.Rounded.Add, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    text = "Add custom location",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Medium
-                )
+            if (showCustomLocation) {
+                FilledTonalButton(
+                    onClick = onAddLocationClick,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(54.dp),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Icon(Icons.Rounded.Add, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = "Add custom location",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
             }
 
             if (subscriptionLocations.isEmpty()) {
@@ -189,7 +196,8 @@ fun LocationSelectorScreen(
 @Composable
 private fun RelaySetupCard(
     onAddSubscriptionClick: () -> Unit,
-    onAddLocationClick: () -> Unit
+    onAddLocationClick: () -> Unit,
+    showCustomLocation: Boolean = true
 ) {
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -211,12 +219,14 @@ private fun RelaySetupCard(
             onClick = onAddSubscriptionClick
         )
 
-        SetupActionRow(
-            title = "Create custom location",
-            subtitle = "Enter room, key, provider, and transport",
-            icon = Icons.Outlined.Add,
-            onClick = onAddLocationClick
-        )
+        if (showCustomLocation) {
+            SetupActionRow(
+                title = "Create custom location",
+                subtitle = "Enter room, key, provider, and transport",
+                icon = Icons.Outlined.Add,
+                onClick = onAddLocationClick
+            )
+        }
     }
 }
 
@@ -349,7 +359,8 @@ private fun LocationSelectorRow(
     selectedLocationId: String?,
     pingsState: PingsState,
     onLocationSelected: (String) -> Unit,
-    onLocationSettingsClick: (String) -> Unit
+    onLocationSettingsClick: (String) -> Unit,
+    showSettings: Boolean = true
 ) {
     val pingMs = pingsState.pingFor(location.storageId)
     val isLoading = pingsState.isChecking(location.storageId)
@@ -361,6 +372,7 @@ private fun LocationSelectorRow(
         isLoading = isLoading,
         isError = isOffline,
         pingMs = pingMs,
+        settingsEnabled = showSettings,
         onSettingsClick = {
             onLocationSettingsClick(location.storageId)
         },

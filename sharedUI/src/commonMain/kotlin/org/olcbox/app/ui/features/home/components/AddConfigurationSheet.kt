@@ -48,7 +48,8 @@ fun AddConfigurationSheet(
     onPasteLinkClick: () -> Unit,
     onImportFileClick: () -> Unit,
     onUpdateSubscriptionsClick: () -> Unit,
-    onAddCustomLocationClick: () -> Unit
+    onAddCustomLocationClick: () -> Unit,
+    showCustomLocation: Boolean = true
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
@@ -104,12 +105,14 @@ fun AddConfigurationSheet(
                     )
                 }
 
-                AddSheetAction(
-                    title = "Create custom location",
+                if (showCustomLocation) {
+                    AddSheetAction(
+                        title = "Create custom location",
                         value = "Enter room, key, provider, and transport",
-                    icon = Icons.Outlined.Add,
-                    onClick = onAddCustomLocationClick
-                )
+                        icon = Icons.Outlined.Add,
+                        onClick = onAddCustomLocationClick
+                    )
+                }
             }
         }
     }

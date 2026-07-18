@@ -22,6 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
+import org.olcbox.app.admin.AdminState
 import org.olcbox.app.ui.components.StartButton
 import org.olcbox.app.ui.features.home.components.AddConfigurationSheet
 import org.olcbox.app.ui.features.home.components.HomeScreenAppBar
@@ -59,6 +60,10 @@ fun HomeScreen(
     val pingsState = locationViewModel.pingsState
     val locations = locationViewModel.locations.toList()
     val hasSubscriptions = locations.any { !it.subscriptionUrl.isNullOrBlank() }
+
+    // Admin mode reveals the hidden configurator UI (gear/settings/custom
+    // location/logs). User mode = pick a location + connect + import only.
+    val admin = AdminState.unlocked
 
     val requiresSetup = !state.canStartVpn && !state.isVpnConnected && !state.isVpnLoading
 
@@ -102,7 +107,8 @@ fun HomeScreen(
         topBar = {
             HomeScreenAppBar(
                 onHistoryClick = { isLogsSheetOpen = true },
-                showAppSettingsButton = showAppSettingsButton,
+                showAppSettingsButton = showAppSettingsButton && admin,
+                showHistoryButton = admin,
                 onAppSettingsClick = onAppSettingsClick,
                 showSplitTunnelingButton = showSplitTunnelingButton,
                 onSplitTunnelingClick = onSplitTunnelingClick,
@@ -163,7 +169,9 @@ fun HomeScreen(
                 },
                 onAddLocationClick = {
                     onAddLocation()
-                }
+                },
+                showSettings = admin,
+                showCustomLocation = admin
             )
 
             Spacer(modifier = Modifier.height(24.dp))
@@ -245,7 +253,8 @@ fun HomeScreen(
                 onAddCustomLocationClick = {
                     isAddSheetOpen = false
                     onAddLocation()
-                }
+                },
+                showCustomLocation = admin
             )
         }
     }

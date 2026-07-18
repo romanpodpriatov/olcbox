@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material3.CenterAlignedTopAppBar
@@ -29,6 +30,7 @@ import org.olcbox.app.ui.components.AdminPasswordDialog
 fun HomeScreenAppBar(
     onHistoryClick: () -> Unit = {},
     showAppSettingsButton: Boolean = false,
+    showHistoryButton: Boolean = true,
     onAppSettingsClick: () -> Unit = {},
     showSplitTunnelingButton: Boolean = false,
     onSplitTunnelingClick: () -> Unit = {},
@@ -63,25 +65,38 @@ fun HomeScreenAppBar(
             }
         },
         navigationIcon = {
-            if (showAppSettingsButton) {
-                IconButton(onClick = onAppSettingsClick) {
-                    Icon(
-                        imageVector = Icons.Outlined.Settings,
-                        contentDescription = "Application settings",
-                        tint = MaterialTheme.colorScheme.onSurface
-                    )
+            when {
+                showAppSettingsButton -> {
+                    IconButton(onClick = onAppSettingsClick) {
+                        Icon(
+                            imageVector = Icons.Outlined.Settings,
+                            contentDescription = "Application settings",
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
                 }
-            } else {
-                IconButton(onClick = onHistoryClick) {
+                showHistoryButton -> {
+                    IconButton(onClick = onHistoryClick) {
+                        Icon(
+                            imageVector = Icons.Outlined.History,
+                            contentDescription = "History",
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+                // user mode: no settings, no logs/history
+            }
+        },
+        actions = {
+            if (AdminState.unlocked) {
+                IconButton(onClick = { AdminState.lock() }) {
                     Icon(
-                        imageVector = Icons.Outlined.History,
-                        contentDescription = "History",
+                        imageVector = Icons.Outlined.Lock,
+                        contentDescription = "Lock admin",
                         tint = MaterialTheme.colorScheme.onSurface
                     )
                 }
             }
-        },
-        actions = {
             if (showSplitTunnelingButton) {
                 IconButton(onClick = onSplitTunnelingClick) {
                     Icon(
