@@ -19,6 +19,10 @@ jobs:
 
     env:
       ANDROID_NDK_VERSION: "28.2.13676358"
+      # crypt1/admin secrets (baked into GeneratedAppInfo). Absent on fork PRs ⇒
+      # features compile but stay disabled; jvmTest uses its own explicit key.
+      OLCBOX_CRYPT_KEY_V1: ${{ secrets.OLCBOX_CRYPT_KEY_V1 }}
+      OLCBOX_ADMIN_PASS_SHA256: ${{ secrets.OLCBOX_ADMIN_PASS_SHA256 }}
 
     steps:
       - name: Checkout olcbox

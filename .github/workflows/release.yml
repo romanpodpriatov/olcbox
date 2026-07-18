@@ -20,6 +20,11 @@ env:
   # upstream build, and 1.0.2xx > any 1.0.1xx. Monotonic, so Android updates install.
   OLCBOX_RELEASE_RUN_NUMBER_BASE: "0"
   OLCBOX_RELEASE_PATCH_BASE: "200"
+  # crypt1 client key + admin unlock hash, baked into GeneratedAppInfo by the
+  # gradle GenerateAppInfoTask. Empty when the secrets are unset ⇒ crypt/admin
+  # compile but stay disabled (plain links still work; the tap gesture is inert).
+  OLCBOX_CRYPT_KEY_V1: ${{ secrets.OLCBOX_CRYPT_KEY_V1 }}
+  OLCBOX_ADMIN_PASS_SHA256: ${{ secrets.OLCBOX_ADMIN_PASS_SHA256 }}
 
 jobs:
   release_version:
