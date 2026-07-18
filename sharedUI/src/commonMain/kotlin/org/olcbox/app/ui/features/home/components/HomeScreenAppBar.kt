@@ -1,5 +1,7 @@
 package org.olcbox.app.ui.features.home.components
 
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Column
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
@@ -13,7 +15,14 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import org.olcbox.app.admin.AdminState
+import org.olcbox.app.ui.components.AdminPasswordDialog
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -25,9 +34,22 @@ fun HomeScreenAppBar(
     onSplitTunnelingClick: () -> Unit = {},
     onAddClick: () -> Unit = {}
 ) {
+    var showAdminDialog by remember { mutableStateOf(false) }
+    val tapInteraction = remember { MutableInteractionSource() }
+
     CenterAlignedTopAppBar(
         title = {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.clickable(
+                    interactionSource = tapInteraction,
+                    indication = null
+                ) {
+                    // Hidden admin gesture: 7 taps on the title within ~3s.
+                    val now = kotlin.time.Clock.System.now().toEpochMilliseconds()
+                    if (AdminState.registerTitleTap(now)) showAdminDialog = true
+                }
+            ) {
                 Text(
                     text = "olcbox",
                     style = MaterialTheme.typography.titleLarge,
@@ -78,4 +100,11 @@ fun HomeScreenAppBar(
             }
         }
     )
+
+    if (showAdminDialog) {
+        AdminPasswordDialog(
+            onDismiss = { showAdminDialog = false },
+            onSubmit = { AdminState.tryUnlock(it) },
+        )
+    }
 }
