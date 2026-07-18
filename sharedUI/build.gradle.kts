@@ -17,6 +17,9 @@ plugins {
 
 val olcboxVersion = providers.gradleProperty("olcbox.version").orElse("1.0.0")
 val olcboxVersionValue = olcboxVersion.get()
+// crypt1 client key + admin unlock hash: baked from CI env (absent locally ⇒ features off).
+val olcboxCryptKeyV1 = providers.environmentVariable("OLCBOX_CRYPT_KEY_V1").orElse("")
+val olcboxAdminPassSha256 = providers.environmentVariable("OLCBOX_ADMIN_PASS_SHA256").orElse("")
 val generatedAppInfoDir = layout.buildDirectory.dir("generated/source/olcboxAppInfo/commonMain")
 
 val olcrtcRepoPath = providers.environmentVariable("OLCRTC_REPO")
@@ -31,6 +34,12 @@ abstract class GenerateAppInfoTask : DefaultTask() {
     @get:Input
     abstract val version: Property<String>
 
+    @get:Input
+    abstract val cryptKeyV1: Property<String>
+
+    @get:Input
+    abstract val adminPassSha256: Property<String>
+
     @get:OutputDirectory
     abstract val outputDir: DirectoryProperty
 
@@ -38,14 +47,16 @@ abstract class GenerateAppInfoTask : DefaultTask() {
     fun generate() {
         val packageDir = outputDir.get().asFile.resolve("org/olcbox/app")
         packageDir.mkdirs()
-        val escapedVersion = version.get().replace("\\", "\\\\").replace("\"", "\\\"")
+        fun esc(s: String) = s.replace("\\", "\\\\").replace("\"", "\\\"")
         packageDir.resolve("GeneratedAppInfo.kt").writeText(
             """
             package org.olcbox.app
 
             internal object GeneratedAppInfo {
                 const val NAME: String = "olcbox"
-                const val VERSION: String = "$escapedVersion"
+                const val VERSION: String = "${esc(version.get())}"
+                const val CRYPT_KEY_V1: String = "${esc(cryptKeyV1.get())}"
+                const val ADMIN_PASS_SHA256: String = "${esc(adminPassSha256.get())}"
             }
             """.trimIndent() + "\n"
         )
@@ -54,6 +65,8 @@ abstract class GenerateAppInfoTask : DefaultTask() {
 
 val generateAppInfo by tasks.registering(GenerateAppInfoTask::class) {
     version.set(olcboxVersionValue)
+    cryptKeyV1.set(olcboxCryptKeyV1)
+    adminPassSha256.set(olcboxAdminPassSha256)
     outputDir.set(generatedAppInfoDir)
 }
 
