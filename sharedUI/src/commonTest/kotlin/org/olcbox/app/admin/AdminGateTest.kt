@@ -52,4 +52,22 @@ class AdminGateTest {
         AdminState.overrideGateForTest("")
         assertFalse(AdminState.registerTitleTap(0L))
     }
+
+    @Test
+    fun failSafeConfiguratorVisibleWhenNoHash() {
+        // No hash baked ⇒ normal olcbox: everything visible, no Lock.
+        AdminState.overrideGateForTest("")
+        assertTrue(AdminState.configuratorVisible)
+        assertFalse(AdminState.showLock)
+    }
+
+    @Test
+    fun gatedBuildHidesUntilUnlocked() {
+        AdminState.overrideGateForTest(sha256Hex("pw"))
+        assertFalse(AdminState.configuratorVisible) // locked ⇒ hidden
+        assertFalse(AdminState.showLock)
+        assertTrue(AdminState.tryUnlock("pw"))
+        assertTrue(AdminState.configuratorVisible)  // unlocked ⇒ visible
+        assertTrue(AdminState.showLock)
+    }
 }

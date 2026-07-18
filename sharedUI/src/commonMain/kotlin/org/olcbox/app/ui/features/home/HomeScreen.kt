@@ -63,7 +63,8 @@ fun HomeScreen(
 
     // Admin mode reveals the hidden configurator UI (gear/settings/custom
     // location/logs). User mode = pick a location + connect + import only.
-    val admin = AdminState.unlocked
+    // Fail-safe: a build with no admin hash shows everything (normal olcbox).
+    val admin = AdminState.configuratorVisible
 
     val requiresSetup = !state.canStartVpn && !state.isVpnConnected && !state.isVpnLoading
 

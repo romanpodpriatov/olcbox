@@ -262,7 +262,7 @@ fun main(args: Array<String>) = application {
                     dependencies.homeViewModel.ToggleVpn()
                 }
             )
-            if (org.olcbox.app.admin.AdminState.unlocked) {
+            if (org.olcbox.app.admin.AdminState.configuratorVisible) {
                 Item("Settings", onClick = {
                     isWindowVisible = true
                     showDesktopSettings = true
@@ -360,7 +360,7 @@ fun main(args: Array<String>) = application {
                     onSplitTunnelingClick = {}
                 )
 
-                if (showDesktopSettings && org.olcbox.app.admin.AdminState.unlocked) {
+                if (showDesktopSettings && org.olcbox.app.admin.AdminState.configuratorVisible) {
                     ApplicationSettingsSheet(
                         updateSettings = updateSettings,
                         updateStatusText = updateMessage,

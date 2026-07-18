@@ -22,6 +22,18 @@ object AdminState {
 
     val gateEnabled: Boolean get() = gate.enabled
 
+    /**
+     * Whether the full configurator UI (settings/location/logs/custom-location)
+     * is visible. Fail-safe: when NO admin hash is baked, the gate is off and the
+     * app behaves like a normal olcbox (everything visible). Only a build WITH a
+     * hash hides the UI until [unlocked]. This guarantees a build that ships
+     * without the secret never traps users in a hidden-settings state.
+     */
+    val configuratorVisible: Boolean get() = !gate.enabled || unlocked
+
+    /** Show the Lock affordance only in a gated build that is currently unlocked. */
+    val showLock: Boolean get() = gate.enabled && unlocked
+
     /** Returns true when the tap threshold is reached (caller shows the dialog). */
     fun registerTitleTap(nowMs: Long): Boolean {
         if (!gate.enabled) return false

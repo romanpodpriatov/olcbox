@@ -99,8 +99,9 @@ fun OlcboxAppContent(
 
             is AppScreen.LocationSettings -> {
                 // Defense-in-depth: even if something routes here, the settings
-                // screen is admin-only. In user mode, bounce back home.
-                if (!AdminState.unlocked) {
+                // screen is admin-only in a gated build. In locked user mode,
+                // bounce back home. (Ungated builds show it normally.)
+                if (!AdminState.configuratorVisible) {
                     onNavigate(AppScreen.Home)
                 } else {
                     LocationSettingsScreen(

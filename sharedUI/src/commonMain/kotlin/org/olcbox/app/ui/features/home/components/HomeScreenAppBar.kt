@@ -88,7 +88,7 @@ fun HomeScreenAppBar(
             }
         },
         actions = {
-            if (AdminState.unlocked) {
+            if (AdminState.showLock) {
                 IconButton(onClick = { AdminState.lock() }) {
                     Icon(
                         imageVector = Icons.Outlined.Lock,

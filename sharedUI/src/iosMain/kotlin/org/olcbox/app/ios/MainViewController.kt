@@ -237,7 +237,7 @@ private fun IosApp(
                 onSplitTunnelingClick = {}
             )
 
-            if (isAppSettingsOpen && org.olcbox.app.admin.AdminState.unlocked) {
+            if (isAppSettingsOpen && org.olcbox.app.admin.AdminState.configuratorVisible) {
                 ApplicationSettingsSheet(
                     updateSettings = updateSettings,
                     updateStatusText = updateStatusText,

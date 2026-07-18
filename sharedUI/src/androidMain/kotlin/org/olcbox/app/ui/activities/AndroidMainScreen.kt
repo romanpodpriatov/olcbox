@@ -402,7 +402,7 @@ fun AndroidMainScreen(
         )
     }
 
-    if (isAppSettingsOpen && AdminState.unlocked) {
+    if (isAppSettingsOpen && AdminState.configuratorVisible) {
         AppSettingsSheet(
             initialRoute = appSettingsInitialRoute,
             selectedMode = connectionMode,
