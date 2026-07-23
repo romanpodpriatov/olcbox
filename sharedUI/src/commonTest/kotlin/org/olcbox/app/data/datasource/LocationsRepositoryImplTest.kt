@@ -750,6 +750,22 @@ class LocationsRepositoryImplTest {
         assertTrue(!bad.isComplete())
     }
 
+    @Test
+    fun importsMixedOlcrtcAndVlessSubscription() = runTest {
+        val body = """
+            olcrtc://telemost?vp8channel@12345#deadbeefdeadbeef${'$'}DE-rtc
+            vless://11111111-1111-1111-1111-111111111111@9.9.9.9:443?security=reality&pbk=P&sid=ab&sni=x&flow=xtls-rprx-vision&type=tcp#DE-vless
+            hysteria2://PW@8.8.8.8:443?sni=h#DE-hy2
+        """.trimIndent()
+        val source = FakeLocationsDataSource()
+        LocationsRepositoryImpl(source).importText(body)
+        val locs = source.stored!!.locations.map { it.location }
+        assertEquals(3, locs.size)
+        assertEquals(1, locs.count { it.kind == org.olcbox.app.net.LocationKind.Olcrtc })
+        assertEquals(1, locs.count { it.kind == org.olcbox.app.net.LocationKind.Vless })
+        assertEquals(1, locs.count { it.kind == org.olcbox.app.net.LocationKind.Hysteria2 })
+    }
+
     private class FakeLocationsDataSource(
         var stored: LocationBundleV4? = null,
         private val legacy: List<Pair<String, String>> = emptyList(),
