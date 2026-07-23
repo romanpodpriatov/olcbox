@@ -28,17 +28,8 @@ class SingBoxConfigDumpTest {
         dump("vless-reality", SingBoxConfig.build(spec))
     }
 
-    @Test fun dumpVlessXhttp() {
-        // XHTTP is an Xray transport; this dump exists to let `sing-box check`
-        // tell us definitively whether sing-box accepts it. If it rejects, the
-        // builder must drop xhttp (locations fall back to unsupported).
-        val link = "vless://22222222-2222-2222-2222-222222222222@127.0.0.1:443" +
-            "?type=xhttp&security=reality&encryption=none&pbk=jNXHt1yRo0vDuchQlIP6Z0ZvjT3KtzVI-T4E7RoLJS0" +
-            "&sid=cd34&fp=chrome&sni=www.microsoft.com&path=%2Fdownload&host=www.microsoft.com&mode=packet-up#FI-xhttp"
-        val spec = LinkParser.parse(link)
-        assertNotNull(spec)
-        dump("vless-xhttp", SingBoxConfig.build(spec))
-    }
+    // xhttp is NOT a sing-box transport — it's handled by Xray-core (see
+    // XrayConfigDumpTest). sing-box covers reality (tcp) + hy2 + olcrtc-socks.
 
     @Test fun dumpHysteria2() {
         val link = "hysteria2://PASSWORD123@127.0.0.1:443?sni=www.microsoft.com&obfs=salamander&obfs-password=OBFSPW&insecure=1#RU-hy2"

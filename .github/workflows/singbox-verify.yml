@@ -1,8 +1,8 @@
-name: sing-box verify
+name: core verify
 
-# Validates that the SingBoxConfig builder emits configs the PINNED sing-box
-# release actually accepts (schema check against the real binary) — and, later,
-# that the tunnel works end-to-end on the runners. No device needed for these.
+# Validates that the config builders emit configs the PINNED core binaries
+# actually accept (schema check against the real binaries). sing-box handles
+# reality+hy2+olcrtc; Xray-core handles xhttp (sing-box can't). No device needed.
 on:
   push:
     branches: [feat/singbox-ci-verify]
@@ -13,6 +13,7 @@ permissions:
 
 env:
   SINGBOX_VERSION: "1.11.15"
+  XRAY_VERSION: "25.3.6"
   ANDROID_NDK_VERSION: "28.2.13676358"
 
 jobs:
@@ -66,16 +67,19 @@ jobs:
           export ANDROID_NDK_ROOT="${ANDROID_NDK_HOME}"
           gomobile init
 
-      - name: Generate sing-box configs from the builder
+      - name: Generate configs from the builders
         working-directory: olcbox
         run: |
           export OLCRTC_REPO="${{ github.workspace }}/olcrtc"
           export ANDROID_NDK_HOME="${ANDROID_HOME}/ndk/${ANDROID_NDK_VERSION}"
           export ANDROID_NDK_ROOT="${ANDROID_NDK_HOME}"
-          ./gradlew :sharedUI:jvmTest --tests "org.olcbox.app.net.SingBoxConfigDumpTest" --stacktrace
-          echo "--- generated configs ---"
-          ls -la sharedUI/build/singbox-configs/
+          ./gradlew :sharedUI:jvmTest \
+            --tests "org.olcbox.app.net.SingBoxConfigDumpTest" \
+            --tests "org.olcbox.app.net.XrayConfigDumpTest" --stacktrace
+          echo "--- sing-box configs ---"
           for f in sharedUI/build/singbox-configs/*.json; do echo "== $f =="; cat "$f"; echo; done
+          echo "--- xray configs ---"
+          for f in sharedUI/build/xray-configs/*.json; do echo "== $f =="; cat "$f"; echo; done
 
       - name: Download pinned sing-box
         run: |
@@ -101,7 +105,20 @@ jobs:
         working-directory: olcbox
         run: sing-box check -c sharedUI/build/singbox-configs/olcrtc-socks.json
 
-      - name: check vless-xhttp (informational)
+      - name: Download Xray-core (pinned, fallback to latest)
+        run: |
+          set -e
+          url="https://github.com/XTLS/Xray-core/releases/download/v${XRAY_VERSION}/Xray-linux-64.zip"
+          echo "Trying pinned $url"
+          if ! curl -fsSL "$url" -o xray.zip; then
+            latest=$(curl -fsSL https://api.github.com/repos/XTLS/Xray-core/releases/latest | python3 -c "import sys,json;print(json.load(sys.stdin)['tag_name'])")
+            echo "Pinned v${XRAY_VERSION} not found; falling back to latest $latest"
+            curl -fsSL "https://github.com/XTLS/Xray-core/releases/download/${latest}/Xray-linux-64.zip" -o xray.zip
+          fi
+          mkdir -p xray-bin && (cd xray-bin && unzip -o ../xray.zip)
+          chmod +x xray-bin/xray
+          echo "USING XRAY:"; ./xray-bin/xray version | head -1
+
+      - name: xray test vless-xhttp
         working-directory: olcbox
-        continue-on-error: true
-        run: sing-box check -c sharedUI/build/singbox-configs/vless-xhttp.json
+        run: ${{ github.workspace }}/xray-bin/xray run -c sharedUI/build/xray-configs/vless-xhttp.json -test
