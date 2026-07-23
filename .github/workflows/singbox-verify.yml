@@ -1,0 +1,109 @@
+name: sing-box verify
+
+# Validates that the SingBoxConfig builder emits configs the PINNED sing-box
+# release actually accepts (schema check against the real binary) — and, later,
+# that the tunnel works end-to-end on the runners. No device needed for these.
+on:
+  push:
+    branches: [feat/singbox-ci-verify]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SINGBOX_VERSION: "1.11.15"
+  ANDROID_NDK_VERSION: "28.2.13676358"
+
+jobs:
+  config-check:
+    name: sing-box config schema check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout olcbox
+        uses: actions/checkout@v7
+        with:
+          path: olcbox
+
+      - name: Checkout olcrtc
+        uses: actions/checkout@v7
+        with:
+          repository: romanpodpriatov/olcrtc
+          ref: proofkit-udp-spike
+          path: olcrtc
+          submodules: recursive
+
+      - name: Setup JDK
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: 'stable'
+          cache-dependency-path: olcrtc/go.sum
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v4
+
+      - name: Install Android SDK packages
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0" "ndk;${ANDROID_NDK_VERSION}"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Install Go mobile tooling
+        run: |
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+          go install golang.org/x/mobile/cmd/gomobile@latest
+
+      - name: Initialize gomobile
+        working-directory: olcrtc
+        run: |
+          export ANDROID_NDK_HOME="${ANDROID_HOME}/ndk/${ANDROID_NDK_VERSION}"
+          export ANDROID_NDK_ROOT="${ANDROID_NDK_HOME}"
+          gomobile init
+
+      - name: Generate sing-box configs from the builder
+        working-directory: olcbox
+        run: |
+          export OLCRTC_REPO="${{ github.workspace }}/olcrtc"
+          export ANDROID_NDK_HOME="${ANDROID_HOME}/ndk/${ANDROID_NDK_VERSION}"
+          export ANDROID_NDK_ROOT="${ANDROID_NDK_HOME}"
+          ./gradlew :sharedUI:jvmTest --tests "org.olcbox.app.net.SingBoxConfigDumpTest" --stacktrace
+          echo "--- generated configs ---"
+          ls -la sharedUI/build/singbox-configs/
+          for f in sharedUI/build/singbox-configs/*.json; do echo "== $f =="; cat "$f"; echo; done
+
+      - name: Download pinned sing-box
+        run: |
+          url="https://github.com/SagerNet/sing-box/releases/download/v${SINGBOX_VERSION}/sing-box-${SINGBOX_VERSION}-linux-amd64.tar.gz"
+          echo "Downloading $url"
+          curl -fsSL "$url" -o sb.tar.gz
+          tar xzf sb.tar.gz
+          mv sing-box-${SINGBOX_VERSION}-linux-amd64/sing-box /usr/local/bin/sing-box
+          sing-box version
+
+      - name: sing-box check each config
+        working-directory: olcbox
+        run: |
+          set +e
+          core_fail=0
+          for f in sharedUI/build/singbox-configs/*.json; do
+            name=$(basename "$f" .json)
+            echo "::group::sing-box check $name"
+            out=$(sing-box check -c "$f" 2>&1); rc=$?
+            echo "$out"
+            echo "::endgroup::"
+            if [ $rc -eq 0 ]; then
+              echo "PASS  $name"
+            else
+              echo "FAIL  $name  (rc=$rc)"
+              # xhttp is an Xray transport; its failure is informational, not fatal.
+              if [ "$name" != "vless-xhttp" ]; then core_fail=1; fi
+            fi
+          done
+          echo "core_fail=$core_fail"
+          exit $core_fail
