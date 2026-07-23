@@ -73,9 +73,9 @@ jobs:
           export OLCRTC_REPO="${{ github.workspace }}/olcrtc"
           export ANDROID_NDK_HOME="${ANDROID_HOME}/ndk/${ANDROID_NDK_VERSION}"
           export ANDROID_NDK_ROOT="${ANDROID_NDK_HOME}"
-          ./gradlew :sharedUI:jvmTest \
-            --tests "org.olcbox.app.net.SingBoxConfigDumpTest" \
-            --tests "org.olcbox.app.net.XrayConfigDumpTest" --stacktrace
+          # All net tests (LinkParser, SingBoxConfig, XrayConfig, EngineDispatcher)
+          # + the dump tests that emit configs for the check steps below.
+          ./gradlew :sharedUI:jvmTest --tests "org.olcbox.app.net.*" --stacktrace
           echo "--- sing-box configs ---"
           for f in sharedUI/build/singbox-configs/*.json; do echo "== $f =="; cat "$f"; echo; done
           echo "--- xray configs ---"

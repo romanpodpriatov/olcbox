@@ -9,10 +9,18 @@ import org.olcbox.app.data.model.LocationConfig
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class EngineDispatcherTest {
     private class FakeSingBox : SingBoxController {
+        var startedConfig: String? = null
+        var stopped = false
+        override suspend fun start(configJson: String) { startedConfig = configJson }
+        override suspend fun stop() { stopped = true }
+    }
+
+    private class FakeXray : XrayController {
         var startedConfig: String? = null
         var stopped = false
         override suspend fun start(configJson: String) { startedConfig = configJson }
@@ -26,58 +34,74 @@ class EngineDispatcherTest {
         override suspend fun stop() { stopped = true }
     }
 
-    private fun outboundType(json: String): String =
+    private fun singBoxOutboundType(json: String): String =
         Json.parseToJsonElement(json).jsonObject["outbounds"]!!.jsonArray[0].jsonObject["type"]!!.jsonPrimitive.content
 
-    @Test fun olcrtcLocationStartsBothWithSocksOutbound() = runTest {
-        val sb = FakeSingBox(); val olc = FakeOlcrtc()
+    private fun xrayNetwork(json: String): String =
+        Json.parseToJsonElement(json).jsonObject["outbounds"]!!.jsonArray[0].jsonObject["streamSettings"]!!
+            .jsonObject["network"]!!.jsonPrimitive.content
+
+    @Test fun olcrtcLocationStartsOlcrtcChildAndSingBoxSocks() = runTest {
+        val sb = FakeSingBox(); val xr = FakeXray(); val olc = FakeOlcrtc()
         val loc = LocationConfig(name = "DE", id = "room", key = "k", kind = LocationKind.Olcrtc)
-        EngineDispatcher(sb, olc).start(loc)
-        assertEquals(loc, olc.startedLocation) // olcrtc child started
-        assertEquals("socks", outboundType(sb.startedConfig!!)) // sing-box socks→olcrtc
-        val port = Json.parseToJsonElement(sb.startedConfig!!).jsonObject["outbounds"]!!
-            .jsonArray[0].jsonObject["server_port"]!!.jsonPrimitive.content.toInt()
-        assertEquals(10808, port)
+        EngineDispatcher(sb, xr, olc).start(loc)
+        assertEquals(loc, olc.startedLocation)
+        assertEquals("socks", singBoxOutboundType(sb.startedConfig!!))
+        assertNull(xr.startedConfig)
     }
 
-    @Test fun vlessLocationStartsOnlySingBox() = runTest {
-        val sb = FakeSingBox(); val olc = FakeOlcrtc()
+    @Test fun vlessRealityStartsSingBoxNotXray() = runTest {
+        val sb = FakeSingBox(); val xr = FakeXray(); val olc = FakeOlcrtc()
         val loc = LocationConfig(
             name = "DE", kind = LocationKind.Vless,
-            rawLink = "vless://u@1.2.3.4:443?security=reality&pbk=P&sid=s&sni=x&flow=xtls-rprx-vision#DE"
+            rawLink = "vless://u@1.2.3.4:443?security=reality&pbk=P&sid=s&sni=x&flow=xtls-rprx-vision&type=tcp#DE"
         )
-        EngineDispatcher(sb, olc).start(loc)
-        assertEquals(null, olc.startedLocation) // no olcrtc child
-        assertEquals("vless", outboundType(sb.startedConfig!!))
+        EngineDispatcher(sb, xr, olc).start(loc)
+        assertEquals("vless", singBoxOutboundType(sb.startedConfig!!))
+        assertNull(xr.startedConfig)
+        assertNull(olc.startedLocation)
     }
 
-    @Test fun hysteria2LocationStartsOnlySingBox() = runTest {
-        val sb = FakeSingBox(); val olc = FakeOlcrtc()
+    @Test fun vlessXhttpStartsXrayNotSingBox() = runTest {
+        val sb = FakeSingBox(); val xr = FakeXray(); val olc = FakeOlcrtc()
+        val loc = LocationConfig(
+            name = "FI", kind = LocationKind.Vless,
+            rawLink = "vless://u@1.2.3.4:443?type=xhttp&security=reality&pbk=P&sid=s&sni=x&path=%2Fd&host=x&mode=packet-up#FI"
+        )
+        EngineDispatcher(sb, xr, olc).start(loc)
+        assertEquals("xhttp", xrayNetwork(xr.startedConfig!!)) // Xray owns xhttp
+        assertNull(sb.startedConfig)
+        assertNull(olc.startedLocation)
+    }
+
+    @Test fun hysteria2StartsSingBox() = runTest {
+        val sb = FakeSingBox(); val xr = FakeXray(); val olc = FakeOlcrtc()
         val loc = LocationConfig(
             name = "RU", kind = LocationKind.Hysteria2,
             rawLink = "hysteria2://PW@1.2.3.4:443?sni=h#RU"
         )
-        EngineDispatcher(sb, olc).start(loc)
-        assertEquals(null, olc.startedLocation)
-        assertEquals("hysteria2", outboundType(sb.startedConfig!!))
+        EngineDispatcher(sb, xr, olc).start(loc)
+        assertEquals("hysteria2", singBoxOutboundType(sb.startedConfig!!))
+        assertNull(xr.startedConfig)
     }
 
-    @Test fun stopStopsBoth() = runTest {
-        val sb = FakeSingBox(); val olc = FakeOlcrtc()
-        EngineDispatcher(sb, olc).stop()
-        assertTrue(sb.stopped); assertTrue(olc.stopped)
+    @Test fun stopStopsAllThree() = runTest {
+        val sb = FakeSingBox(); val xr = FakeXray(); val olc = FakeOlcrtc()
+        EngineDispatcher(sb, xr, olc).stop()
+        assertTrue(sb.stopped); assertTrue(xr.stopped); assertTrue(olc.stopped)
     }
 
     @Test fun vlessWithoutRawLinkThrows() = runTest {
-        val sb = FakeSingBox(); val olc = FakeOlcrtc()
+        val sb = FakeSingBox(); val xr = FakeXray(); val olc = FakeOlcrtc()
         val loc = LocationConfig(name = "X", kind = LocationKind.Vless, rawLink = null)
         var threw = false
         try {
-            EngineDispatcher(sb, olc).start(loc)
+            EngineDispatcher(sb, xr, olc).start(loc)
         } catch (_: IllegalArgumentException) {
             threw = true
         }
         assertTrue(threw)
-        assertFalse(sb.startedConfig != null) // sing-box not started on bad input
+        assertFalse(sb.startedConfig != null)
+        assertFalse(xr.startedConfig != null)
     }
 }
