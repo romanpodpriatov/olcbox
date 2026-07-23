@@ -104,7 +104,18 @@ jobs:
           export ANDROID_NDK_HOME="${ANDROID_HOME}/ndk/${ANDROID_NDK_VERSION}"
           export ANDROID_NDK_ROOT="${ANDROID_NDK_HOME}"
           gomobile init
-      - name: Assemble android (compiles controllers + bundles cores)
+      - name: Bundle android core binaries into jniLibs
+        working-directory: olcbox
+        run: |
+          mkdir -p androidApp/jniLibs/arm64-v8a
+          curl -fsSL "https://github.com/SagerNet/sing-box/releases/download/v${SINGBOX_VERSION}/sing-box-${SINGBOX_VERSION}-android-arm64.tar.gz" -o /tmp/sb.tgz
+          tar xzf /tmp/sb.tgz -C /tmp
+          find /tmp -name sing-box -path '*android-arm64*' -exec cp {} androidApp/jniLibs/arm64-v8a/libsingboxcore.so \;
+          curl -fsSL "https://github.com/XTLS/Xray-core/releases/download/v${XRAY_VERSION}/Xray-android-arm64-v8a.zip" -o /tmp/xray.zip
+          (cd /tmp && rm -rf xray-a && unzip -o xray.zip -d xray-a)
+          cp /tmp/xray-a/xray androidApp/jniLibs/arm64-v8a/libxraycore.so
+          ls -la androidApp/jniLibs/arm64-v8a
+      - name: Assemble android (compiles controllers, packages cores)
         working-directory: olcbox
         run: |
           export OLCRTC_REPO="${{ github.workspace }}/olcrtc"
