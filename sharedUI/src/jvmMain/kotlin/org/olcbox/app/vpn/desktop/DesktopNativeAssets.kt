@@ -84,6 +84,25 @@ internal object DesktopNativeAssets {
         return binary
     }
 
+    /**
+     * Resolve the bundled `sing-box` core binary. Honors the `OLCBOX_SINGBOX_BINARY`
+     * env override (tests / dev) before falling back to the bundled resource.
+     */
+    fun resolveSingBoxBinary(): Path =
+        resolveExternalCore("sing-box", "OLCBOX_SINGBOX_BINARY", "native/sing-box")
+
+    /**
+     * Resolve the bundled `xray` core binary (used for xhttp locations). Honors the
+     * `OLCBOX_XRAY_BINARY` env override before falling back to the bundled resource.
+     */
+    fun resolveXrayBinary(): Path =
+        resolveExternalCore("xray", "OLCBOX_XRAY_BINARY", "native/xray")
+
+    private fun resolveExternalCore(fileName: String, envVar: String, resourceName: String): Path {
+        System.getenv(envVar)?.takeIf { it.isNotBlank() }?.let { return Path(it) }
+        return resolveBinary(fileName = fileName, resourceName = resourceName, candidates = emptyList())
+    }
+
     private fun resolveBinary(
         fileName: String,
         resourceName: String,
