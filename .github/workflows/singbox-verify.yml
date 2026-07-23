@@ -86,24 +86,22 @@ jobs:
           mv sing-box-${SINGBOX_VERSION}-linux-amd64/sing-box /usr/local/bin/sing-box
           sing-box version
 
-      - name: sing-box check each config
+      # Per-transport steps so each verdict is visible via the jobs API (step
+      # conclusions are readable without log auth). Core transports must pass;
+      # xhttp is allowed to fail (Xray transport — informational).
+      - name: check vless-reality
         working-directory: olcbox
-        run: |
-          set +e
-          core_fail=0
-          for f in sharedUI/build/singbox-configs/*.json; do
-            name=$(basename "$f" .json)
-            echo "::group::sing-box check $name"
-            out=$(sing-box check -c "$f" 2>&1); rc=$?
-            echo "$out"
-            echo "::endgroup::"
-            if [ $rc -eq 0 ]; then
-              echo "PASS  $name"
-            else
-              echo "FAIL  $name  (rc=$rc)"
-              # xhttp is an Xray transport; its failure is informational, not fatal.
-              if [ "$name" != "vless-xhttp" ]; then core_fail=1; fi
-            fi
-          done
-          echo "core_fail=$core_fail"
-          exit $core_fail
+        run: sing-box check -c sharedUI/build/singbox-configs/vless-reality.json
+
+      - name: check hysteria2
+        working-directory: olcbox
+        run: sing-box check -c sharedUI/build/singbox-configs/hysteria2.json
+
+      - name: check olcrtc-socks
+        working-directory: olcbox
+        run: sing-box check -c sharedUI/build/singbox-configs/olcrtc-socks.json
+
+      - name: check vless-xhttp (informational)
+        working-directory: olcbox
+        continue-on-error: true
+        run: sing-box check -c sharedUI/build/singbox-configs/vless-xhttp.json
