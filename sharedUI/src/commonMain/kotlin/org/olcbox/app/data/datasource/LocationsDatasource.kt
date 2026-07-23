@@ -30,6 +30,9 @@ import org.olcbox.app.data.model.LocationEntry
 import org.olcbox.app.data.model.LocationMetadata
 import org.olcbox.app.data.model.SubscriptionMetadata
 import org.olcbox.app.data.repository.LocationsRepository
+import org.olcbox.app.net.LinkParser
+import org.olcbox.app.net.LocationKind
+import org.olcbox.app.net.OutboundSpec
 import org.olcbox.app.data.repository.SubscriptionFetchProxy
 
 interface LocationsDataSource {
@@ -585,13 +588,69 @@ class LocationsRepositoryImpl(
         ).normalized()
     }
 
+    private fun outboundToLocation(spec: OutboundSpec, rawLine: String): LocationConfig {
+        val kind = when (spec) {
+            is OutboundSpec.Vless -> LocationKind.Vless
+            is OutboundSpec.Hysteria2 -> LocationKind.Hysteria2
+        }
+        return LocationConfig(
+            name = spec.tag,
+            id = "${spec.host}:${spec.port}", // stable-ish identity for the storage slug
+            key = "",
+            kind = kind,
+            rawLink = rawLine.trim()
+        )
+    }
+
+    private fun parseSingBoxText(
+        text: String,
+        subscriptionUrl: String? = null,
+        @Suppress("UNUSED_PARAMETER") updateIntervalHours: Int? = null
+    ): LocationBundleV4? {
+        val usedStorageIds = mutableSetOf<String>()
+        val entries = text.lineSequence()
+            .map { it.normalizedImportText() }
+            .filter { line ->
+                line.startsWith(VLESS_URI_PREFIX) || HY2_URI_PREFIXES.any { line.startsWith(it) }
+            }
+            .mapNotNull { line ->
+                val spec = LinkParser.parse(line) ?: return@mapNotNull null
+                val location = outboundToLocation(spec, line).normalized()
+                val base = location.storageSlug().ifBlank { location.name }
+                val storageId = uniqueStorageId("imported_$base", usedStorageIds)
+                LocationEntry.from(
+                    storageId = storageId,
+                    location = location,
+                    subscriptionUrl = subscriptionUrl,
+                    metadata = null
+                )
+            }.toList()
+        if (entries.isEmpty()) return null
+        return LocationBundleV4(
+            activeLocationId = entries.firstOrNull()?.storageId,
+            locations = entries
+        )
+    }
+
     private fun parseImport(
         text: String,
         subscriptionUrl: String? = null,
         updateIntervalHours: Int? = null
     ): ParsedImport? {
-        parseOlcRtcText(text, subscriptionUrl, updateIntervalHours)?.let {
-            return ParsedImport(it, ImportMode.Additive)
+        // Scheme dispatch: a subscription body may mix olcrtc:// lines with
+        // xray-side vless://+hysteria2:// lines. Parse each family and merge so a
+        // single import yields all locations (olcrtc entries first).
+        run {
+            val olc = parseOlcRtcText(text, subscriptionUrl, updateIntervalHours)
+            val sb = parseSingBoxText(text, subscriptionUrl, updateIntervalHours)
+            val merged = when {
+                olc != null && sb != null ->
+                    olc.copy(locations = olc.locations + sb.locations)
+                olc != null -> olc
+                sb != null -> sb
+                else -> null
+            }
+            if (merged != null) return ParsedImport(merged, ImportMode.Additive)
         }
 
         if (!text.startsWith("{") || !text.endsWith("}")) return null
@@ -1129,6 +1188,8 @@ class LocationsRepositoryImpl(
 
     private companion object {
         const val OLCRTC_URI_PREFIX = "olcrtc://"
+        const val VLESS_URI_PREFIX = "vless://"
+        val HY2_URI_PREFIXES = listOf("hysteria2://", "hy2://")
         const val UTF8_BOM = "\uFEFF"
     }
 }
