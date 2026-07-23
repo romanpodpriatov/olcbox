@@ -38,17 +38,16 @@ jobs:
         uses: android-actions/setup-android@v4
       - name: Install NDK
         run: sdkmanager "ndk;${ANDROID_NDK_VERSION}"
-      - name: Install gomobile
+      - name: Install sagernet gomobile fork (has -libname, matches sing-box)
         run: |
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
-          go install golang.org/x/mobile/cmd/gomobile@latest
-          go install golang.org/x/mobile/cmd/gobind@latest
+          go install github.com/sagernet/gomobile/cmd/gomobile@v0.1.4
+          go install github.com/sagernet/gomobile/cmd/gobind@v0.1.4
       - name: gomobile bind libbox
         working-directory: sing-box
         run: |
           export ANDROID_NDK_HOME="${ANDROID_HOME}/ndk/${ANDROID_NDK_VERSION}"
           export ANDROID_NDK_ROOT="${ANDROID_NDK_HOME}"
-          go get ./... || true
           gomobile init
           gomobile bind -v -target=android -androidapi 21 \
             -javapkg=io.nekohasekai -libname=box \
