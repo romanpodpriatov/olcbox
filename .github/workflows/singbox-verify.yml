@@ -147,3 +147,40 @@ jobs:
           echo "HTTP via tunnel: $code"
           kill $CLIENT $BACK 2>/dev/null || true
           [ "$code" = "200" ]
+
+      # End-to-end tunnel proof for the PRIMARY transport (vless+reality): stand up
+      # a real sing-box reality server, patch our generated client config with the
+      # matching keypair + local server, and curl through. Proves the reality
+      # handshake completes with our config and carries traffic.
+      - name: tunnel — vless-reality
+        working-directory: olcbox
+        run: |
+          set -e
+          keys=$(sing-box generate reality-keypair)
+          priv=$(echo "$keys" | awk -F': ' '/PrivateKey/{print $2}')
+          pub=$(echo "$keys" | awk -F': ' '/PublicKey/{print $2}')
+          echo "reality pub=$pub"
+          cat > /tmp/reality-server.json <<JSON
+          { "inbounds": [ {
+              "type": "vless", "listen": "127.0.0.1", "listen_port": 8443,
+              "users": [ { "uuid": "11111111-1111-1111-1111-111111111111", "flow": "xtls-rprx-vision" } ],
+              "tls": { "enabled": true, "server_name": "www.microsoft.com",
+                "reality": { "enabled": true,
+                  "handshake": { "server": "www.microsoft.com", "server_port": 443 },
+                  "private_key": "$priv", "short_id": [ "ab12cd34" ] } } } ],
+            "outbounds": [ { "type": "direct" } ] }
+          JSON
+          # our builder's config, patched with the real key + local server port
+          jq --arg pub "$pub" '.outbounds[0].server_port=8443 | .outbounds[0].tls.reality.public_key=$pub' \
+            sharedUI/build/singbox-configs/vless-reality.json > /tmp/reality-client.json
+          echo "--- client (from our builder, key-patched) ---"; cat /tmp/reality-client.json
+          sing-box check -c /tmp/reality-server.json
+          sing-box run -c /tmp/reality-server.json &
+          SRV=$!
+          sing-box run -c /tmp/reality-client.json &
+          CLI=$!
+          sleep 3
+          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 25 --socks5-hostname 127.0.0.1:10809 http://example.com)
+          echo "HTTP via reality tunnel: $code"
+          kill $CLI $SRV 2>/dev/null || true
+          [ "$code" = "200" ]
