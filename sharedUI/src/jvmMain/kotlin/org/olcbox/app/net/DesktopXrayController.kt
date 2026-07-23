@@ -19,5 +19,7 @@ class DesktopXrayController(
 
     override suspend fun start(configJson: String) = proc.start(configJson)
     override suspend fun stop() = proc.stop()
+    /** Non-suspend stop for desktop stop paths (not coroutines). */
+    fun stopNow() = proc.stop()
     fun isRunning(): Boolean = proc.isRunning()
 }

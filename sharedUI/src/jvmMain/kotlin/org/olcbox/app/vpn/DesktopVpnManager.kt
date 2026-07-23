@@ -77,6 +77,13 @@ class DesktopVpnManager private constructor(
     private val linuxTunController = LinuxTunController(::addLog)
     private val windowsTunController = WindowsTunController(::addLog)
 
+    // Unified client: sing-box / Xray cores for vless/hy2/xhttp locations (exec'd
+    // bundled binaries). The tun/PAC targets `activeCorePort` when a core is active
+    // (null = olcrtc's own SOCKS port).
+    private val singBoxCore = org.olcbox.app.net.DesktopSingBoxController()
+    private val xrayCore = org.olcbox.app.net.DesktopXrayController()
+    private var activeCorePort: Int? = null
+
     override fun needsPermission(): Boolean = false
 
     override fun startVpn() {
@@ -204,44 +211,60 @@ class DesktopVpnManager private constructor(
                 windowsTunController.ensureAdministratorOrRequestRestart()
             }
 
-            process = startOlcRtcProcessWithFallback(
-                location = location,
-                socksSettings = socksSettings,
-                ready = ready,
-                startupFailure = startupFailure,
-                logOutput = true,
-                privileged = desktopMode == DesktopMode.LinuxTun
-            )
+            // Branch on location kind: olcrtc uses the existing engine path
+            // (unchanged); vless/hy2/xhttp start a sing-box/Xray core on the core
+            // SOCKS port. The tun/PAC then targets whichever port is active.
+            val isOlcrtc = location.kind == org.olcbox.app.net.LocationKind.Olcrtc
+            val effectiveSocksPort =
+                if (isOlcrtc) socksSettings.port else org.olcbox.app.net.SingBoxConfig.SINGBOX_SOCKS_PORT
+            activeCorePort = if (isOlcrtc) null else effectiveSocksPort
 
-            val olcRtcProcess = process ?: error("olcRTC process is missing")
-            waitForOlcRtcReady(
-                process = olcRtcProcess,
-                ready = ready,
-                startupFailure = startupFailure,
-                socksPort = socksSettings.port,
-                requestGeneration = requestGeneration
-            )
+            if (isOlcrtc) {
+                process = startOlcRtcProcessWithFallback(
+                    location = location,
+                    socksSettings = socksSettings,
+                    ready = ready,
+                    startupFailure = startupFailure,
+                    logOutput = true,
+                    privileged = desktopMode == DesktopMode.LinuxTun
+                )
+                val olcRtcProcess = process ?: error("olcRTC process is missing")
+                waitForOlcRtcReady(
+                    process = olcRtcProcess,
+                    ready = ready,
+                    startupFailure = startupFailure,
+                    socksPort = socksSettings.port,
+                    requestGeneration = requestGeneration
+                )
+            } else {
+                startDesktopCore(location, effectiveSocksPort)
+            }
 
             if (requestGeneration != generation) {
                 throw CancellationException("Desktop start superseded")
             }
 
             when (desktopMode) {
-                DesktopMode.LinuxTun -> startLinuxTun(socksSettings.port, requestGeneration)
-                DesktopMode.WindowsTun -> startWindowsTun(socksSettings.port, requestGeneration)
-                DesktopMode.SystemProxy -> startSystemProxy(socksSettings, requestGeneration)
+                DesktopMode.LinuxTun -> startLinuxTun(effectiveSocksPort, requestGeneration)
+                DesktopMode.WindowsTun -> startWindowsTun(effectiveSocksPort, requestGeneration)
+                DesktopMode.SystemProxy ->
+                    startSystemProxy(socksSettings.copy(port = effectiveSocksPort), requestGeneration)
             }
 
-            if (!olcRtcProcess.isAlive) {
-                error("olcRTC exited before desktop proxy was enabled")
+            if (isOlcrtc) {
+                val olcRtcProcess = process ?: error("olcRTC process is missing")
+                if (!olcRtcProcess.isAlive) {
+                    error("olcRTC exited before desktop proxy was enabled")
+                }
+                startProcessExitWatchers(
+                    desktopMode = desktopMode,
+                    olcRtcProcess = olcRtcProcess,
+                    currentTunProcess = tunProcess,
+                    requestGeneration = requestGeneration
+                )
+            } else if (!singBoxCore.isRunning() && !xrayCore.isRunning()) {
+                error("core exited before desktop proxy was enabled")
             }
-
-            startProcessExitWatchers(
-                desktopMode = desktopMode,
-                olcRtcProcess = olcRtcProcess,
-                currentTunProcess = tunProcess,
-                requestGeneration = requestGeneration
-            )
 
             setStatus(VpnStatus.Connected)
             addLog(
@@ -322,6 +345,41 @@ class DesktopVpnManager private constructor(
         }
     }
 
+    /** Start a sing-box (reality/hy2) or Xray (xhttp) core on the core SOCKS port. */
+    private suspend fun startDesktopCore(location: LocationConfig, port: Int) {
+        val raw = location.rawLink ?: error("core location has no link")
+        val spec = org.olcbox.app.net.LinkParser.parse(raw) ?: error("unparseable core link")
+        stopDesktopCores()
+        if (spec is org.olcbox.app.net.OutboundSpec.Vless &&
+            spec.transport is org.olcbox.app.net.TransportSpec.Xhttp
+        ) {
+            xrayCore.start(org.olcbox.app.net.XrayConfig.buildXhttp(spec))
+            addLog("Xray/xhttp core starting on 127.0.0.1:$port")
+        } else {
+            singBoxCore.start(org.olcbox.app.net.SingBoxConfig.build(spec))
+            addLog("sing-box core (${location.kind}) starting on 127.0.0.1:$port")
+        }
+        if (!waitForCoreSocks(port)) {
+            error("core SOCKS not ready on 127.0.0.1:$port")
+        }
+        addLog("core ready on 127.0.0.1:$port")
+    }
+
+    private fun stopDesktopCores() {
+        singBoxCore.stopNow()
+        xrayCore.stopNow()
+        activeCorePort = null
+    }
+
+    private suspend fun waitForCoreSocks(port: Int): Boolean {
+        val deadline = System.currentTimeMillis() + CORE_SOCKS_READY_TIMEOUT_MS
+        while (System.currentTimeMillis() < deadline) {
+            if (canConnectToSocks(port)) return true
+            delay(CORE_SOCKS_POLL_MS)
+        }
+        return canConnectToSocks(port)
+    }
+
     private fun startOlcRtcProcessWithFallback(
         location: LocationConfig,
         socksSettings: DesktopSocksProxySettings,
@@ -398,6 +456,7 @@ class DesktopVpnManager private constructor(
 
         pacServer.stop()
 
+        stopDesktopCores()
         stopProcess(process)
         process = null
         deleteOlcRtcConfig()
@@ -732,6 +791,8 @@ class DesktopVpnManager private constructor(
 
     private companion object {
         const val MAX_LOG_ENTRIES = 5_000
+        const val CORE_SOCKS_READY_TIMEOUT_MS = 10_000L
+        const val CORE_SOCKS_POLL_MS = 200L
         const val OLC_READY_TIMEOUT_MS = 25_000L
         const val OLC_STARTUP_STABILITY_MS = 1_500L
         const val READY_POLL_INTERVAL_MS = 200L
