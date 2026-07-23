@@ -32,7 +32,10 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v7
         with:
-          go-version: 'stable'
+          # Pin to 1.23: sagernet/gomobile v0.1.4 pulls x/tools v0.16.0, whose
+          # compile-time assertion breaks on Go 1.24+ (invalid array length).
+          # sing-box 1.11 targets Go 1.23, so this satisfies both.
+          go-version: '1.23'
           cache-dependency-path: sing-box/go.sum
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
