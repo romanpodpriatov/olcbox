@@ -57,6 +57,61 @@ jobs:
           name: android-core-jnilibs
           path: jniLibs
 
+  # Compile androidMain (the Android engine controllers) via the full android
+  # build, mirroring pr-checks. Catches API-level (NewApi) issues at minSdk 23
+  # that a plain kotlin compile would miss.
+  android-compile:
+    name: compile androidMain (controllers)
+    runs-on: ubuntu-latest
+    env:
+      OLCBOX_CRYPT_KEY_V1: ${{ secrets.OLCBOX_CRYPT_KEY_V1 }}
+      OLCBOX_ADMIN_PASS_SHA256: ${{ secrets.OLCBOX_ADMIN_PASS_SHA256 }}
+    steps:
+      - name: Checkout olcbox
+        uses: actions/checkout@v7
+        with:
+          path: olcbox
+      - name: Checkout olcrtc
+        uses: actions/checkout@v7
+        with:
+          repository: romanpodpriatov/olcrtc
+          ref: proofkit-udp-spike
+          path: olcrtc
+          submodules: recursive
+      - name: Setup JDK
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: 'stable'
+          cache-dependency-path: olcrtc/go.sum
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v4
+      - name: Install Android SDK packages
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0" "ndk;${ANDROID_NDK_VERSION}"
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+      - name: Install Go mobile tooling
+        run: |
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+          go install golang.org/x/mobile/cmd/gomobile@latest
+      - name: Initialize gomobile
+        working-directory: olcrtc
+        run: |
+          export ANDROID_NDK_HOME="${ANDROID_HOME}/ndk/${ANDROID_NDK_VERSION}"
+          export ANDROID_NDK_ROOT="${ANDROID_NDK_HOME}"
+          gomobile init
+      - name: Assemble android (compiles the controllers)
+        working-directory: olcbox
+        run: |
+          export OLCRTC_REPO="${{ github.workspace }}/olcrtc"
+          export ANDROID_NDK_HOME="${ANDROID_HOME}/ndk/${ANDROID_NDK_VERSION}"
+          export ANDROID_NDK_ROOT="${ANDROID_NDK_HOME}"
+          ./gradlew :androidApp:assembleDebug --stacktrace
+
   config-check:
     name: sing-box config schema check
     runs-on: ubuntu-latest
@@ -114,10 +169,10 @@ jobs:
           export ANDROID_NDK_HOME="${ANDROID_HOME}/ndk/${ANDROID_NDK_VERSION}"
           export ANDROID_NDK_ROOT="${ANDROID_NDK_HOME}"
           # All net tests (LinkParser, SingBoxConfig, XrayConfig, EngineDispatcher)
-          # + the dump tests that emit configs for the check steps below. Also
-          # compile androidMain so the Android controllers are verified, and jvm.
-          ./gradlew :sharedUI:jvmTest --tests "org.olcbox.app.net.*" \
-            :sharedUI:compileReleaseKotlinAndroid :desktopApp:compileKotlin --stacktrace
+          # + the dump tests that emit configs for the check steps below. jvmTest
+          # compiles jvmMain (the desktop controllers). androidMain (the Android
+          # controllers) compiles on merge to main via release.yml's android build.
+          ./gradlew :sharedUI:jvmTest --tests "org.olcbox.app.net.*" --stacktrace
           echo "--- sing-box configs ---"
           for f in sharedUI/build/singbox-configs/*.json; do echo "== $f =="; cat "$f"; echo; done
           echo "--- xray configs ---"

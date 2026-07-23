@@ -2,7 +2,6 @@ package org.olcbox.app.net
 
 import android.content.Context
 import java.io.File
-import java.util.concurrent.TimeUnit
 
 /**
  * Spawns and supervises a bundled core binary (sing-box / xray) on Android by
@@ -11,6 +10,11 @@ import java.util.concurrent.TimeUnit
  * extracted to nativeLibraryDir where it is executable. The existing
  * hev-socks5-tunnel bridge points at the core's SOCKS port; this class only owns
  * the child process.
+ *
+ * minSdk is 23, so this deliberately uses only API-23-safe process APIs:
+ * `Process.destroy()` / `exitValue()` — NOT `toHandle()`, `descendants()`,
+ * `destroyForcibly()`, `isAlive()`, or `waitFor(timeout, unit)` (all API 26+).
+ * `destroy()` sends SIGTERM, which the Go cores handle by exiting cleanly.
  */
 internal class AndroidCoreProcess(
     private val context: Context,
@@ -40,19 +44,19 @@ internal class AndroidCoreProcess(
     fun stop() {
         val p = process ?: return
         process = null
-        p.toHandle().descendants().forEach { it.destroy() }
-        p.destroy()
-        if (!p.waitFor(STOP_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
-            p.toHandle().descendants().forEach { it.destroyForcibly() }
-            p.destroyForcibly()
-            p.waitFor(KILL_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+        p.destroy() // SIGTERM — the Go cores exit cleanly on it
+    }
+
+    /** API-23-safe liveness: exitValue() throws while the process is still running. */
+    fun isRunning(): Boolean {
+        val p = process ?: return false
+        return try {
+            p.exitValue()
+            false
+        } catch (_: IllegalThreadStateException) {
+            true
         }
     }
 
-    fun isRunning(): Boolean = process?.isAlive == true
-
-    private companion object {
-        const val STOP_TIMEOUT_MS = 3_000L
-        const val KILL_TIMEOUT_MS = 2_000L
-    }
+    private companion object
 }
