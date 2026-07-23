@@ -17,55 +17,45 @@ env:
   ANDROID_NDK_VERSION: "28.2.13676358"
 
 jobs:
-  # Task 8 (Android): prove the sing-box libbox AAR builds via gomobile on a
-  # runner. This is the artifact the Android SingBoxController will bind to.
-  libbox-aar:
-    name: build sing-box libbox AAR
+  # Task 8 (Android): both cores publish prebuilt android binaries, so we exec
+  # them from nativeLibraryDir (the v2rayNG pattern) instead of gomobile libbox/
+  # libXray — unified with the desktop controllers. This job proves the prebuilt
+  # binaries download + are valid android arm64 executables, and packages them as
+  # jniLibs (lib*.so) for the app build. (gomobile libbox also builds — verified
+  # in history — but exec-binary is simpler and needs no AAR.)
+  android-cores:
+    name: fetch + verify android core binaries
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout sing-box (pinned)
-        uses: actions/checkout@v7
-        with:
-          repository: SagerNet/sing-box
-          ref: v1.11.15
-          path: sing-box
-      - name: Setup Go
-        uses: actions/setup-go@v7
-        with:
-          # Pin to 1.23: sagernet/gomobile v0.1.4 pulls x/tools v0.16.0, whose
-          # compile-time assertion breaks on Go 1.24+ (invalid array length).
-          # sing-box 1.11 targets Go 1.23, so this satisfies both.
-          go-version: '1.23'
-          cache-dependency-path: sing-box/go.sum
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v4
-      - name: Install NDK
-        run: sdkmanager "ndk;${ANDROID_NDK_VERSION}"
-      - name: Install sagernet gomobile fork (has -libname, matches sing-box)
+      - name: Download sing-box android arm64
         run: |
-          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
-          go install github.com/sagernet/gomobile/cmd/gomobile@v0.1.4
-          go install github.com/sagernet/gomobile/cmd/gobind@v0.1.4
-      - name: gomobile bind libbox
-        working-directory: sing-box
+          url="https://github.com/SagerNet/sing-box/releases/download/v${SINGBOX_VERSION}/sing-box-${SINGBOX_VERSION}-android-arm64.tar.gz"
+          curl -fsSL "$url" -o sb.tgz
+          tar xzf sb.tgz
+          find . -name 'sing-box' -maxdepth 2 -exec cp {} sing-box-android \;
+          file sing-box-android
+      - name: Download xray android arm64
         run: |
-          export ANDROID_NDK_HOME="${ANDROID_HOME}/ndk/${ANDROID_NDK_VERSION}"
-          export ANDROID_NDK_ROOT="${ANDROID_NDK_HOME}"
-          gomobile init
-          gomobile bind -v -target=android -androidapi 21 \
-            -javapkg=io.nekohasekai -libname=box \
-            -tags "with_gvisor,with_quic,with_utls,with_clash_api" \
-            -o "${{ github.workspace }}/libbox.aar" \
-            ./experimental/libbox
-      - name: Verify AAR
+          url="https://github.com/XTLS/Xray-core/releases/download/v${XRAY_VERSION}/Xray-android-arm64-v8a.zip"
+          curl -fsSL "$url" -o xray.zip
+          mkdir -p xray-a && (cd xray-a && unzip -o ../xray.zip)
+          cp xray-a/xray xray-android
+          file xray-android
+      - name: Verify both are ARM aarch64 executables
         run: |
-          ls -la "${{ github.workspace }}/libbox.aar"
-          unzip -l "${{ github.workspace }}/libbox.aar" | head -20
-      - name: Upload AAR
+          file sing-box-android | grep -qi "aarch64" && echo "sing-box: OK arm64"
+          file xray-android | grep -qi "aarch64" && echo "xray: OK arm64"
+      - name: Package as jniLibs (lib*.so) for exec-from-nativeLibraryDir
+        run: |
+          mkdir -p jniLibs/arm64-v8a
+          cp sing-box-android jniLibs/arm64-v8a/libsingboxcore.so
+          cp xray-android jniLibs/arm64-v8a/libxraycore.so
+          ls -la jniLibs/arm64-v8a
+      - name: Upload jniLibs
         uses: actions/upload-artifact@v4
         with:
-          name: libbox-aar
-          path: ${{ github.workspace }}/libbox.aar
+          name: android-core-jnilibs
+          path: jniLibs
 
   config-check:
     name: sing-box config schema check
@@ -124,8 +114,10 @@ jobs:
           export ANDROID_NDK_HOME="${ANDROID_HOME}/ndk/${ANDROID_NDK_VERSION}"
           export ANDROID_NDK_ROOT="${ANDROID_NDK_HOME}"
           # All net tests (LinkParser, SingBoxConfig, XrayConfig, EngineDispatcher)
-          # + the dump tests that emit configs for the check steps below.
-          ./gradlew :sharedUI:jvmTest --tests "org.olcbox.app.net.*" --stacktrace
+          # + the dump tests that emit configs for the check steps below. Also
+          # compile androidMain so the Android controllers are verified, and jvm.
+          ./gradlew :sharedUI:jvmTest --tests "org.olcbox.app.net.*" \
+            :sharedUI:compileReleaseKotlinAndroid :desktopApp:compileKotlin --stacktrace
           echo "--- sing-box configs ---"
           for f in sharedUI/build/singbox-configs/*.json; do echo "== $f =="; cat "$f"; echo; done
           echo "--- xray configs ---"
