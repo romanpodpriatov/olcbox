@@ -13,6 +13,8 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.encodeToJsonElement
+import org.olcbox.app.net.LinkParser
+import org.olcbox.app.net.LocationKind
 
 @Serializable
 data class LocationConfig(
@@ -25,7 +27,11 @@ data class LocationConfig(
     @SerialName("vp8_fps")
     val vp8Fps: Int = DEFAULT_VP8_FPS,
     @SerialName("vp8_batch")
-    val vp8Batch: Int = DEFAULT_VP8_BATCH
+    val vp8Batch: Int = DEFAULT_VP8_BATCH,
+    @SerialName("kind")
+    val kind: LocationKind = LocationKind.Olcrtc,
+    @SerialName("raw_link")
+    val rawLink: String? = null
 ) {
     fun normalized(): LocationConfig {
         val provider = normalizeProvider(bypassProvider)
@@ -41,7 +47,11 @@ data class LocationConfig(
         )
     }
 
-    fun isComplete(): Boolean = id.isNotBlank() && key.isNotBlank()
+    fun isComplete(): Boolean = when (kind) {
+        LocationKind.Olcrtc -> id.isNotBlank() && key.isNotBlank()
+        LocationKind.Vless, LocationKind.Hysteria2 ->
+            rawLink?.let { LinkParser.parse(it) != null } ?: false
+    }
 
     fun displayName(): String = name.ifBlank { id }
 

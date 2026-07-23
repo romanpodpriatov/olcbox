@@ -728,6 +728,28 @@ class LocationsRepositoryImplTest {
         assertEquals("feedfacefeedface", loc.key)
     }
 
+    @Test
+    fun oldBundleWithoutKindDeserializesAsOlcrtc() {
+        val json = """{"name":"X","id":"room","key":"k","bypass_provider":"telemost","transport":"vp8channel"}"""
+        val cfg = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+            .decodeFromString(LocationConfig.serializer(), json)
+        assertEquals(org.olcbox.app.net.LocationKind.Olcrtc, cfg.kind)
+        assertEquals(null, cfg.rawLink)
+        assertTrue(cfg.isComplete())
+    }
+
+    @Test
+    fun vlessKindNeedsParseableRawLink() {
+        val ok = LocationConfig(
+            name = "DE",
+            kind = org.olcbox.app.net.LocationKind.Vless,
+            rawLink = "vless://u@1.2.3.4:443?security=reality&pbk=P&sid=s&sni=x#DE"
+        )
+        assertTrue(ok.isComplete())
+        val bad = ok.copy(rawLink = "garbage")
+        assertTrue(!bad.isComplete())
+    }
+
     private class FakeLocationsDataSource(
         var stored: LocationBundleV4? = null,
         private val legacy: List<Pair<String, String>> = emptyList(),

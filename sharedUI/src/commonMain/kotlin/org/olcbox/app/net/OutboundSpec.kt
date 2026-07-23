@@ -1,5 +1,8 @@
 package org.olcbox.app.net
 
+import kotlinx.serialization.Serializable
+
+@Serializable
 enum class LocationKind { Olcrtc, Vless, Hysteria2 }
 
 sealed interface TransportSpec {
