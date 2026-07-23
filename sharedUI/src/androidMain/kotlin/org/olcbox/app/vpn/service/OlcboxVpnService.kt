@@ -42,6 +42,14 @@ import org.olcbox.app.data.datasource.LocationsRepositoryImpl
 import org.olcbox.app.data.identity.PersistentDeviceIdentityProvider
 import org.olcbox.app.data.model.LocationConfig
 import org.olcbox.app.data.repository.LocationsRepository
+import org.olcbox.app.net.AndroidSingBoxController
+import org.olcbox.app.net.AndroidXrayController
+import org.olcbox.app.net.LinkParser
+import org.olcbox.app.net.LocationKind
+import org.olcbox.app.net.OutboundSpec
+import org.olcbox.app.net.SingBoxConfig
+import org.olcbox.app.net.TransportSpec
+import org.olcbox.app.net.XrayConfig
 import org.olcbox.app.vpn.AndroidConnectionMode
 import org.olcbox.app.vpn.AndroidSocksProxySettings
 import org.olcbox.app.vpn.AndroidSplitTunnelMode
@@ -126,6 +134,15 @@ class OlcboxVpnService : VpnService() {
     private var splitTunnelProxyApps = emptySet<String>()
     private var splitTunnelBypassApps = emptySet<String>()
     private var socksProxy: AuthenticatedSocksProxy? = null
+
+    // Unified client: sing-box / Xray cores for vless/hy2/xhttp locations. Exec'd
+    // subprocesses (this VpnService is a Context). The app's UID already bypasses
+    // the tun (addDisallowedApp(self) in applySplitTunneling), so a core's own
+    // sockets don't loop back through the tunnel. `activeCorePort` is the SOCKS
+    // port the hev bridge targets when a core is active (null = olcrtc default).
+    private val singBoxCore by lazy { AndroidSingBoxController(this) }
+    private val xrayCore by lazy { AndroidXrayController(this) }
+    private var activeCorePort: Int? = null
 
     private data class StartOptions(
         val connectionMode: AndroidConnectionMode,
@@ -475,7 +492,7 @@ class OlcboxVpnService : VpnService() {
         coroutineContext.ensureActive()
         if (requestedGeneration != generation) return
 
-        if (startMobile(location, upstream, requestedGeneration, setErrorOnFailure = false)) {
+        if (startTransport(location, upstream, requestedGeneration, setErrorOnFailure = false)) {
             setStatus(VpnStatus.Connected)
             resetRecoveryState()
             updateNotification(connectedNotificationText())
@@ -515,7 +532,7 @@ class OlcboxVpnService : VpnService() {
         }
         updateUnderlyingNetwork(upstream)
 
-        if (!startMobile(location, upstream, requestedGeneration, setErrorOnFailure = !isMigration)) {
+        if (!startTransport(location, upstream, requestedGeneration, setErrorOnFailure = !isMigration)) {
             if (isMigration) {
                 updateUnderlyingNetwork(null)
                 setStatus(VpnStatus.Reconnecting)
@@ -564,6 +581,83 @@ class OlcboxVpnService : VpnService() {
         updateNotification(connectedNotificationText())
         addLog("VPN tunnel established")
         startWatchdog()
+    }
+
+    /**
+     * Start the transport for [location], branching on its kind: olcrtc uses the
+     * existing [startMobile] path (unchanged); vless/hysteria2/xhttp start a
+     * sing-box / Xray core subprocess via [startCore]. Both leave the hev bridge
+     * pointed at the right SOCKS port (via [activeCorePort]).
+     */
+    private suspend fun startTransport(
+        location: LocationConfig,
+        upstream: Network,
+        requestedGeneration: Long,
+        setErrorOnFailure: Boolean
+    ): Boolean {
+        return if (location.kind == LocationKind.Olcrtc) {
+            activeCorePort = null
+            startMobile(location, upstream, requestedGeneration, setErrorOnFailure)
+        } else {
+            startCore(location, setErrorOnFailure)
+        }
+    }
+
+    /** Start a sing-box (reality/hy2) or Xray (xhttp) core on the core SOCKS port. */
+    private suspend fun startCore(location: LocationConfig, setErrorOnFailure: Boolean): Boolean {
+        val port = SingBoxConfig.SINGBOX_SOCKS_PORT
+        return try {
+            val raw = location.rawLink ?: error("core location has no link")
+            val spec = LinkParser.parse(raw) ?: error("unparseable core link")
+            stopCoreProcesses()
+            waitForSocksPortReleased(port, SOCKS_RELEASE_QUICK_TIMEOUT_MS)
+            val label: String
+            if (spec is OutboundSpec.Vless && spec.transport is TransportSpec.Xhttp) {
+                xrayCore.start(XrayConfig.buildXhttp(spec))
+                label = "Xray/xhttp"
+            } else {
+                singBoxCore.start(SingBoxConfig.build(spec))
+                label = "sing-box/${location.kind}"
+            }
+            activeCorePort = port
+            if (!waitForSocksPortOpen(port, MOBILE_READY_TIMEOUT_MS)) {
+                error("$label SOCKS not ready on $port")
+            }
+            coroutineContext.ensureActive()
+            addLog("$label ready on $socksListenHost:$port")
+            true
+        } catch (e: CancellationException) {
+            withContext(NonCancellable) {
+                addLog("core start canceled")
+                stopCoreProcesses()
+            }
+            throw e
+        } catch (e: Exception) {
+            val msg = e.message ?: "Core transport failed"
+            addLog("core start failed: $msg")
+            stopCoreProcesses()
+            if (setErrorOnFailure) {
+                setStatus(VpnStatus.Error(msg))
+                updateNotification("Connection failed")
+            }
+            false
+        }
+    }
+
+    private fun stopCoreProcesses() {
+        singBoxCore.stopNow()
+        xrayCore.stopNow()
+        activeCorePort = null
+    }
+
+    /** Poll until the given local SOCKS port accepts connections, or timeout. */
+    private suspend fun waitForSocksPortOpen(port: Int, timeoutMs: Long): Boolean {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline) {
+            if (isLocalSocksPortOpen(port)) return true
+            delay(SOCKS_RELEASE_POLL_MS)
+        }
+        return isLocalSocksPortOpen(port)
     }
 
     private suspend fun startMobile(
@@ -807,7 +901,7 @@ class OlcboxVpnService : VpnService() {
 
             socks5:
               address: ${socksConnectHost()}
-              port: $socksListenPort
+              port: ${activeCorePort ?: socksListenPort}
               udp: 'tcp'
               pipeline: false
               username: '$socksUsername'
@@ -1009,6 +1103,8 @@ class OlcboxVpnService : VpnService() {
         val provider = lastMobileProvider
         val wasRunning = Mobile.isRunning()
         runCatching { Mobile.stop() }
+        // Also tear down any active sing-box / Xray core (no-op if none running).
+        runCatching { stopCoreProcesses() }
         if (wasRunning && provider == LocationConfig.PROVIDER_JITSI) {
             lastJitsiStopCompletedAtMs = System.currentTimeMillis()
         }

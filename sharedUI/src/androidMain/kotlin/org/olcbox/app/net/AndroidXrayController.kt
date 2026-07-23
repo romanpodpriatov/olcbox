@@ -16,5 +16,7 @@ class AndroidXrayController(context: Context) : XrayController {
 
     override suspend fun start(configJson: String) = proc.start(configJson)
     override suspend fun stop() = proc.stop()
+    /** Non-suspend stop for the VpnService stop paths (which are not coroutines). */
+    fun stopNow() = proc.stop()
     fun isRunning(): Boolean = proc.isRunning()
 }
