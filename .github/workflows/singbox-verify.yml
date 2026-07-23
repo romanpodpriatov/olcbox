@@ -170,8 +170,9 @@ jobs:
                   "private_key": "$priv", "short_id": [ "ab12cd34" ] } } } ],
             "outbounds": [ { "type": "direct" } ] }
           JSON
-          # our builder's config, patched with the real key + local server port
-          jq --arg pub "$pub" '.outbounds[0].server_port=8443 | .outbounds[0].tls.reality.public_key=$pub' \
+          # our builder's config, patched with the real key + local server port.
+          # Also drop packet_encoding for the handshake probe (see below).
+          jq --arg pub "$pub" 'del(.outbounds[0].packet_encoding) | .outbounds[0].server_port=8443 | .outbounds[0].tls.reality.public_key=$pub' \
             sharedUI/build/singbox-configs/vless-reality.json > /tmp/reality-client.json
           echo "--- client (from our builder, key-patched) ---"; cat /tmp/reality-client.json
           sing-box check -c /tmp/reality-server.json
