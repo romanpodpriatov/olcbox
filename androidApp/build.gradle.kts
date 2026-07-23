@@ -127,3 +127,54 @@ dependencies {
     implementation(libs.androidx.activityCompose)
     implementation(libs.androidx.datastore.preferences)
 }
+
+// --- Unified-client core binaries (arm64-v8a) ------------------------------
+// sing-box + Xray are exec'd from nativeLibraryDir (v2rayNG pattern): packaged
+// as lib*.so in jniLibs, extracted by useLegacyPackaging. Only arm64-v8a is
+// bundled (Xray publishes no armv7 android binary; armv7 devices keep
+// reality/hy2/olcrtc). Downloaded at build time from the pinned releases.
+abstract class DownloadCoreTask : DefaultTask() {
+    @get:Input abstract val sourceUrl: Property<String>
+    @get:OutputFile abstract val outputFile: RegularFileProperty
+    @TaskAction fun run() {
+        val out = outputFile.get().asFile
+        out.parentFile.mkdirs()
+        java.net.URI(sourceUrl.get()).toURL().openStream().use { i ->
+            out.outputStream().use { o -> i.copyTo(o) }
+        }
+    }
+}
+
+val singboxCoreVersion = "1.11.15"
+val xrayCoreVersion = "25.3.6"
+val coreJniDir = layout.projectDirectory.dir("jniLibs/arm64-v8a")
+
+val downloadSingboxArm64 by tasks.registering(DownloadCoreTask::class) {
+    sourceUrl.set("https://github.com/SagerNet/sing-box/releases/download/v$singboxCoreVersion/sing-box-$singboxCoreVersion-android-arm64.tar.gz")
+    outputFile.set(layout.buildDirectory.file("cores/singbox-android-arm64.tar.gz"))
+}
+val placeSingboxCore by tasks.registering(Copy::class) {
+    dependsOn(downloadSingboxArm64)
+    from({ tarTree(downloadSingboxArm64.get().outputFile.asFile) }) {
+        include("**/sing-box")
+        eachFile { path = "libsingboxcore.so" }
+    }
+    into(coreJniDir)
+    includeEmptyDirs = false
+}
+
+val downloadXrayArm64 by tasks.registering(DownloadCoreTask::class) {
+    sourceUrl.set("https://github.com/XTLS/Xray-core/releases/download/v$xrayCoreVersion/Xray-android-arm64-v8a.zip")
+    outputFile.set(layout.buildDirectory.file("cores/xray-android-arm64.zip"))
+}
+val placeXrayCore by tasks.registering(Copy::class) {
+    dependsOn(downloadXrayArm64)
+    from({ zipTree(downloadXrayArm64.get().outputFile.asFile) }) {
+        include("xray")
+        eachFile { path = "libxraycore.so" }
+    }
+    into(coreJniDir)
+    includeEmptyDirs = false
+}
+
+tasks.named("preBuild") { dependsOn(placeSingboxCore, placeXrayCore) }

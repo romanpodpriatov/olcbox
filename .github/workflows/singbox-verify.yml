@@ -104,13 +104,21 @@ jobs:
           export ANDROID_NDK_HOME="${ANDROID_HOME}/ndk/${ANDROID_NDK_VERSION}"
           export ANDROID_NDK_ROOT="${ANDROID_NDK_HOME}"
           gomobile init
-      - name: Assemble android (compiles the controllers)
+      - name: Assemble android (compiles controllers + bundles cores)
         working-directory: olcbox
         run: |
           export OLCRTC_REPO="${{ github.workspace }}/olcrtc"
           export ANDROID_NDK_HOME="${ANDROID_HOME}/ndk/${ANDROID_NDK_VERSION}"
           export ANDROID_NDK_ROOT="${ANDROID_NDK_HOME}"
           ./gradlew :androidApp:assembleDebug --stacktrace
+      - name: Verify core binaries packaged in the APK
+        working-directory: olcbox
+        run: |
+          apk=$(find androidApp/build/outputs/apk -name '*.apk' | head -1)
+          echo "APK: $apk"
+          unzip -l "$apk" | grep -E 'lib/arm64-v8a/(libsingboxcore|libxraycore)\.so' || \
+            { echo "core binaries missing from APK"; exit 1; }
+          echo "sing-box + xray cores packaged OK"
 
   config-check:
     name: sing-box config schema check
