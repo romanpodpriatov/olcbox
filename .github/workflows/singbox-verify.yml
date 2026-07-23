@@ -122,3 +122,28 @@ jobs:
       - name: xray test vless-xhttp
         working-directory: olcbox
         run: ${{ github.workspace }}/xray-bin/xray run -c sharedUI/build/xray-configs/vless-xhttp.json -test
+
+      # End-to-end tunnel proof for the olcrtc-socks chain: a backing SOCKS server
+      # stands in for the olcrtc engine (:10808); our generated olcrtc-socks config
+      # chains :10809 → :10808 → direct. curling through :10809 proves our config
+      # actually carries traffic, not just that it's schema-valid.
+      - name: tunnel — olcrtc-socks chain
+        working-directory: olcbox
+        run: |
+          set -e
+          cat > /tmp/backing-socks.json <<'JSON'
+          { "inbounds": [ { "type": "socks", "listen": "127.0.0.1", "listen_port": 10808 } ],
+            "outbounds": [ { "type": "direct" } ] }
+          JSON
+          echo "start backing socks (stands in for olcrtc engine)"
+          sing-box run -c /tmp/backing-socks.json &
+          BACK=$!
+          echo "start our generated olcrtc-socks config"
+          sing-box run -c sharedUI/build/singbox-configs/olcrtc-socks.json &
+          CLIENT=$!
+          sleep 3
+          echo "curl through the chain (:10809 → :10808 → direct)"
+          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 20 --socks5-hostname 127.0.0.1:10809 http://example.com)
+          echo "HTTP via tunnel: $code"
+          kill $CLIENT $BACK 2>/dev/null || true
+          [ "$code" = "200" ]
