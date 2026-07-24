@@ -34,9 +34,13 @@ sealed interface OutboundSpec {
         override val port: Int,
         val sni: String,
         val obfsPassword: String?, // Salamander
-        /** Operator-published certificate fingerprint; set when the cert is self-signed. */
-        val certPinSha256: String? = null,
         val insecure: Boolean,
         override val tag: String,
+        /**
+         * Operator-published certificate fingerprint, present when the server runs a
+         * self-signed certificate. Last and defaulted so existing positional
+         * construction keeps compiling.
+         */
+        val certPinSha256: String? = null,
     ) : OutboundSpec
 }
