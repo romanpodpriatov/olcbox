@@ -67,6 +67,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.ime
 import org.olcbox.app.data.model.LocationConfig
 import org.olcbox.app.ui.components.PingButton
+import org.olcbox.app.ui.components.kit.PkSectionLabel
 import org.olcbox.app.ui.features.home.HomeScreenViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -274,11 +275,7 @@ private fun SectionTitle(
     subtitle: String? = null
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold
-        )
+        PkSectionLabel(title)
         if (subtitle != null) {
             Spacer(modifier = Modifier.height(2.dp))
             Text(

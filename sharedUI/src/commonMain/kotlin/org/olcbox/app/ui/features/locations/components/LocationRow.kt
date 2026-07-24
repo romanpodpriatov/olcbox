@@ -45,6 +45,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.olcbox.app.data.model.LocationConfig
 import org.olcbox.app.ui.features.locations.LocationItem
+import org.olcbox.app.ui.theme.LocalPkPalette
 import org.olcbox.app.util.parseEmojiAndName
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -61,7 +62,7 @@ fun LocationRow(
 ) {
     val bgColor by animateColorAsState(
         targetValue = if (isSelected) {
-            MaterialTheme.colorScheme.surfaceContainerHigh
+            MaterialTheme.colorScheme.tertiaryContainer
         } else {
             MaterialTheme.colorScheme.surfaceContainer
         },
@@ -69,7 +70,7 @@ fun LocationRow(
     )
     val borderColor by animateColorAsState(
         targetValue = if (isSelected) {
-            MaterialTheme.colorScheme.primary
+            MaterialTheme.colorScheme.tertiary
         } else {
             MaterialTheme.colorScheme.outlineVariant
         },
@@ -111,8 +112,8 @@ fun LocationRow(
             Text(
                 text = cleanName,
                 color = textColor,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Medium
+                style = MaterialTheme.typography.labelLarge,
+                fontSize = 15.sp
             )
 
             Text(
@@ -130,11 +131,15 @@ fun LocationRow(
             }
 
             pingMs != null -> {
+                val pk = LocalPkPalette.current
                 Text(
                     text = "$pingMs ms",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    style = MaterialTheme.typography.labelMedium,
+                    color = when {
+                        pingMs < 150 -> pk.accent
+                        pingMs < 400 -> pk.accent2
+                        else -> pk.danger
+                    }
                 )
             }
 
@@ -201,7 +206,7 @@ private fun LocationSelectionIndicator(isSelected: Boolean) {
         Icon(
             imageVector = Icons.Rounded.CheckCircle,
             contentDescription = "Selected location",
-            tint = MaterialTheme.colorScheme.primary,
+            tint = MaterialTheme.colorScheme.tertiary,
             modifier = Modifier.size(24.dp)
         )
     } else {

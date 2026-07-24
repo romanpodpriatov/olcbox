@@ -30,6 +30,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import org.olcbox.app.ui.components.kit.PkSectionLabel
 import org.olcbox.app.ui.features.locations.LocationItem
 import org.olcbox.app.ui.features.locations.PingsState
 import org.olcbox.app.ui.features.locations.components.LocationRow
@@ -203,13 +204,9 @@ private fun RelaySetupCard(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        Text(
-            text = "Add relay setup",
-            style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.padding(start = 4.dp)
-        )
+        Box(modifier = Modifier.padding(start = 4.dp)) {
+            PkSectionLabel("Add relay setup")
+        }
 
         SetupActionRow(
             title = "Add subscription",
@@ -316,13 +313,9 @@ private fun LocationGroupHeader(
     title: String,
     modifier: Modifier = Modifier
 ) {
-    Text(
-        text = title,
-        style = MaterialTheme.typography.titleSmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        fontWeight = FontWeight.SemiBold,
-        modifier = modifier.padding(top = 2.dp, start = 4.dp)
-    )
+    Box(modifier = modifier.padding(top = 2.dp, start = 4.dp)) {
+        PkSectionLabel(title)
+    }
 }
 
 @Composable
