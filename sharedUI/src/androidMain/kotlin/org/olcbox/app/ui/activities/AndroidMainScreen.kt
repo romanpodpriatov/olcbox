@@ -401,7 +401,7 @@ fun AndroidMainScreen(
         )
     }
 
-    if (isAppSettingsOpen && AdminState.configuratorVisible) {
+    if (isAppSettingsOpen) {
         AppSettingsSheet(
             initialRoute = appSettingsInitialRoute,
             selectedMode = connectionMode,
@@ -454,6 +454,17 @@ fun AndroidMainScreen(
                         Toast.makeText(
                             context,
                             if (updatedCount > 0) "Subscription updated" else "Subscription not updated",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                }
+            },
+            onSubscriptionDeleteClick = { url ->
+                viewModel.deleteSubscription(url) { removed ->
+                    reloadLocationsAfterImport {
+                        Toast.makeText(
+                            context,
+                            if (removed > 0) "Subscription removed" else "Subscription not found",
                             Toast.LENGTH_SHORT
                         ).show()
                     }

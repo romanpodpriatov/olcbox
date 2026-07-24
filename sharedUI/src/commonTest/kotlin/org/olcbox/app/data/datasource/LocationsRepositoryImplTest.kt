@@ -766,6 +766,86 @@ class LocationsRepositoryImplTest {
         assertEquals(1, locs.count { it.kind == org.olcbox.app.net.LocationKind.Hysteria2 })
     }
 
+    // ---- deleteSubscription ------------------------------------------------
+    // Removing a subscription must take exactly its own locations with it, leave
+    // manually added ones alone, and never leave the bundle pointing at a location
+    // that no longer exists.
+
+    private fun subEntry(storageId: String, subscriptionUrl: String?) = LocationEntry.from(
+        storageId = storageId,
+        location = LocationConfig(
+            name = storageId,
+            id = "room-$storageId",
+            key = "k".repeat(64)
+        ),
+        subscriptionUrl = subscriptionUrl
+    )
+
+    private fun subSource(active: String?, vararg entries: LocationEntry) = FakeLocationsDataSource(
+        LocationBundleV4(activeLocationId = active, locations = entries.toList())
+    )
+
+    @Test
+    fun deleteSubscriptionRemovesOnlyThatSubscription() = runTest {
+        val subA = "https://proofkit.org/sub/aaa"
+        val subB = "https://proofkit.org/sub/bbb"
+        val source = subSource("a1", subEntry("a1", subA), subEntry("a2", subA), subEntry("b1", subB))
+        val repo = LocationsRepositoryImpl(source)
+
+        assertEquals(2, repo.deleteSubscription(subA))
+        assertEquals(listOf("b1"), repo.getAllLocations().map { it.storageId })
+    }
+
+    @Test
+    fun deleteSubscriptionKeepsManuallyAddedLocations() = runTest {
+        val subA = "https://proofkit.org/sub/aaa"
+        val source = subSource("manual", subEntry("manual", null), subEntry("a1", subA))
+        val repo = LocationsRepositoryImpl(source)
+
+        assertEquals(1, repo.deleteSubscription(subA))
+        assertEquals(listOf("manual"), repo.getAllLocations().map { it.storageId })
+    }
+
+    @Test
+    fun deleteSubscriptionRepointsActiveLocation() = runTest {
+        val subA = "https://proofkit.org/sub/aaa"
+        val subB = "https://proofkit.org/sub/bbb"
+        val source = subSource("a1", subEntry("a1", subA), subEntry("b1", subB))
+        val repo = LocationsRepositoryImpl(source)
+
+        repo.deleteSubscription(subA)
+
+        assertEquals("b1", repo.getActiveLocationId())
+    }
+
+    @Test
+    fun deleteSubscriptionClearsActiveWhenNothingRemains() = runTest {
+        val subA = "https://proofkit.org/sub/aaa"
+        val repo = LocationsRepositoryImpl(subSource("a1", subEntry("a1", subA)))
+
+        assertEquals(1, repo.deleteSubscription(subA))
+        assertTrue(repo.getAllLocations().isEmpty())
+        assertNull(repo.getActiveLocationId())
+    }
+
+    @Test
+    fun deleteSubscriptionTrimsTheUrl() = runTest {
+        val subA = "https://proofkit.org/sub/aaa"
+        val repo = LocationsRepositoryImpl(subSource("a1", subEntry("a1", subA)))
+
+        assertEquals(1, repo.deleteSubscription("  $subA  "))
+    }
+
+    @Test
+    fun deleteSubscriptionIgnoresUnknownAndBlankUrls() = runTest {
+        val subA = "https://proofkit.org/sub/aaa"
+        val repo = LocationsRepositoryImpl(subSource("a1", subEntry("a1", subA)))
+
+        assertEquals(0, repo.deleteSubscription("https://example.com/other"))
+        assertEquals(0, repo.deleteSubscription("   "))
+        assertEquals(1, repo.getAllLocations().size)
+    }
+
     private class FakeLocationsDataSource(
         var stored: LocationBundleV4? = null,
         private val legacy: List<Pair<String, String>> = emptyList(),

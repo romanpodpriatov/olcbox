@@ -237,7 +237,7 @@ private fun IosApp(
                 onSplitTunnelingClick = {}
             )
 
-            if (isAppSettingsOpen && org.olcbox.app.admin.AdminState.configuratorVisible) {
+            if (isAppSettingsOpen) {
                 ApplicationSettingsSheet(
                     updateSettings = updateSettings,
                     updateStatusText = updateStatusText,
@@ -287,6 +287,15 @@ private fun IosApp(
                                 dependencies.homeViewModel.restartVpnIfRunning()
                                 platformBridge.showMessage(
                                     if (updatedCount > 0) "Subscription updated" else "Subscription not updated"
+                                )
+                            }
+                        }
+                    },
+                    onSubscriptionDeleteClick = { url ->
+                        dependencies.homeViewModel.deleteSubscription(url) { removed ->
+                            reloadLocationsAfterImport {
+                                platformBridge.showMessage(
+                                    if (removed > 0) "Subscription removed" else "Subscription not found"
                                 )
                             }
                         }

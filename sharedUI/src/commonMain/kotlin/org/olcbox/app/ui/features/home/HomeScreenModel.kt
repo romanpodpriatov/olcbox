@@ -308,6 +308,28 @@ class HomeScreenViewModel(
         }
     }
 
+    /**
+     * Removes a subscription and every location it brought in. Stops the tunnel
+     * first when the active location is one of them, otherwise the VPN would keep
+     * running against a config the user just deleted.
+     */
+    fun deleteSubscription(
+        subscriptionUrl: String,
+        onComplete: (removedCount: Int) -> Unit = {}
+    ) {
+        viewModelScope.launch {
+            val activeBelongsToSubscription = locationsRepository.getActiveLocation()
+                ?.subscriptionUrl?.trim() == subscriptionUrl.trim()
+            if (activeBelongsToSubscription && _state.value.isVpnConnected) {
+                vpnManager.stopVpn()
+                _state.update { it.copy(isVpnConnected = false, isVpnLoading = false) }
+            }
+            val removed = locationsRepository.deleteSubscription(subscriptionUrl)
+            loadCurrentConfigNow()
+            onComplete(removed)
+        }
+    }
+
     private fun startSubscriptionAutoRefresh() {
         viewModelScope.launch {
             refreshDueSubscriptionsIfNeeded()

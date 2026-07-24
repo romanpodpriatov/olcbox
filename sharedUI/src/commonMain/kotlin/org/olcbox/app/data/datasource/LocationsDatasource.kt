@@ -364,6 +364,30 @@ class LocationsRepositoryImpl(
         }
     }
 
+    override suspend fun deleteSubscription(subscriptionUrl: String): Int {
+        val normalizedUrl = subscriptionUrl.trim()
+        if (normalizedUrl.isBlank()) return 0
+        return mutationMutex.withLock {
+            val bundle = getBundleUnlocked()
+            val remaining = bundle.locations.filterNot { entry ->
+                entry.subscriptionUrl?.trim() == normalizedUrl
+            }
+            val removed = bundle.locations.size - remaining.size
+            if (removed > 0) {
+                // normalized() re-points activeLocationId at a surviving entry when
+                // the active one belonged to the deleted subscription.
+                saveBundleUnlocked(
+                    bundle.copy(
+                        activeLocationId = bundle.activeLocationId
+                            ?.takeIf { id -> remaining.any { it.storageId == id } },
+                        locations = remaining
+                    )
+                )
+            }
+            removed
+        }
+    }
+
     override suspend fun deleteLocation(storageId: String) {
         mutationMutex.withLock {
             val bundle = getBundleUnlocked()

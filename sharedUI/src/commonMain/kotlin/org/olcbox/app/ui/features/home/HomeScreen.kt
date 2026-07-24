@@ -63,8 +63,9 @@ fun HomeScreen(
     val locations = locationViewModel.locations.toList()
     val hasSubscriptions = locations.any { !it.subscriptionUrl.isNullOrBlank() }
 
-    // Admin mode reveals the hidden configurator UI (gear/settings/custom
-    // location/logs). User mode = pick a location + connect + import only.
+    // Admin mode reveals only the olcRTC plumbing: the per-location editor and
+    // "create custom location". Everything a user legitimately needs — settings,
+    // subscription management, split tunneling, updates, logs — is always visible.
     // Fail-safe: a build with no admin hash shows everything (normal olcbox).
     val admin = AdminState.configuratorVisible
 
@@ -110,8 +111,8 @@ fun HomeScreen(
         topBar = {
             HomeScreenAppBar(
                 onHistoryClick = { isLogsSheetOpen = true },
-                showAppSettingsButton = showAppSettingsButton && admin,
-                showHistoryButton = admin,
+                showAppSettingsButton = showAppSettingsButton,
+                showHistoryButton = true,
                 onAppSettingsClick = onAppSettingsClick,
                 showSplitTunnelingButton = showSplitTunnelingButton,
                 onSplitTunnelingClick = onSplitTunnelingClick,

@@ -262,12 +262,10 @@ fun main(args: Array<String>) = application {
                     dependencies.homeViewModel.ToggleVpn()
                 }
             )
-            if (org.olcbox.app.admin.AdminState.configuratorVisible) {
-                Item("Settings", onClick = {
-                    isWindowVisible = true
-                    showDesktopSettings = true
-                })
-            }
+            Item("Settings", onClick = {
+                isWindowVisible = true
+                showDesktopSettings = true
+            })
             Separator()
             Item("Quit", onClick = {
                 dependencies.close()
@@ -360,7 +358,7 @@ fun main(args: Array<String>) = application {
                     onSplitTunnelingClick = {}
                 )
 
-                if (showDesktopSettings && org.olcbox.app.admin.AdminState.configuratorVisible) {
+                if (showDesktopSettings) {
                     ApplicationSettingsSheet(
                         updateSettings = updateSettings,
                         updateStatusText = updateMessage,
@@ -417,6 +415,17 @@ fun main(args: Array<String>) = application {
                                         "Subscription updated"
                                     } else {
                                         "Subscription not updated"
+                                    }
+                                }
+                            }
+                        },
+                        onSubscriptionDeleteClick = { url ->
+                            dependencies.homeViewModel.deleteSubscription(url) { removed ->
+                                reloadLocationsAfterImport {
+                                    updateMessage = if (removed > 0) {
+                                        "Subscription removed"
+                                    } else {
+                                        "Subscription not found"
                                     }
                                 }
                             }

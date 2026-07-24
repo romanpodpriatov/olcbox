@@ -18,6 +18,13 @@ interface LocationsRepository {
     ): Int
     suspend fun refreshDueSubscriptions(subscriptionProxy: SubscriptionFetchProxy? = null): Int
     suspend fun setSubscriptionUpdateInterval(subscriptionUrl: String, hours: Int)
+
+    /**
+     * Removes every location that came from [subscriptionUrl]. Returns how many
+     * were removed. Manually added locations are matched by the same trimmed-URL
+     * rule the refresh path uses, so they are never touched.
+     */
+    suspend fun deleteSubscription(subscriptionUrl: String): Int
     suspend fun saveLocation(storageId: String, location: LocationConfig)
     suspend fun loadLocation(storageId: String): LocationConfig?
     suspend fun deleteLocation(storageId: String)

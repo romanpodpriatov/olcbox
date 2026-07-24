@@ -42,6 +42,7 @@ import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Key
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Public
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -72,6 +73,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.olcbox.app.CurrentAppInfo
+import org.olcbox.app.admin.AdminState
 import org.olcbox.app.data.share.SubscriptionShareItem
 import org.olcbox.app.ui.components.kit.PkSectionLabel
 import org.olcbox.app.ui.components.kit.pkVersionLine
@@ -120,6 +122,7 @@ fun ApplicationSettingsSheet(
     onLaterUpdateClick: (AppUpdateInfo) -> Unit,
     onSubscriptionShareClick: (String) -> Unit,
     onSubscriptionRefreshClick: (String) -> Unit,
+    onSubscriptionDeleteClick: (String) -> Unit = {},
     onSocksProxySettingsSaved: (String, String, Int) -> Unit = { _, _, _ -> },
     onSocksProxyPasswordRegenerated: () -> Unit = {}
 ) {
@@ -199,7 +202,8 @@ fun ApplicationSettingsSheet(
                     onBack = { route = SharedSettingsRoute.Hub },
                     onCopyConfigClick = onCopyConfigClick,
                     onShareClick = onSubscriptionShareClick,
-                    onRefreshClick = onSubscriptionRefreshClick
+                    onRefreshClick = onSubscriptionRefreshClick,
+                    onDeleteClick = onSubscriptionDeleteClick
                 )
 
                 SharedSettingsRoute.Updates -> SharedUpdatesSettingsContent(
@@ -320,7 +324,8 @@ private fun SharedConnectionSettingsContent(
                 onClick = onConnectionModeClick
             )
 
-            if (socksProxySettings != null) {
+            // Editing the local proxy credentials/port is plumbing: admin-only.
+            if (socksProxySettings != null && AdminState.configuratorVisible) {
                 SharedNavigationRow(
                     title = "SOCKS5 Proxy",
                     value = "${socksProxySettings.host}:${socksProxySettings.port}",
@@ -640,7 +645,8 @@ private fun SharedSubscriptionsSettingsContent(
     onBack: () -> Unit,
     onCopyConfigClick: () -> Unit,
     onShareClick: (String) -> Unit,
-    onRefreshClick: (String) -> Unit
+    onRefreshClick: (String) -> Unit,
+    onDeleteClick: (String) -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -686,7 +692,8 @@ private fun SharedSubscriptionsSettingsContent(
                     SharedSubscriptionRow(
                         item = item,
                         onShareClick = { onShareClick(item.url) },
-                        onRefreshClick = { onRefreshClick(item.url) }
+                        onRefreshClick = { onRefreshClick(item.url) },
+                        onDeleteClick = { onDeleteClick(item.url) }
                     )
                 }
             }
@@ -794,8 +801,35 @@ private fun SharedUpdateOfferCard(
 private fun SharedSubscriptionRow(
     item: SubscriptionShareItem,
     onShareClick: () -> Unit,
-    onRefreshClick: () -> Unit
+    onRefreshClick: () -> Unit,
+    onDeleteClick: () -> Unit
 ) {
+    var confirmDelete by remember { mutableStateOf(false) }
+
+    if (confirmDelete) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { Text("Remove subscription?") },
+            text = {
+                Text(
+                    "${item.name} and its ${item.locationCount} location(s) will be " +
+                        "removed from this device. You can add the subscription again later."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmDelete = false
+                    onDeleteClick()
+                }) {
+                    Text("Remove", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDelete = false }) { Text("Cancel") }
+            }
+        )
+    }
+
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(18.dp),
@@ -834,6 +868,9 @@ private fun SharedSubscriptionRow(
                 }
                 TextButton(onClick = onRefreshClick) {
                     Text("Refresh")
+                }
+                TextButton(onClick = { confirmDelete = true }) {
+                    Text("Remove", color = MaterialTheme.colorScheme.error)
                 }
             }
         }
