@@ -21,11 +21,11 @@ class AndroidLogExporter(private val context: Context) : LogExporter {
         return runCatching {
             val intent = Intent(Intent.ACTION_SEND).apply {
                 type = "text/plain"
-                putExtra(Intent.EXTRA_SUBJECT, "Olcbox logs")
+                putExtra(Intent.EXTRA_SUBJECT, "ProofKit logs")
                 putExtra(Intent.EXTRA_TEXT, content)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
-            val chooser = Intent.createChooser(intent, "Share Olcbox logs")
+            val chooser = Intent.createChooser(intent, "Share ProofKit logs")
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             context.startActivity(chooser)
             "Logs share sheet opened"

@@ -185,7 +185,7 @@ class HomeScreenViewModel(
         }
     }
 
-    fun suggestedLogsFileName(): String = "olcbox-logs.txt"
+    fun suggestedLogsFileName(): String = "proofkit-logs.txt"
 
     fun onSaveLogsToFile(
         target: Any,
@@ -264,7 +264,7 @@ class HomeScreenViewModel(
                     )
                 }
                 if (!imported) {
-                    onError("No valid Olcbox config found")
+                    onError("No valid ProofKit config found")
                     return@launch
                 }
                 loadCurrentConfigNow()
@@ -331,7 +331,7 @@ class HomeScreenViewModel(
 
     private fun buildLogsExport(logs: List<String>): String {
         return buildString {
-            appendLine("Olcbox application logs")
+            appendLine("ProofKit application logs")
             appendLine("Entries: ${logs.size}")
             appendLine()
             logs.forEachIndexed { index, line ->

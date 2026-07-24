@@ -599,7 +599,7 @@ private fun SplitTunnelingSettingsContent(
         when (settings.mode) {
             AndroidSplitTunnelMode.AllApps -> SplitTunnelNoListCard()
             AndroidSplitTunnelMode.ProxySelected -> SplitTunnelAppListAction(
-                title = "Apps Using Olcbox",
+                title = "Apps Using ProofKit",
                 value = settings.proxyPackages.activeListValue(requireSelection = true),
                 icon = Icons.Outlined.Shield,
                 enabled = enabled,
@@ -2281,34 +2281,34 @@ private fun AndroidSplitTunnelMode.title(): String {
 
 private fun AndroidSplitTunnelMode.subtitle(settings: AndroidSplitTunnelSettings): String {
     return when (this) {
-        AndroidSplitTunnelMode.AllApps -> "Every app uses Olcbox"
+        AndroidSplitTunnelMode.AllApps -> "Every app uses ProofKit"
         AndroidSplitTunnelMode.ProxySelected -> if (settings.proxyPackages.isEmpty()) {
-            "Choose apps that use Olcbox"
+            "Choose apps that use ProofKit"
         } else {
-            "${appCount(settings.proxyPackages.size)} use Olcbox"
+            "${appCount(settings.proxyPackages.size)} use ProofKit"
         }
 
         AndroidSplitTunnelMode.BypassSelected -> if (settings.bypassPackages.isEmpty()) {
-            "Choose apps that bypass Olcbox"
+            "Choose apps that bypass ProofKit"
         } else {
-            "${appCount(settings.bypassPackages.size)} bypass Olcbox"
+            "${appCount(settings.bypassPackages.size)} bypass ProofKit"
         }
     }
 }
 
 private fun AndroidSplitTunnelMode.statusTitle(settings: AndroidSplitTunnelSettings): String {
     return when (this) {
-        AndroidSplitTunnelMode.AllApps -> "All apps use Olcbox"
+        AndroidSplitTunnelMode.AllApps -> "All apps use ProofKit"
         AndroidSplitTunnelMode.ProxySelected -> if (settings.proxyPackages.isEmpty()) {
             "No apps selected"
         } else {
-            "Only ${appCount(settings.proxyPackages.size)} use Olcbox"
+            "Only ${appCount(settings.proxyPackages.size)} use ProofKit"
         }
 
         AndroidSplitTunnelMode.BypassSelected -> if (settings.bypassPackages.isEmpty()) {
-            "No apps bypass Olcbox"
+            "No apps bypass ProofKit"
         } else {
-            "${appCount(settings.bypassPackages.size)} bypass Olcbox"
+            "${appCount(settings.bypassPackages.size)} bypass ProofKit"
         }
     }
 }
@@ -2321,14 +2321,14 @@ private fun AndroidSplitTunnelMode.icon() = when (this) {
 
 private fun AndroidSplitTunnelList.title(): String {
     return when (this) {
-        AndroidSplitTunnelList.Proxy -> "Apps Using Olcbox"
+        AndroidSplitTunnelList.Proxy -> "Apps Using ProofKit"
         AndroidSplitTunnelList.Bypass -> "Bypassed Apps"
     }
 }
 
 private fun AndroidSplitTunnelList.selectionSubtitle(count: Int): String {
     return when (this) {
-        AndroidSplitTunnelList.Proxy -> "${appCount(count)} use Olcbox"
+        AndroidSplitTunnelList.Proxy -> "${appCount(count)} use ProofKit"
         AndroidSplitTunnelList.Bypass -> "${appCount(count)} bypassed"
     }
 }
