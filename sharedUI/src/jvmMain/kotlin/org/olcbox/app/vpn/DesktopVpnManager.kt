@@ -216,7 +216,15 @@ class DesktopVpnManager private constructor(
             // SOCKS port. The tun/PAC then targets whichever port is active.
             val isOlcrtc = location.kind == org.olcbox.app.net.LocationKind.Olcrtc
             val effectiveSocksPort =
-                if (isOlcrtc) socksSettings.port else allocateCorePort()
+                if (isOlcrtc) {
+                    socksSettings.port
+                } else {
+                    // Stop first: on a reconnect the previous core still holds the
+                    // port, and allocating before that made every restart fall back
+                    // to a random port for no reason.
+                    stopDesktopCores()
+                    allocateCorePort()
+                }
             activeCorePort = if (isOlcrtc) null else effectiveSocksPort
 
             if (isOlcrtc) {
@@ -382,9 +390,15 @@ class DesktopVpnManager private constructor(
      * machine may already hold it, and binding a taken port used to fail the whole
      * connect with a bare "Address already in use".
      */
-    private fun allocateCorePort(): Int {
+    private suspend fun allocateCorePort(): Int {
         val preferred = org.olcbox.app.net.SingBoxConfig.SINGBOX_SOCKS_PORT
-        if (isLocalPortFree(preferred)) return preferred
+        // A core that was just told to stop can hold its listener for a moment;
+        // wait that out before giving up on the predictable port.
+        val deadline = System.currentTimeMillis() + CORE_PORT_RELEASE_TIMEOUT_MS
+        while (System.currentTimeMillis() < deadline) {
+            if (isLocalPortFree(preferred)) return preferred
+            delay(CORE_PORT_RELEASE_POLL_MS)
+        }
         val fallback = runCatching {
             java.net.ServerSocket().use { socket ->
                 socket.bind(java.net.InetSocketAddress("127.0.0.1", 0))
@@ -830,6 +844,9 @@ class DesktopVpnManager private constructor(
     private companion object {
         const val MAX_LOG_ENTRIES = 5_000
         const val CORE_SOCKS_READY_TIMEOUT_MS = 10_000L
+        /** How long a stopped core may keep holding its port before we move on. */
+        const val CORE_PORT_RELEASE_TIMEOUT_MS = 1_500L
+        const val CORE_PORT_RELEASE_POLL_MS = 100L
         const val CORE_SOCKS_POLL_MS = 200L
         const val OLC_READY_TIMEOUT_MS = 25_000L
         const val OLC_STARTUP_STABILITY_MS = 1_500L
