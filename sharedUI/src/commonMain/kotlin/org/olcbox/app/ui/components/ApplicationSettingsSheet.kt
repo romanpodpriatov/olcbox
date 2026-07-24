@@ -75,6 +75,7 @@ import androidx.compose.ui.unit.sp
 import org.olcbox.app.CurrentAppInfo
 import org.olcbox.app.admin.AdminState
 import org.olcbox.app.data.share.SubscriptionShareItem
+import org.olcbox.app.ui.components.kit.pkMaskSubscriptionUrl
 import org.olcbox.app.ui.components.kit.PkSectionLabel
 import org.olcbox.app.ui.components.kit.pkVersionLine
 import org.olcbox.app.ui.features.home.components.LogLines
@@ -849,7 +850,7 @@ private fun SharedSubscriptionRow(
                 overflow = TextOverflow.Ellipsis
             )
             Text(
-                text = item.url,
+                text = pkMaskSubscriptionUrl(item.url),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 12.sp,
                 maxLines = 1,

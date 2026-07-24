@@ -20,4 +20,30 @@ class PkVersionLineTest {
             pkVersionLine(AppInfo(name = "olcbox", version = "v2.0.0"))
         )
     }
+
+    @Test
+    fun masksTheSubscriptionToken() {
+        assertEquals(
+            "https://proofkit.org/sub/c0e79f…17e95",
+            pkMaskSubscriptionUrl(
+                "https://proofkit.org/sub/c0e79fc61f942fe0e7b2032fd273967f4d3b807d1ba11dfd8f9a8d17ad817e95"
+            )
+        )
+    }
+
+    @Test
+    fun maskingKeepsShortPathsReadable() {
+        // nothing secret to hide, and truncating would only make it harder to read
+        assertEquals("https://example.com/sub", pkMaskSubscriptionUrl("https://example.com/sub"))
+    }
+
+    @Test
+    fun maskingHidesQueryParameters() {
+        assertEquals(
+            "https://proofkit.org/sub/c0e79f…17e95?…",
+            pkMaskSubscriptionUrl(
+                "https://proofkit.org/sub/c0e79fc61f942fe0e7b2032fd273967f4d3b807d1ba11dfd8f9a8d17ad817e95?crypt=1"
+            )
+        )
+    }
 }

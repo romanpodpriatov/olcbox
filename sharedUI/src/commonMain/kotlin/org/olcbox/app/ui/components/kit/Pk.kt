@@ -46,6 +46,25 @@ object PkBrand {
     const val siteUrl = "https://proofkit.org"
 }
 
+/**
+ * Hides the secret part of a subscription URL for display: the last path segment
+ * is a bearer token, and anyone glancing at the screen could copy it.
+ *
+ * `https://proofkit.org/sub/c0e79f…17e95` — enough to tell two subscriptions apart,
+ * not enough to reuse one.
+ */
+fun pkMaskSubscriptionUrl(url: String): String {
+    val trimmed = url.trim()
+    val query = trimmed.indexOf('?').takeIf { it >= 0 }
+    val path = query?.let { trimmed.substring(0, it) } ?: trimmed
+    val cut = path.lastIndexOf('/')
+    if (cut < 0 || cut == path.lastIndex) return trimmed
+    val token = path.substring(cut + 1)
+    if (token.length <= 12) return trimmed
+    val masked = token.take(6) + "…" + token.takeLast(5)
+    return path.substring(0, cut + 1) + masked + (query?.let { "?…" } ?: "")
+}
+
 /** Pure so it is unit-testable: "PROOFKIT · v1.0.209 · OLCBOX CORE". */
 fun pkVersionLine(info: AppInfo): String {
     val version = info.version.removePrefix("v")
