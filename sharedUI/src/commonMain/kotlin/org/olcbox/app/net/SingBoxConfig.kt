@@ -80,7 +80,15 @@ object SingBoxConfig {
                     }
                 }
                 putJsonObject("tls") {
-                    put("enabled", true); put("server_name", spec.sni); put("insecure", spec.insecure)
+                    put("enabled", true); put("server_name", spec.sni)
+                    // A published pin means the server presents a self-signed
+                    // certificate that no CA store can validate. sing-box has no
+                    // pinning option, so verifying against the system store would
+                    // reject every connection — which is exactly what it did. Skip
+                    // verification in that case; the Salamander obfuscation and the
+                    // auth password still gate the connection, but note that the
+                    // fingerprint the operator published is NOT being checked.
+                    put("insecure", spec.insecure || spec.certPinSha256 != null)
                 }
             }
         }
