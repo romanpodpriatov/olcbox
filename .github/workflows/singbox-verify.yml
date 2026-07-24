@@ -249,26 +249,31 @@ jobs:
         run: ${{ github.workspace }}/xray-bin/xray run -c sharedUI/build/xray-configs/vless-xhttp.json -test
 
       # End-to-end tunnel proof for the olcrtc-socks chain: a backing SOCKS server
-      # stands in for the olcrtc engine (:10808); our generated olcrtc-socks config
-      # chains :10809 → :10808 → direct. curling through :10809 proves our config
-      # actually carries traffic, not just that it's schema-valid.
+      # stands in for the olcrtc engine; our generated config chains
+      # <inbound> → <backing> → direct, and curling through the inbound proves the
+      # config actually carries traffic, not just that it's schema-valid.
+      # Both ports are read out of the generated config so this follows the Kotlin
+      # constants instead of drifting from them.
       - name: tunnel — olcrtc-socks chain
         working-directory: olcbox
         run: |
           set -e
-          cat > /tmp/backing-socks.json <<'JSON'
-          { "inbounds": [ { "type": "socks", "listen": "127.0.0.1", "listen_port": 10808 } ],
+          CFG=sharedUI/build/singbox-configs/olcrtc-socks.json
+          IN_PORT=$(jq -r '.inbounds[0].listen_port' "$CFG")
+          BACK_PORT=$(jq -r '.outbounds[0].server_port' "$CFG")
+          echo "chain: :$IN_PORT → :$BACK_PORT → direct"
+          cat > /tmp/backing-socks.json <<JSON
+          { "inbounds": [ { "type": "socks", "listen": "127.0.0.1", "listen_port": $BACK_PORT } ],
             "outbounds": [ { "type": "direct" } ] }
           JSON
           echo "start backing socks (stands in for olcrtc engine)"
           sing-box run -c /tmp/backing-socks.json &
           BACK=$!
           echo "start our generated olcrtc-socks config"
-          sing-box run -c sharedUI/build/singbox-configs/olcrtc-socks.json &
+          sing-box run -c "$CFG" &
           CLIENT=$!
           sleep 3
-          echo "curl through the chain (:10809 → :10808 → direct)"
-          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 20 --socks5-hostname 127.0.0.1:10809 http://example.com)
+          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 20 --socks5-hostname 127.0.0.1:$IN_PORT http://example.com)
           echo "HTTP via tunnel: $code"
           kill $CLIENT $BACK 2>/dev/null || true
           [ "$code" = "200" ]
@@ -304,7 +309,8 @@ jobs:
           sing-box run -c /tmp/hy2-client.json &
           CLI=$!
           sleep 3
-          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 25 --socks5-hostname 127.0.0.1:10809 http://example.com)
-          echo "HTTP via hy2 tunnel: $code"
+          IN_PORT=$(jq -r '.inbounds[0].listen_port' /tmp/hy2-client.json)
+          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 25 --socks5-hostname 127.0.0.1:$IN_PORT http://example.com)
+          echo "HTTP via hy2 tunnel (:$IN_PORT): $code"
           kill $CLI $SRV 2>/dev/null || true
           [ "$code" = "200" ]
