@@ -5,8 +5,17 @@ import kotlinx.coroutines.withContext
 import org.olcbox.app.desktop.DesktopOs
 import org.olcbox.app.desktop.DesktopPaths
 
+/** Where system traffic should be sent, in both forms the platforms need. */
+internal data class DesktopProxyTarget(
+    val pacUrl: String,
+    val socksHost: String,
+    val socksPort: Int,
+    val username: String = "",
+    val password: String = ""
+)
+
 internal interface DesktopProxyController {
-    suspend fun enable(pacUrl: String)
+    suspend fun enable(target: DesktopProxyTarget)
     suspend fun restore()
 
     companion object {
@@ -22,7 +31,7 @@ internal interface DesktopProxyController {
 }
 
 internal class UnsupportedProxyController : DesktopProxyController {
-    override suspend fun enable(pacUrl: String) {
+    override suspend fun enable(target: DesktopProxyTarget) {
         error("System proxy mode supports macOS and Windows")
     }
 
@@ -38,12 +47,22 @@ internal data class MacOsAutoProxyState(
 internal class MacOsProxyController : DesktopProxyController {
     private var backup: List<MacOsAutoProxyState>? = null
 
-    override suspend fun enable(pacUrl: String) {
+    /**
+     * Configures the native SOCKS proxy rather than a PAC URL.
+     *
+     * A PAC was installed correctly (scutil confirmed it) and the tunnel carried
+     * traffic when dialled directly, yet the browser still went out untunnelled:
+     * CFNetwork reads the first proxy token in the PAC result and gives up on one it
+     * does not know, and "SOCKS5" is a Chrome/Firefox extension. Setting the SOCKS
+     * proxy directly removes that parsing step from the path entirely — the setting
+     * is unambiguous and takes credentials natively.
+     */
+    override suspend fun enable(target: DesktopProxyTarget) {
         val services = enabledNetworkServices()
         backup = services.map { service ->
             readAutoProxyState(service)
         }
-        enableCommands(services, pacUrl).forEach { runCommand(it) }
+        enableCommands(services, target).forEach { runCommand(it) }
     }
 
     override suspend fun restore() {
@@ -78,18 +97,35 @@ internal class MacOsProxyController : DesktopProxyController {
     }
 
     companion object {
-        fun enableCommands(services: List<String>, pacUrl: String): List<List<String>> {
+        /**
+         * Sets the native SOCKS proxy per service. The PAC is deliberately left off:
+         * having both set makes it ambiguous which one macOS honours, and the PAC is
+         * the one that failed.
+         */
+        fun enableCommands(services: List<String>, target: DesktopProxyTarget): List<List<String>> {
             return services.flatMap { service ->
+                val set = mutableListOf(
+                    "networksetup", "-setsocksfirewallproxy", service,
+                    target.socksHost, target.socksPort.toString()
+                )
+                if (target.username.isNotBlank()) {
+                    set += listOf("on", target.username, target.password)
+                }
                 listOf(
-                    listOf("networksetup", "-setautoproxyurl", service, pacUrl),
-                    listOf("networksetup", "-setautoproxystate", service, "on")
+                    set.toList(),
+                    listOf("networksetup", "-setsocksfirewallproxystate", service, "on"),
+                    listOf("networksetup", "-setautoproxystate", service, "off")
                 )
             }
         }
 
+        /** Turns our SOCKS proxy back off and puts any pre-existing PAC back as it was. */
         fun restoreCommands(states: List<MacOsAutoProxyState>): List<List<String>> {
             return states.flatMap { state ->
-                if (state.enabled && !state.url.isNullOrBlank()) {
+                val off = listOf(
+                    listOf("networksetup", "-setsocksfirewallproxystate", state.service, "off")
+                )
+                off + if (state.enabled && !state.url.isNullOrBlank()) {
                     listOf(
                         listOf("networksetup", "-setautoproxyurl", state.service, state.url),
                         listOf("networksetup", "-setautoproxystate", state.service, "on")
@@ -112,9 +148,11 @@ internal data class WindowsProxyState(
 internal class WindowsProxyController : DesktopProxyController {
     private var backup: WindowsProxyState? = null
 
-    override suspend fun enable(pacUrl: String) {
+    // Windows keeps the PAC path: WinINET parses the result list properly and falls
+    // through unknown tokens, so it was never affected by the macOS problem.
+    override suspend fun enable(target: DesktopProxyTarget) {
         backup = readState()
-        enableCommands(pacUrl).forEach { runCommand(it) }
+        enableCommands(target.pacUrl).forEach { runCommand(it) }
         refreshProxySettings()
     }
 

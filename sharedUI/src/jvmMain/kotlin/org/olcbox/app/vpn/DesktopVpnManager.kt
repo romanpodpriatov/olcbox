@@ -344,7 +344,15 @@ class DesktopVpnManager private constructor(
             socksUsername = socksSettings.username,
             socksPassword = socksSettings.password
         )
-        proxyController.enable(pacServer.url)
+        proxyController.enable(
+            org.olcbox.app.vpn.desktop.DesktopProxyTarget(
+                pacUrl = pacServer.url,
+                socksHost = socksSettings.host,
+                socksPort = socksSettings.port,
+                username = socksSettings.username,
+                password = socksSettings.password
+            )
+        )
 
         if (requestGeneration != generation) {
             throw CancellationException("Desktop start superseded")

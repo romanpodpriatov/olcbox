@@ -187,17 +187,53 @@ class DesktopProxyModeTest {
         }
     }
 
+    /**
+     * macOS sets the SOCKS proxy natively. A PAC was installed correctly and the
+     * tunnel carried traffic when dialled directly, yet the browser still went out
+     * untunnelled — CFNetwork stops at the first proxy token it does not recognise.
+     * Setting SOCKS directly takes that parsing step out of the path, and the PAC is
+     * explicitly turned off so it is never ambiguous which one macOS is honouring.
+     */
     @Test
-    fun macOsProxyCommandsEnableAndRestorePacPerService() {
-        val enable = MacOsProxyController.enableCommands(listOf("Wi-Fi"), "http://127.0.0.1:10809/proxy.pac")
+    fun macOsProxyCommandsSetSocksNativelyAndDisablePac() {
+        val enable = MacOsProxyController.enableCommands(
+            listOf("Wi-Fi"),
+            DesktopProxyTarget(
+                pacUrl = "http://127.0.0.1:10809/proxy.pac",
+                socksHost = "127.0.0.1",
+                socksPort = 10810
+            )
+        )
         assertEquals(
             listOf(
-                listOf("networksetup", "-setautoproxyurl", "Wi-Fi", "http://127.0.0.1:10809/proxy.pac"),
-                listOf("networksetup", "-setautoproxystate", "Wi-Fi", "on")
+                listOf("networksetup", "-setsocksfirewallproxy", "Wi-Fi", "127.0.0.1", "10810"),
+                listOf("networksetup", "-setsocksfirewallproxystate", "Wi-Fi", "on"),
+                listOf("networksetup", "-setautoproxystate", "Wi-Fi", "off")
             ),
             enable
         )
+    }
 
+    @Test
+    fun macOsProxyPassesCredentialsWhenTheSocksNeedsThem() {
+        val enable = MacOsProxyController.enableCommands(
+            listOf("Wi-Fi"),
+            DesktopProxyTarget(
+                pacUrl = "http://127.0.0.1:10809/proxy.pac",
+                socksHost = "127.0.0.1",
+                socksPort = 10808,
+                username = "olcbox",
+                password = "pw"
+            )
+        )
+        assertEquals(
+            listOf("networksetup", "-setsocksfirewallproxy", "Wi-Fi", "127.0.0.1", "10808", "on", "olcbox", "pw"),
+            enable.first()
+        )
+    }
+
+    @Test
+    fun macOsRestoreClearsOurSocksAndPutsBackAnyPreviousPac() {
         val restore = MacOsProxyController.restoreCommands(
             listOf(
                 MacOsAutoProxyState("Wi-Fi", enabled = true, url = "http://old/proxy.pac"),
@@ -206,8 +242,10 @@ class DesktopProxyModeTest {
         )
         assertEquals(
             listOf(
+                listOf("networksetup", "-setsocksfirewallproxystate", "Wi-Fi", "off"),
                 listOf("networksetup", "-setautoproxyurl", "Wi-Fi", "http://old/proxy.pac"),
                 listOf("networksetup", "-setautoproxystate", "Wi-Fi", "on"),
+                listOf("networksetup", "-setsocksfirewallproxystate", "USB", "off"),
                 listOf("networksetup", "-setautoproxystate", "USB", "off")
             ),
             restore
