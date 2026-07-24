@@ -41,6 +41,9 @@ import org.olcbox.app.ui.theme.LocalPkPalette
 object PkBrand {
     const val name = "ProofKit"
     const val tagline = "decentralized VPN · olcrtc / reality / hy2"
+
+    /** Where a user with no subscription is sent to get one. */
+    const val siteUrl = "https://proofkit.org"
 }
 
 /** Pure so it is unit-testable: "PROOFKIT · v1.0.209 · OLCBOX CORE". */

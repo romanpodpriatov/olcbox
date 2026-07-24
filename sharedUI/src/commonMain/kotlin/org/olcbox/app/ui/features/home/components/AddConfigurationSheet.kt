@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.automirrored.outlined.OpenInNew
+import org.olcbox.app.ui.components.kit.PkBrand
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Input
 import androidx.compose.material.icons.outlined.Add
@@ -49,6 +51,7 @@ fun AddConfigurationSheet(
     onImportFileClick: () -> Unit,
     onUpdateSubscriptionsClick: () -> Unit,
     onAddCustomLocationClick: () -> Unit,
+    onGetSubscriptionClick: () -> Unit = {},
     showCustomLocation: Boolean = true
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -72,6 +75,17 @@ fun AddConfigurationSheet(
             Spacer(Modifier.height(20.dp))
 
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (!hasSubscriptions) {
+                    // Someone with nothing yet needs a source before any of the
+                    // import actions below mean anything.
+                    AddSheetAction(
+                        title = "Get a subscription",
+                        value = "Open ${PkBrand.name} to create one",
+                        icon = Icons.AutoMirrored.Outlined.OpenInNew,
+                        onClick = onGetSubscriptionClick
+                    )
+                }
+
                 if (canScanQr) {
                     AddSheetAction(
                         title = "Scan QR code",

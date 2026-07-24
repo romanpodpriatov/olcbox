@@ -22,6 +22,7 @@ import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.launch
 import org.olcbox.app.admin.AdminState
 import org.olcbox.app.data.share.ConfigShareService
+import org.olcbox.app.ui.components.kit.PkBrand
 import org.olcbox.app.update.AndroidUpdateSettingsStore
 import org.olcbox.app.update.AppUpdateInfo
 import org.olcbox.app.update.AppUpdateSettings
@@ -370,6 +371,16 @@ fun AndroidMainScreen(
             logSaveLauncher.launch(viewModel.suggestedLogsFileName())
         },
         showAppSettingsButton = true,
+        onGetSubscriptionClick = {
+            runCatching {
+                context.startActivity(
+                    Intent(Intent.ACTION_VIEW, Uri.parse(PkBrand.siteUrl))
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+            }.onFailure {
+                Toast.makeText(context, "No browser available", Toast.LENGTH_SHORT).show()
+            }
+        },
         showSplitTunnelingButton = false,
         canScanQr = true,
         onAppSettingsClick = {

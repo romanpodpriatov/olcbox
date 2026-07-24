@@ -64,6 +64,8 @@ import androidx.compose.ui.window.application
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.rememberTrayState
 import androidx.compose.ui.window.rememberWindowState
+import java.net.URI
+import java.awt.Desktop
 import java.awt.Dimension
 import java.awt.FileDialog
 import java.awt.Frame
@@ -83,6 +85,7 @@ import org.olcbox.app.data.identity.PersistentDeviceIdentityProvider
 import org.olcbox.app.data.importer.JvmConfigImporter
 import org.olcbox.app.data.share.ConfigShareService
 import org.olcbox.app.data.share.SubscriptionShareItem
+import org.olcbox.app.ui.components.kit.PkBrand
 import org.olcbox.app.ui.OlcboxAppContent
 import org.olcbox.app.ui.components.ApplicationSocksProxySettings
 import org.olcbox.app.ui.components.ApplicationSettingsSheet
@@ -352,6 +355,19 @@ fun main(args: Array<String>) = application {
                         }
                     },
                     showAppSettingsButton = true,
+                    onGetSubscriptionClick = {
+                        runCatching {
+                            if (Desktop.isDesktopSupported() &&
+                                Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)
+                            ) {
+                                Desktop.getDesktop().browse(URI(PkBrand.siteUrl))
+                            } else {
+                                error("browser unavailable")
+                            }
+                        }.onFailure {
+                            desktopNotice = "Open ${PkBrand.siteUrl} in your browser"
+                        }
+                    },
                     showSplitTunnelingButton = false,
                     canScanQr = false,
                     onAppSettingsClick = { showDesktopSettings = true },

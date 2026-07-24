@@ -79,6 +79,13 @@ final class SwiftPlatformBridge: NSObject, @preconcurrency IosPlatformBridge, UI
         }
     }
 
+    func openUrl(url: String) {
+        guard let target = URL(string: url) else { return }
+        DispatchQueue.main.async {
+            UIApplication.shared.open(target)
+        }
+    }
+
     func showMessage(message: String) {
         DispatchQueue.main.async {
             guard let presenter = self.topPresenter() else { return }

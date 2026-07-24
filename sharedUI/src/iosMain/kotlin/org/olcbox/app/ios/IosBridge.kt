@@ -67,4 +67,7 @@ interface IosPlatformBridge {
     fun saveLogs(defaultName: String, content: String, callback: IosMessageCallback)
     fun shareLogs(defaultName: String, content: String, callback: IosMessageCallback)
     fun showMessage(message: String)
+
+    /** Opens an https link in the system browser. */
+    fun openUrl(url: String)
 }

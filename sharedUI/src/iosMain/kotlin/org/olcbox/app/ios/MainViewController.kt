@@ -22,6 +22,7 @@ import org.olcbox.app.data.model.LocationConfig
 import org.olcbox.app.data.share.ConfigShareService
 import org.olcbox.app.data.share.SubscriptionShareItem
 import org.olcbox.app.ui.OlcboxAppContent
+import org.olcbox.app.ui.components.kit.PkBrand
 import org.olcbox.app.ui.components.ApplicationSettingsSheet
 import org.olcbox.app.ui.components.ApplicationUpdateOfferSheet
 import org.olcbox.app.ui.features.home.HomeScreenViewModel
@@ -231,6 +232,7 @@ private fun IosApp(
                     )
                 },
                 showAppSettingsButton = true,
+                onGetSubscriptionClick = { platformBridge.openUrl(PkBrand.siteUrl) },
                 showSplitTunnelingButton = false,
                 canScanQr = false,
                 onAppSettingsClick = { isAppSettingsOpen = true },

@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.QrCodeScanner
@@ -30,6 +31,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import org.olcbox.app.ui.components.kit.PkBrand
 import org.olcbox.app.ui.components.kit.PkSectionLabel
 import org.olcbox.app.ui.features.locations.LocationItem
 import org.olcbox.app.ui.features.locations.PingsState
@@ -38,6 +40,7 @@ import org.olcbox.app.ui.features.locations.components.RefreshButton
 
 @Composable
 fun LocationSelectorScreen(
+    onGetSubscriptionClick: () -> Unit = {},
     modifier: Modifier = Modifier,
     onRefreshClick: (targetLocationIds: List<String>) -> Unit,
     onAddSubscriptionClick: () -> Unit,
@@ -60,6 +63,7 @@ fun LocationSelectorScreen(
 
         if (locations.isEmpty()) {
             RelaySetupCard(
+                onGetSubscriptionClick = onGetSubscriptionClick,
                 onAddSubscriptionClick = onAddSubscriptionClick,
                 onAddLocationClick = onAddLocationClick,
                 showCustomLocation = showCustomLocation
@@ -198,6 +202,7 @@ fun LocationSelectorScreen(
 private fun RelaySetupCard(
     onAddSubscriptionClick: () -> Unit,
     onAddLocationClick: () -> Unit,
+    onGetSubscriptionClick: () -> Unit = {},
     showCustomLocation: Boolean = true
 ) {
     Column(
@@ -209,10 +214,17 @@ private fun RelaySetupCard(
         }
 
         SetupActionRow(
+            title = "Get a subscription",
+            subtitle = "Open ${PkBrand.name} to create one",
+            icon = Icons.AutoMirrored.Outlined.OpenInNew,
+            prominent = true,
+            onClick = onGetSubscriptionClick
+        )
+
+        SetupActionRow(
             title = "Add subscription",
             subtitle = "Scan QR, paste URI, or import file",
             icon = Icons.Outlined.QrCodeScanner,
-            prominent = true,
             onClick = onAddSubscriptionClick
         )
 

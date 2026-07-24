@@ -51,7 +51,8 @@ fun HomeScreen(
     showSplitTunnelingButton: Boolean = false,
     onSplitTunnelingClick: () -> Unit = {},
     onOpenLocationSettings: (String?) -> Unit,
-    onAddLocation: () -> Unit
+    onAddLocation: () -> Unit,
+    onGetSubscriptionClick: () -> Unit = {}
 ) {
     var isLogsSheetOpen by remember { mutableStateOf(false) }
     var isAddSheetOpen by remember { mutableStateOf(false) }
@@ -148,6 +149,7 @@ fun HomeScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             LocationSelectorScreen(
+                onGetSubscriptionClick = onGetSubscriptionClick,
                 onRefreshClick = { targetIds ->
                     refreshHttpPings(targetIds)
                 },
@@ -256,6 +258,10 @@ fun HomeScreen(
                 onAddCustomLocationClick = {
                     isAddSheetOpen = false
                     onAddLocation()
+                },
+                onGetSubscriptionClick = {
+                    isAddSheetOpen = false
+                    onGetSubscriptionClick()
                 },
                 showCustomLocation = admin
             )
