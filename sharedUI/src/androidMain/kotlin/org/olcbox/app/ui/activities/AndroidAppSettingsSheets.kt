@@ -45,7 +45,6 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.outlined.Apps
 import androidx.compose.material.icons.outlined.ContentPaste
 import androidx.compose.material.icons.outlined.History
-import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
@@ -125,7 +124,6 @@ internal fun AppSettingsSheet(
     splitTunnelSettings: AndroidSplitTunnelSettings,
     installedApps: List<AndroidInstalledApp>,
     logs: List<String>,
-    dynamicThemeEnabled: Boolean,
     updateSettings: AppUpdateSettings,
     updateStatusText: String?,
     updateDownloadProgress: Float?,
@@ -140,7 +138,6 @@ internal fun AppSettingsSheet(
     onCheckUpdatesClick: () -> Unit,
     onSubscriptionShareClick: (String) -> Unit,
     onSubscriptionRefreshClick: (String) -> Unit,
-    onDynamicThemeChanged: (Boolean) -> Unit,
     onModeSelected: (AndroidConnectionMode) -> Unit,
     onProxySettingsSaved: (String, String, String, Int) -> Unit,
     onProxyPasswordRegenerated: () -> Unit,
@@ -216,11 +213,9 @@ internal fun AppSettingsSheet(
             when (currentRoute) {
                 AppSettingsRoute.Hub -> AppSettingsHubContent(
                     selectedMode = selectedMode,
-                    dynamicThemeEnabled = dynamicThemeEnabled,
                     updateSettings = updateSettings,
                     subscriptionsCount = subscriptions.size,
                     enabled = enabled,
-                    onDynamicThemeChanged = onDynamicThemeChanged,
                     onConnectionSettingsClick = { route = AppSettingsRoute.ConnectionSettings },
                     onSubscriptionsSharingClick = { route = AppSettingsRoute.SubscriptionsSharing },
                     onUpdatesClick = { route = AppSettingsRoute.Updates },
@@ -314,11 +309,9 @@ internal enum class AppSettingsInitialRoute {
 @Composable
 private fun AppSettingsHubContent(
     selectedMode: AndroidConnectionMode,
-    dynamicThemeEnabled: Boolean,
     updateSettings: AppUpdateSettings,
     subscriptionsCount: Int,
     enabled: Boolean,
-    onDynamicThemeChanged: (Boolean) -> Unit,
     onConnectionSettingsClick: () -> Unit,
     onSubscriptionsSharingClick: () -> Unit,
     onUpdatesClick: () -> Unit,
@@ -338,19 +331,6 @@ private fun AppSettingsHubContent(
         )
 
         Spacer(Modifier.height(8.dp))
-
-        SettingsSwitchRow(
-            title = "Dynamic Theme",
-            value = if (dynamicThemeEnabled) {
-                "Using Android system colors"
-            } else {
-                "Using Olcbox colors"
-            },
-            icon = Icons.Outlined.Palette,
-            checked = dynamicThemeEnabled,
-            enabled = true,
-            onCheckedChange = onDynamicThemeChanged
-        )
 
         SettingsNavigationRow(
             title = "Connection Settings",
