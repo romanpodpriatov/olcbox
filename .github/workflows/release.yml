@@ -1,4 +1,4 @@
-name: Build Olcbox Releases
+name: Build ProofKit Releases
 
 on:
   workflow_dispatch:
@@ -53,11 +53,11 @@ jobs:
           if [ "${GITHUB_REF_NAME}" = "universal-carrier" ]; then
             echo "olcrtc_ref=${OLCBOX_OLCRTC_REF}" >> "$GITHUB_OUTPUT"
             echo "nightly_tag=nightly-universal-carrier" >> "$GITHUB_OUTPUT"
-            echo "nightly_title=Nightly Olcbox universal-carrier builds" >> "$GITHUB_OUTPUT"
+            echo "nightly_title=Nightly ProofKit universal-carrier builds" >> "$GITHUB_OUTPUT"
           else
             echo "olcrtc_ref=${OLCBOX_OLCRTC_REF}" >> "$GITHUB_OUTPUT"
             echo "nightly_tag=nightly" >> "$GITHUB_OUTPUT"
-            echo "nightly_title=Nightly Olcbox builds" >> "$GITHUB_OUTPUT"
+            echo "nightly_title=Nightly ProofKit builds" >> "$GITHUB_OUTPUT"
           fi
 
   build-windows:
@@ -122,13 +122,13 @@ jobs:
               throw "Portable app image not found under $appRoot"
             }
             New-Item -ItemType Directory -Force $portableDir | Out-Null
-            $portableZip = Join-Path $portableDir "Olcbox-windows-amd64-portable.zip"
+            $portableZip = Join-Path $portableDir "ProofKit-windows-amd64-portable.zip"
             Compress-Archive -Path $appImage.FullName -DestinationPath $portableZip -Force
             $zip = Get-Item $portableZip
           }
-          Copy-Item $exe.FullName "dist/Olcbox-${env:OLCBOX_VERSION}-windows-amd64.exe"
-          Copy-Item $msi.FullName "dist/Olcbox-${env:OLCBOX_VERSION}-windows-amd64.msi"
-          Copy-Item $zip.FullName "dist/Olcbox-${env:OLCBOX_VERSION}-windows-amd64-portable.zip"
+          Copy-Item $exe.FullName "dist/ProofKit-${env:OLCBOX_VERSION}-windows-amd64.exe"
+          Copy-Item $msi.FullName "dist/ProofKit-${env:OLCBOX_VERSION}-windows-amd64.msi"
+          Copy-Item $zip.FullName "dist/ProofKit-${env:OLCBOX_VERSION}-windows-amd64-portable.zip"
 
       - name: Sign Windows release assets
         shell: pwsh
@@ -167,12 +167,12 @@ jobs:
             }
           }
 
-          $exeAsset = Get-ChildItem "dist/Olcbox-*-windows-amd64.exe" | Select-Object -First 1
-          $msiAsset = Get-ChildItem "dist/Olcbox-*-windows-amd64.msi" | Select-Object -First 1
+          $exeAsset = Get-ChildItem "dist/ProofKit-*-windows-amd64.exe" | Select-Object -First 1
+          $msiAsset = Get-ChildItem "dist/ProofKit-*-windows-amd64.msi" | Select-Object -First 1
           Sign-File $exeAsset.FullName
           Sign-File $msiAsset.FullName
 
-          $portableZip = (Get-ChildItem "dist/Olcbox-*-windows-amd64-portable.zip" | Select-Object -First 1).FullName
+          $portableZip = (Get-ChildItem "dist/ProofKit-*-windows-amd64-portable.zip" | Select-Object -First 1).FullName
           $portableDir = Join-Path $env:RUNNER_TEMP "olcbox-portable-sign"
           Remove-Item $portableDir -Recurse -Force -ErrorAction SilentlyContinue
           Expand-Archive -Path $portableZip -DestinationPath $portableDir
@@ -185,11 +185,11 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
-          name: Olcbox-windows-amd64
+          name: ProofKit-windows-amd64
           path: |
-            olcbox/dist/Olcbox-*-windows-amd64.exe
-            olcbox/dist/Olcbox-*-windows-amd64.msi
-            olcbox/dist/Olcbox-*-windows-amd64-portable.zip
+            olcbox/dist/ProofKit-*-windows-amd64.exe
+            olcbox/dist/ProofKit-*-windows-amd64.msi
+            olcbox/dist/ProofKit-*-windows-amd64-portable.zip
 
   build-macos:
     needs: release_version
@@ -271,13 +271,13 @@ jobs:
         working-directory: olcbox
         run: |
           mkdir -p dist
-          cp desktopApp/build/compose/binaries/main-release/dmg/*.dmg "dist/Olcbox-${OLCBOX_VERSION}-macos-${{ matrix.arch }}.dmg"
+          cp desktopApp/build/compose/binaries/main-release/dmg/*.dmg "dist/ProofKit-${OLCBOX_VERSION}-macos-${{ matrix.arch }}.dmg"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
-          name: Olcbox-macos-${{ matrix.arch }}-dmg
-          path: olcbox/dist/Olcbox-*-macos-${{ matrix.arch }}.dmg
+          name: ProofKit-macos-${{ matrix.arch }}-dmg
+          path: olcbox/dist/ProofKit-*-macos-${{ matrix.arch }}.dmg
 
   build-linux:
     needs: release_version
@@ -337,13 +337,13 @@ jobs:
         working-directory: olcbox
         run: |
           mkdir -p dist
-          cp desktopApp/build/compose/binaries/main-release/appimage/*.AppImage "dist/Olcbox-${OLCBOX_VERSION}-linux-amd64.AppImage"
+          cp desktopApp/build/compose/binaries/main-release/appimage/*.AppImage "dist/ProofKit-${OLCBOX_VERSION}-linux-amd64.AppImage"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
-          name: Olcbox-linux-amd64-appimage
-          path: olcbox/dist/Olcbox-*-linux-amd64.AppImage
+          name: ProofKit-linux-amd64-appimage
+          path: olcbox/dist/ProofKit-*-linux-amd64.AppImage
 
   build-android:
     needs: release_version
@@ -458,7 +458,7 @@ jobs:
             echo "Android release APK was not found" >&2
             exit 1
           fi
-          cp "${release_apk}" "dist/Olcbox-${OLCBOX_VERSION}-android-release.apk"
+          cp "${release_apk}" "dist/ProofKit-${OLCBOX_VERSION}-android-release.apk"
 
       - name: Build armeabi-v7a production APK
         working-directory: olcbox
@@ -476,15 +476,15 @@ jobs:
             echo "Android armeabi-v7a release APK was not found" >&2
             exit 1
           fi
-          cp "${release_apk}" "dist/Olcbox-${OLCBOX_VERSION}-android-armeabi-v7a-release.apk"
+          cp "${release_apk}" "dist/ProofKit-${OLCBOX_VERSION}-android-armeabi-v7a-release.apk"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
-          name: Olcbox-android-apks
+          name: ProofKit-android-apks
           path: |
-            olcbox/dist/Olcbox-*-android-release.apk
-            olcbox/dist/Olcbox-*-android-armeabi-v7a-release.apk
+            olcbox/dist/ProofKit-*-android-release.apk
+            olcbox/dist/ProofKit-*-android-armeabi-v7a-release.apk
 
   build-ios:
     needs: release_version
@@ -570,14 +570,14 @@ jobs:
           rm -rf build/ios-ipa/package dist
           mkdir -p build/ios-ipa/package/Payload dist
           cp -R "$app_path" build/ios-ipa/package/Payload/
-          (cd build/ios-ipa/package && /usr/bin/zip -qry "${GITHUB_WORKSPACE}/olcbox/dist/Olcbox-${OLCBOX_VERSION}-ios-unsigned.ipa" Payload)
-          unzip -t "dist/Olcbox-${OLCBOX_VERSION}-ios-unsigned.ipa"
+          (cd build/ios-ipa/package && /usr/bin/zip -qry "${GITHUB_WORKSPACE}/olcbox/dist/ProofKit-${OLCBOX_VERSION}-ios-unsigned.ipa" Payload)
+          unzip -t "dist/ProofKit-${OLCBOX_VERSION}-ios-unsigned.ipa"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
-          name: Olcbox-ios-unsigned-ipa
-          path: olcbox/dist/Olcbox-${{ env.OLCBOX_VERSION }}-ios-unsigned.ipa
+          name: ProofKit-ios-unsigned-ipa
+          path: olcbox/dist/ProofKit-${{ env.OLCBOX_VERSION }}-ios-unsigned.ipa
 
   publish-nightly:
     runs-on: ubuntu-latest
@@ -746,7 +746,7 @@ jobs:
           else
             gh release create "$version_tag" \
               --target "$GITHUB_SHA" \
-              --title "Olcbox ${OLCBOX_VERSION}" \
+              --title "ProofKit ${OLCBOX_VERSION}" \
               --notes-file versioned-notes.md \
               --prerelease \
               --draft
