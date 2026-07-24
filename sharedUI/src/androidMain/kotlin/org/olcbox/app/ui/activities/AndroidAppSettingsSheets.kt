@@ -103,7 +103,10 @@ import kotlinx.coroutines.withContext
 import org.olcbox.app.CurrentAppInfo
 import org.olcbox.app.data.share.SubscriptionShareItem
 import org.olcbox.app.update.AppUpdateSettings
+import org.olcbox.app.ui.components.kit.PkSectionLabel
+import org.olcbox.app.ui.components.kit.pkVersionLine
 import org.olcbox.app.ui.features.home.components.LogLines
+import org.olcbox.app.ui.theme.LocalPkPalette
 import org.olcbox.app.vpn.AndroidConnectionMode
 import org.olcbox.app.vpn.AndroidInstalledApp
 import org.olcbox.app.vpn.AndroidSocksProxySettings
@@ -388,9 +391,9 @@ private fun AppSettingsHubContent(
             contentAlignment = Alignment.Center
         ) {
             Text(
-                text = "${CurrentAppInfo.value.name} ${CurrentAppInfo.value.version}",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 12.sp
+                text = pkVersionLine(CurrentAppInfo.value),
+                style = MaterialTheme.typography.labelSmall,
+                color = LocalPkPalette.current.textMuted
             )
         }
     }
@@ -1655,13 +1658,9 @@ private fun SelectableSettingsCard(
 
 @Composable
 private fun SettingsSectionLabel(text: String) {
-    Text(
-        text = text,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        fontSize = 12.sp,
-        fontWeight = FontWeight.SemiBold,
-        modifier = Modifier.padding(start = 2.dp)
-    )
+    Box(modifier = Modifier.padding(start = 2.dp)) {
+        PkSectionLabel(text)
+    }
 }
 
 @Composable

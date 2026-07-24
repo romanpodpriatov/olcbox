@@ -3,8 +3,8 @@ package org.olcbox.app.ui.theme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.ui.graphics.Color
 
-// ProofKit Cypherpunk palette (site tokens → M3 roles). Dark-only brand:
-// the "light" scheme is the same dark scheme so every call site keeps compiling.
+// ProofKit Cypherpunk palette (site tokens → M3 roles). Dark-only brand — there is
+// no light scheme: every AppTheme actual pins this one.
 internal val OlcboxDarkColorScheme = darkColorScheme(
     primary = Color(0xFF6675FF),
     onPrimary = Color(0xFFFFFFFF),
@@ -40,5 +40,3 @@ internal val OlcboxDarkColorScheme = darkColorScheme(
     onErrorContainer = Color(0xFFF43F5E),
     scrim = Color(0xFF000000)
 )
-
-internal val OlcboxLightColorScheme = OlcboxDarkColorScheme
