@@ -186,7 +186,7 @@ fun main(args: Array<String>) = application {
                             updateMessage = "${info.channel.name} update found: ${info.version}"
                         } else {
                             updateOffer = null
-                            updateMessage = "Olcbox is up to date"
+                            updateMessage = "ProofKit is up to date"
                         }
                     } else {
                         updateOffer = null
@@ -252,7 +252,7 @@ fun main(args: Array<String>) = application {
     Tray(
         state = trayState,
         icon = painterResource("LinuxIcon.png"),
-        tooltip = "Olcbox",
+        tooltip = "ProofKit",
         menu = {
             Item("Open", onClick = { isWindowVisible = true })
             Item(
@@ -277,7 +277,7 @@ fun main(args: Array<String>) = application {
     )
 
     Window(
-        title = "olcbox",
+        title = "ProofKit",
         visible = isWindowVisible,
         state = rememberWindowState(width = 430.dp, height = 780.dp),
         onCloseRequest = {
@@ -701,14 +701,14 @@ private fun desktopSubscriptionItems(items: List<LocationItem>): List<Subscripti
 }
 
 private fun chooseConfigFile(owner: Frame): File? {
-    val dialog = FileDialog(owner, "Import Olcbox Config", FileDialog.LOAD)
+    val dialog = FileDialog(owner, "Import ProofKit Config", FileDialog.LOAD)
     dialog.isVisible = true
 
     return dialog.files.firstOrNull()
 }
 
 private fun chooseSaveFile(owner: Frame, defaultName: String): File? {
-    val dialog = FileDialog(owner, "Save Olcbox Logs", FileDialog.SAVE)
+    val dialog = FileDialog(owner, "Save ProofKit Logs", FileDialog.SAVE)
     dialog.file = defaultName
     dialog.isVisible = true
 

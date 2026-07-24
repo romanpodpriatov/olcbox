@@ -167,7 +167,7 @@ fun AndroidMainScreen(
             updateStatusText = "${info.channel.name} update available: ${info.version}"
         } else {
             updateOffer = null
-            updateStatusText = "Olcbox is up to date"
+            updateStatusText = "ProofKit is up to date"
         }
     }
 
@@ -210,7 +210,7 @@ fun AndroidMainScreen(
         scope.launch {
             if (!updateInstaller.canRequestPackageInstalls()) {
                 updateInstaller.openUnknownSourcesSettings()
-                updateStatusText = "Allow Olcbox to install updates, then tap Download again"
+                updateStatusText = "Allow ProofKit to install updates, then tap Download again"
                 Toast.makeText(context, updateStatusText, Toast.LENGTH_LONG).show()
                 return@launch
             }
