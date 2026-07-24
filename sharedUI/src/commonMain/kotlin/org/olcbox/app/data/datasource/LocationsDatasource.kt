@@ -653,6 +653,22 @@ class LocationsRepositoryImpl(
             if (merged != null) return ParsedImport(merged, ImportMode.Additive)
         }
 
+        // Standard subscription format (Happ / v2rayNG): the whole body is base64
+        // of the scheme-line list. Only reached when direct parsing found nothing,
+        // and the codec only accepts decodes that contain scheme links.
+        SubscriptionBodyCodec.decodeBase64(text)?.let { decoded ->
+            val olc = parseOlcRtcText(decoded, subscriptionUrl, updateIntervalHours)
+            val sb = parseSingBoxText(decoded, subscriptionUrl, updateIntervalHours)
+            val merged = when {
+                olc != null && sb != null ->
+                    olc.copy(locations = olc.locations + sb.locations)
+                olc != null -> olc
+                sb != null -> sb
+                else -> null
+            }
+            if (merged != null) return ParsedImport(merged, ImportMode.Additive)
+        }
+
         if (!text.startsWith("{") || !text.endsWith("}")) return null
 
         val root = runCatching {
