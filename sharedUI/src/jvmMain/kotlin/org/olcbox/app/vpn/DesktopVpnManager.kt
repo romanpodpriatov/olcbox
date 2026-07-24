@@ -80,8 +80,14 @@ class DesktopVpnManager private constructor(
     // Unified client: sing-box / Xray cores for vless/hy2/xhttp locations (exec'd
     // bundled binaries). The tun/PAC targets `activeCorePort` when a core is active
     // (null = olcrtc's own SOCKS port).
-    private val singBoxCore = org.olcbox.app.net.DesktopSingBoxController()
-    private val xrayCore = org.olcbox.app.net.DesktopXrayController()
+    // Forward the cores' own output into the app log: when an outbound fails the
+    // core says why on its first lines, and that used to go to a temp file nobody read.
+    private val singBoxCore = org.olcbox.app.net.DesktopSingBoxController(
+        onOutput = { line -> addLog(line) }
+    )
+    private val xrayCore = org.olcbox.app.net.DesktopXrayController(
+        onOutput = { line -> addLog(line) }
+    )
     private var activeCorePort: Int? = null
 
     override fun needsPermission(): Boolean = false
@@ -377,7 +383,17 @@ class DesktopVpnManager private constructor(
             addLog("sing-box core (${location.kind}) starting on 127.0.0.1:$port")
         }
         if (!waitForCoreSocks(port)) {
-            error("core SOCKS not ready on 127.0.0.1:$port")
+            val exit = if (spec is org.olcbox.app.net.OutboundSpec.Vless &&
+                spec.transport is org.olcbox.app.net.TransportSpec.Xhttp
+            ) {
+                xrayCore.exitCodeOrNull()
+            } else {
+                singBoxCore.exitCodeOrNull()
+            }
+            error(
+                "core SOCKS not ready on 127.0.0.1:$port" +
+                    (exit?.let { " (core exited with code $it — see the lines above)" } ?: "")
+            )
         }
         addLog("core ready on 127.0.0.1:$port")
     }

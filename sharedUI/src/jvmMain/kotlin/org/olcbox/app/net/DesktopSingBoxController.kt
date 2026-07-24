@@ -10,10 +10,13 @@ import java.nio.file.Path
  */
 class DesktopSingBoxController(
     binaryPath: () -> Path = { DesktopNativeAssets.resolveSingBoxBinary() },
+    /** Receives the core's own output so failures reach the app log. */
+    private val onOutput: (String) -> Unit = {},
 ) : SingBoxController {
     private val proc = DesktopCoreProcess(
         binaryPath = binaryPath,
         label = "singbox",
+        onOutput = { line -> onOutput(line) },
         argv = { bin, config -> listOf(bin, "run", "-c", config.toString()) },
     )
 
@@ -22,4 +25,6 @@ class DesktopSingBoxController(
     /** Non-suspend stop for desktop stop paths (not coroutines). */
     fun stopNow() = proc.stop()
     fun isRunning(): Boolean = proc.isRunning()
+    /** Exit code once the core has finished; null while it is still running. */
+    fun exitCodeOrNull(): Int? = proc.exitCodeOrNull()
 }
