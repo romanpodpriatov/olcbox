@@ -23,6 +23,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import org.olcbox.app.admin.AdminState
+import org.olcbox.app.net.TransportGroup
+import org.olcbox.app.net.transportKind
 import org.olcbox.app.ui.components.StartButton
 import org.olcbox.app.ui.components.kit.PkVersionFooter
 import org.olcbox.app.ui.components.kit.pkScreenBackground
@@ -126,7 +128,11 @@ fun HomeScreen(
         ) {
             RelayStatus(
                 isActive = state.isVpnConnected,
-                requiresSetup = requiresSetup
+                requiresSetup = requiresSetup,
+                transportLabel = state.selectedLocation?.config?.transportKind()?.label(),
+                // strip the " · XHTTP" suffix: the pill already names the transport
+                exitName = state.selectedLocation?.config?.displayName()
+                    ?.let { TransportGroup.baseName(it) }
             )
 
             Spacer(modifier = Modifier.height(16.dp))
