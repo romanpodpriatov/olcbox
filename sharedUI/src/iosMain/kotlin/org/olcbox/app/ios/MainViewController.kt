@@ -144,7 +144,7 @@ private fun IosApp(
                             updateStatusText = "${info.channel.name} update available: ${info.version}"
                         } else {
                             updateOffer = null
-                            updateStatusText = "Olcbox is up to date"
+                            updateStatusText = "ProofKit is up to date"
                         }
                     } else {
                         updateOffer = null
