@@ -2,6 +2,7 @@ package org.olcbox.app.ui.components
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -22,9 +23,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import org.olcbox.app.ui.theme.LocalPkPalette
 
 sealed class StartButtonState {
     object Idle : StartButtonState()
@@ -42,37 +43,40 @@ fun StartButton(
     enabled: Boolean = true,
     onClick: () -> Unit
 ) {
-    val mainButtonColor by animateColorAsState(
+    val pk = LocalPkPalette.current
+    // ring + halo: idle=outline/none, loading=indigo, connected=lime glow
+    val ringColor by animateColorAsState(
         targetValue = when {
-            isActive -> MaterialTheme.colorScheme.primary
-            requiresSetup -> MaterialTheme.colorScheme.primaryContainer
-            else -> MaterialTheme.colorScheme.primaryContainer
+            isActive -> pk.accent
+            isLoading -> MaterialTheme.colorScheme.primary
+            else -> MaterialTheme.colorScheme.outline
         },
-        label = "buttonColor"
+        label = "buttonRing"
     )
-
+    val haloColor by animateColorAsState(
+        targetValue = when {
+            isActive -> pk.accentSoft
+            isLoading -> MaterialTheme.colorScheme.primaryContainer
+            else -> MaterialTheme.colorScheme.surfaceContainer
+        },
+        label = "buttonHalo"
+    )
     val contentColor = when {
-        isActive -> MaterialTheme.colorScheme.onPrimary
-        requiresSetup -> MaterialTheme.colorScheme.onPrimaryContainer
-        else -> MaterialTheme.colorScheme.onPrimaryContainer
+        isActive -> pk.accent
+        isLoading -> MaterialTheme.colorScheme.onPrimaryContainer
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
 
     Box(
         modifier = modifier
             .size(200.dp)
-            .background(
-                color = when {
-                    isActive -> MaterialTheme.colorScheme.secondaryContainer
-                    requiresSetup -> MaterialTheme.colorScheme.surfaceContainer
-                    else -> MaterialTheme.colorScheme.surfaceContainer
-                },
-                shape = CircleShape
-            )
+            .background(color = haloColor, shape = CircleShape)
             .padding(8.dp)
             .background(color = MaterialTheme.colorScheme.surface, shape = CircleShape)
             .padding(6.dp)
             .clip(CircleShape)
-            .background(color = mainButtonColor)
+            .background(color = MaterialTheme.colorScheme.surfaceContainerHigh)
+            .border(width = 2.dp, color = ringColor, shape = CircleShape)
             .clickable(enabled = enabled) {
                 onClick()
             },
@@ -81,7 +85,7 @@ fun StartButton(
         if (isLoading) {
             CircularProgressIndicator(
                 modifier = Modifier.size(176.dp),
-                color = contentColor,
+                color = MaterialTheme.colorScheme.primary,
                 strokeWidth = 4.dp
             )
         }
@@ -107,8 +111,8 @@ fun StartButton(
                     else -> "START"
                 },
                 color = contentColor.copy(alpha = if (!enabled) 0.7f else 1f),
-                fontSize = 22.sp,
-                fontWeight = FontWeight.Medium
+                style = MaterialTheme.typography.labelLarge,
+                fontSize = 20.sp
             )
         }
     }

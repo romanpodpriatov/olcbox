@@ -24,6 +24,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import org.olcbox.app.admin.AdminState
 import org.olcbox.app.ui.components.AdminPasswordDialog
+import org.olcbox.app.ui.components.kit.PkBrand
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -53,13 +54,13 @@ fun HomeScreenAppBar(
                 }
             ) {
                 Text(
-                    text = "olcbox",
+                    text = PkBrand.name,
                     style = MaterialTheme.typography.titleLarge,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
-                    text = "multiplatform olcrtc configurator",
-                    style = MaterialTheme.typography.labelMedium,
+                    text = PkBrand.tagline,
+                    style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }

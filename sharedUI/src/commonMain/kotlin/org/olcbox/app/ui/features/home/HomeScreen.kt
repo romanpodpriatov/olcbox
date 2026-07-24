@@ -24,6 +24,8 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import org.olcbox.app.admin.AdminState
 import org.olcbox.app.ui.components.StartButton
+import org.olcbox.app.ui.components.kit.PkVersionFooter
+import org.olcbox.app.ui.components.kit.pkScreenBackground
 import org.olcbox.app.ui.features.home.components.AddConfigurationSheet
 import org.olcbox.app.ui.features.home.components.HomeScreenAppBar
 import org.olcbox.app.ui.features.home.components.LocationSelectorScreen
@@ -120,6 +122,7 @@ fun HomeScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .then(pkScreenBackground())
                 .padding(innerPadding)
                 .verticalScroll(scrollState)
                 .padding(horizontal = 32.dp, vertical = 16.dp),
@@ -176,6 +179,10 @@ fun HomeScreen(
             )
 
             Spacer(modifier = Modifier.height(24.dp))
+
+            PkVersionFooter()
+
+            Spacer(modifier = Modifier.height(8.dp))
         }
 
         if (isLogsSheetOpen) {
