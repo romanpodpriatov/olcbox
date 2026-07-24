@@ -15,8 +15,8 @@ import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.encodeToJsonElement
 import org.olcbox.app.net.LinkParser
 import org.olcbox.app.net.LocationKind
+import org.olcbox.app.net.transportKind
 import org.olcbox.app.net.OutboundSpec
-import org.olcbox.app.net.TransportSpec
 
 @Serializable
 data class LocationConfig(
@@ -72,14 +72,9 @@ data class LocationConfig(
     fun protocolLabels(): List<String> = when (kind) {
         LocationKind.Olcrtc -> listOf(providerName(), transportName())
         LocationKind.Vless -> {
-            val spec = rawLink?.let { LinkParser.parse(it) } as? OutboundSpec.Vless
-            val transportLabel = when {
-                spec == null -> null
-                spec.transport is TransportSpec.Xhttp -> "XHTTP"
-                spec.publicKey.isNotBlank() -> "Reality"
-                else -> "TLS"
-            }
-            listOfNotNull("VLESS", transportLabel)
+            // Unparseable links report the protocol alone rather than guessing.
+            val label = rawLink?.let { LinkParser.parse(it) }?.let { transportKind().label() }
+            listOfNotNull("VLESS", label)
         }
         LocationKind.Hysteria2 -> {
             val spec = rawLink?.let { LinkParser.parse(it) } as? OutboundSpec.Hysteria2

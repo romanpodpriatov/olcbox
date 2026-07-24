@@ -216,7 +216,7 @@ class DesktopVpnManager private constructor(
             // SOCKS port. The tun/PAC then targets whichever port is active.
             val isOlcrtc = location.kind == org.olcbox.app.net.LocationKind.Olcrtc
             val effectiveSocksPort =
-                if (isOlcrtc) socksSettings.port else org.olcbox.app.net.SingBoxConfig.SINGBOX_SOCKS_PORT
+                if (isOlcrtc) socksSettings.port else allocateCorePort()
             activeCorePort = if (isOlcrtc) null else effectiveSocksPort
 
             if (isOlcrtc) {
@@ -248,7 +248,16 @@ class DesktopVpnManager private constructor(
                 DesktopMode.LinuxTun -> startLinuxTun(effectiveSocksPort, requestGeneration)
                 DesktopMode.WindowsTun -> startWindowsTun(effectiveSocksPort, requestGeneration)
                 DesktopMode.SystemProxy ->
-                    startSystemProxy(socksSettings.copy(port = effectiveSocksPort), requestGeneration)
+                    startSystemProxy(
+                        // The cores listen without authentication; only the olcRTC
+                        // engine uses the stored credentials.
+                        if (isOlcrtc) {
+                            socksSettings.copy(port = effectiveSocksPort)
+                        } else {
+                            socksSettings.copy(port = effectiveSocksPort, username = "", password = "")
+                        },
+                        requestGeneration
+                    )
             }
 
             if (isOlcrtc) {
@@ -353,10 +362,10 @@ class DesktopVpnManager private constructor(
         if (spec is org.olcbox.app.net.OutboundSpec.Vless &&
             spec.transport is org.olcbox.app.net.TransportSpec.Xhttp
         ) {
-            xrayCore.start(org.olcbox.app.net.XrayConfig.buildXhttp(spec))
+            xrayCore.start(org.olcbox.app.net.XrayConfig.buildXhttp(spec, socksPort = port))
             addLog("Xray/xhttp core starting on 127.0.0.1:$port")
         } else {
-            singBoxCore.start(org.olcbox.app.net.SingBoxConfig.build(spec))
+            singBoxCore.start(org.olcbox.app.net.SingBoxConfig.build(spec, socksPort = port))
             addLog("sing-box core (${location.kind}) starting on 127.0.0.1:$port")
         }
         if (!waitForCoreSocks(port)) {
@@ -364,6 +373,35 @@ class DesktopVpnManager private constructor(
         }
         addLog("core ready on 127.0.0.1:$port")
     }
+
+    /**
+     * Port for the sing-box/Xray SOCKS listener.
+     *
+     * Prefers the well-known core port so logs stay predictable, but never insists
+     * on it: the PAC server, an olcRTC session or an unrelated app on the user's
+     * machine may already hold it, and binding a taken port used to fail the whole
+     * connect with a bare "Address already in use".
+     */
+    private fun allocateCorePort(): Int {
+        val preferred = org.olcbox.app.net.SingBoxConfig.SINGBOX_SOCKS_PORT
+        if (isLocalPortFree(preferred)) return preferred
+        val fallback = runCatching {
+            java.net.ServerSocket().use { socket ->
+                socket.bind(java.net.InetSocketAddress("127.0.0.1", 0))
+                socket.localPort
+            }
+        }.getOrNull() ?: preferred
+        addLog("core port $preferred is busy, using $fallback")
+        return fallback
+    }
+
+    private fun isLocalPortFree(port: Int): Boolean = runCatching {
+        java.net.ServerSocket().use { socket ->
+            socket.reuseAddress = false
+            socket.bind(java.net.InetSocketAddress("127.0.0.1", port))
+        }
+        true
+    }.getOrDefault(false)
 
     private fun stopDesktopCores() {
         singBoxCore.stopNow()

@@ -19,7 +19,8 @@ import kotlinx.serialization.json.putJsonObject
 object XrayConfig {
     /** Pinned Xray-core release whose config schema this builder targets. */
     const val XRAY_VERSION = "25.3.6"
-    const val XRAY_SOCKS_PORT = 10809
+    /** Same port as sing-box: only one core runs at a time. Kept off the PAC port 10809. */
+    const val XRAY_SOCKS_PORT = 10810
 
     /**
      * Build an Xray config for a vless+xhttp+reality location. Requires the spec's

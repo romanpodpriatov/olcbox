@@ -20,7 +20,9 @@ import kotlinx.serialization.json.putJsonObject
 object SingBoxConfig {
     /** Pinned sing-box release whose config schema this builder targets. */
     const val SINGBOX_VERSION = "1.11.15"
-    const val SINGBOX_SOCKS_PORT = 10809
+    // NOT 10809: the desktop PAC server (PacServer.PAC_PORT) owns that port, and the
+    // core binding it first made every desktop connect fail with "Address already in use".
+    const val SINGBOX_SOCKS_PORT = 10810
 
     fun build(outbound: OutboundSpec, socksPort: Int = SINGBOX_SOCKS_PORT): String =
         render(socksPort) { addOutbound(outbound) }

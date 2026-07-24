@@ -613,10 +613,10 @@ class OlcboxVpnService : VpnService() {
             waitForSocksPortReleased(port, SOCKS_RELEASE_QUICK_TIMEOUT_MS)
             val label: String
             if (spec is OutboundSpec.Vless && spec.transport is TransportSpec.Xhttp) {
-                xrayCore.start(XrayConfig.buildXhttp(spec))
+                xrayCore.start(XrayConfig.buildXhttp(spec, socksPort = port))
                 label = "Xray/xhttp"
             } else {
-                singBoxCore.start(SingBoxConfig.build(spec))
+                singBoxCore.start(SingBoxConfig.build(spec, socksPort = port))
                 label = "sing-box/${location.kind}"
             }
             activeCorePort = port
