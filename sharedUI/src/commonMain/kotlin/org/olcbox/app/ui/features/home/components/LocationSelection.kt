@@ -67,19 +67,25 @@ fun LocationSelectorScreen(
         // filter the list is unusable. Chips only appear for transports actually
         // present, so a single-transport subscription looks exactly as before.
         var transportFilter by rememberSaveable { mutableStateOf<String?>(null) }
-        val countsByKind = locations
-            .mapNotNull { it.config?.transportKind() }
-            .groupingBy { it }
-            .eachCount()
-        val presentKinds = TransportKind.entries.filter { countsByKind.containsKey(it) }
+        // olcRTC's own carriers (VP8 / SEI / DataChannel) sit one level below the
+        // protocol — they describe how data rides inside the call, not how the
+        // tunnel is reached. They earn their own chips only when a user actually
+        // has more than one, so the usual single olcRTC entry stays one chip.
+        val splitOlcrtcCarriers = locations
+            .mapNotNull { it.config }
+            .filter { it.transportKind() == TransportKind.Olcrtc }
+            .map { it.transport }
+            .distinct()
+            .size > 1
+        val optionPerLocation = locations.mapNotNull { it.transportFilterOption(splitOlcrtcCarriers) }
+        val counts = optionPerLocation.groupingBy { it.key }.eachCount()
+        val options = optionPerLocation.distinctBy { it.key }.sortedBy { it.order }
         // Resolve rather than repair: a filter left over from a subscription that no
         // longer serves that transport simply reads as "All". Writing the state back
         // here would be a write during composition.
-        val activeFilter = transportFilter?.let { name ->
-            presentKinds.firstOrNull { it.name == name }
-        }
+        val activeFilter = transportFilter?.let { key -> options.firstOrNull { it.key == key } }
 
-        if (presentKinds.size > 1) {
+        if (options.size > 1) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -93,13 +99,14 @@ fun LocationSelectorScreen(
                     count = locations.size,
                     onClick = { transportFilter = null }
                 )
-                presentKinds.forEach { kind ->
+                options.forEach { option ->
                     PkFilterChip(
-                        label = kind.label(),
-                        selected = activeFilter == kind,
-                        count = countsByKind[kind],
+                        label = option.label,
+                        selected = activeFilter?.key == option.key,
+                        count = counts[option.key],
                         onClick = {
-                            transportFilter = if (activeFilter == kind) null else kind.name
+                            transportFilter =
+                                if (activeFilter?.key == option.key) null else option.key
                         }
                     )
                 }
@@ -107,7 +114,9 @@ fun LocationSelectorScreen(
         }
 
         val visibleLocations = activeFilter
-            ?.let { kind -> locations.filter { it.config?.transportKind() == kind } }
+            ?.let { option ->
+                locations.filter { it.transportFilterOption(splitOlcrtcCarriers)?.key == option.key }
+            }
             ?: locations
 
         val subscriptionLocations = visibleLocations.filter { !it.subscriptionUrl.isNullOrBlank() }
@@ -483,6 +492,31 @@ private fun PingsState.isOffline(locationId: String): Boolean {
 
         is PingsState.Error -> false
     }
+}
+
+/**
+ * A chip in the transport filter. [order] keeps chips in protocol order (Reality,
+ * Hysteria2, XHTTP, …) rather than whatever order locations happen to arrive in.
+ */
+private data class TransportFilterOption(
+    val key: String,
+    val label: String,
+    val order: Int
+)
+
+private fun LocationItem.transportFilterOption(
+    splitOlcrtcCarriers: Boolean
+): TransportFilterOption? {
+    val config = config ?: return null
+    val kind = config.transportKind()
+    if (kind == TransportKind.Olcrtc && splitOlcrtcCarriers) {
+        return TransportFilterOption(
+            key = "${kind.name}:${config.transport}",
+            label = "${kind.label()} · ${config.transportName()}",
+            order = kind.ordinal
+        )
+    }
+    return TransportFilterOption(key = kind.name, label = kind.label(), order = kind.ordinal)
 }
 
 private fun LocationItem.subscriptionGroupKey(): String {
