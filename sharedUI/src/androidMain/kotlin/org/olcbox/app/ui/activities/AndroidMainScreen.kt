@@ -448,13 +448,13 @@ fun AndroidMainScreen(
                 shareSheetPayload = "Subscription QR" to ConfigShareService.subscriptionQrText(url)
             },
             onSubscriptionRefreshClick = { url ->
-                viewModel.refreshSubscription(url) { updatedCount ->
+                viewModel.refreshSubscription(url) { report ->
                     reloadLocationsAfterImport {
                         viewModel.restartVpnIfRunning()
                         Toast.makeText(
                             context,
-                            if (updatedCount > 0) "Subscription updated" else "Subscription not updated",
-                            Toast.LENGTH_SHORT
+                            report.singleMessage(),
+                            if (report.hasFailures) Toast.LENGTH_LONG else Toast.LENGTH_SHORT
                         ).show()
                     }
                 }

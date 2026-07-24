@@ -13,6 +13,9 @@ import org.olcbox.app.data.model.LocationBundleV4
 import org.olcbox.app.data.model.LocationConfig
 import org.olcbox.app.data.model.LocationEntry
 import org.olcbox.app.data.share.ConfigShareService
+import io.ktor.http.HttpStatusCode
+import org.olcbox.app.data.repository.SubscriptionRefreshError
+import kotlin.test.assertFalse
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -598,7 +601,8 @@ class LocationsRepositoryImplTest {
         ).refreshSubscription("https://example.test/alpha")
 
         val bundle = source.stored
-        assertEquals(1, updated)
+        assertEquals(1, updated.updatedCount)
+        assertFalse(updated.hasFailures)
         assertNotNull(bundle)
         assertEquals(listOf("beta", "imported_alpha"), bundle.locations.map { it.storageId })
         assertEquals("room-beta", bundle.locations.first { it.storageId == "beta" }.location.id)
@@ -632,7 +636,10 @@ class LocationsRepositoryImplTest {
         ).refreshSubscription("https://example.test/alpha")
 
         val bundle = source.stored
-        assertEquals(0, updated)
+        assertEquals(0, updated.updatedCount)
+        // Unparseable body ⇒ the user is told the subscription returned nothing,
+        // not the old ambiguous "not updated".
+        assertEquals(SubscriptionRefreshError.Empty, updated.failures.single().error)
         assertNotNull(bundle)
         assertEquals(listOf("alpha"), bundle.locations.map { it.storageId })
         assertEquals("room-alpha", bundle.locations.single().location.id)
@@ -764,6 +771,111 @@ class LocationsRepositoryImplTest {
         assertEquals(1, locs.count { it.kind == org.olcbox.app.net.LocationKind.Olcrtc })
         assertEquals(1, locs.count { it.kind == org.olcbox.app.net.LocationKind.Vless })
         assertEquals(1, locs.count { it.kind == org.olcbox.app.net.LocationKind.Hysteria2 })
+    }
+
+    // ---- refresh failure reporting ----------------------------------------
+    // A revoked token, a dead server and an offline device used to be
+    // indistinguishable from "nothing changed", so users read every one of them
+    // as the app being broken.
+
+    private fun subscribedSource(url: String) = FakeLocationsDataSource(
+        stored = LocationBundleV4(
+            activeLocationId = "alpha",
+            locations = listOf(
+                LocationEntry.from(
+                    "alpha",
+                    LocationConfig("Alpha", "room-alpha", "a".repeat(64), LocationConfig.PROVIDER_WB_STREAM),
+                    subscriptionUrl = url
+                )
+            )
+        )
+    )
+
+    private fun repoRespondingWith(source: FakeLocationsDataSource, engine: MockEngine) =
+        LocationsRepositoryImpl(
+            dataSource = source,
+            httpClient = HttpClient(engine),
+            deviceIdentityProvider = StaticIdentityProvider("hwid-test")
+        )
+
+    @Test
+    fun revokedSubscriptionReportsRejectedWithStatus() = runTest {
+        val url = "https://example.test/alpha"
+        val source = subscribedSource(url)
+        val engine = MockEngine { respond("gone", HttpStatusCode.NotFound) }
+
+        val report = repoRespondingWith(source, engine).refreshSubscription(url)
+
+        assertEquals(0, report.updatedCount)
+        val failure = report.failures.single()
+        assertEquals(SubscriptionRefreshError.Rejected, failure.error)
+        assertEquals(404, failure.statusCode)
+        assertTrue(failure.message().contains("revoked"))
+        // the existing locations must survive a failed refresh
+        assertEquals(listOf("alpha"), source.stored!!.locations.map { it.storageId })
+    }
+
+    @Test
+    fun serverErrorIsReportedSeparatelyFromRejection() = runTest {
+        val url = "https://example.test/alpha"
+        val source = subscribedSource(url)
+        val engine = MockEngine { respond("boom", HttpStatusCode.InternalServerError) }
+
+        val report = repoRespondingWith(source, engine).refreshSubscription(url)
+
+        val failure = report.failures.single()
+        assertEquals(SubscriptionRefreshError.ServerError, failure.error)
+        assertEquals(500, failure.statusCode)
+    }
+
+    @Test
+    fun unreachableServerIsReportedAsUnreachable() = runTest {
+        val url = "https://example.test/alpha"
+        val source = subscribedSource(url)
+        val engine = MockEngine { throw IllegalStateException("no route to host") }
+
+        val report = repoRespondingWith(source, engine).refreshSubscription(url)
+
+        val failure = report.failures.single()
+        assertEquals(SubscriptionRefreshError.Unreachable, failure.error)
+        assertNull(failure.statusCode)
+    }
+
+    @Test
+    fun emptyBodyIsReportedAsEmpty() = runTest {
+        val url = "https://example.test/alpha"
+        val source = subscribedSource(url)
+        val engine = MockEngine { respond("   ") }
+
+        val report = repoRespondingWith(source, engine).refreshSubscription(url)
+
+        assertEquals(SubscriptionRefreshError.Empty, report.failures.single().error)
+    }
+
+    @Test
+    fun successfulRefreshReportsNoFailures() = runTest {
+        val url = "https://example.test/alpha"
+        val source = subscribedSource(url)
+        val engine = MockEngine {
+            respond("olcrtc://wbstream?vp8channel@room-alpha-new#${"c".repeat(64)}${'$'}Alpha")
+        }
+
+        val report = repoRespondingWith(source, engine).refreshSubscription(url)
+
+        assertEquals(1, report.updatedCount)
+        assertFalse(report.hasFailures)
+        assertEquals("Subscription updated", report.singleMessage())
+    }
+
+    @Test
+    fun blankUrlRefreshIsANoOpReport() = runTest {
+        val source = subscribedSource("https://example.test/alpha")
+        val engine = MockEngine { respond("unused") }
+
+        val report = repoRespondingWith(source, engine).refreshSubscription("   ")
+
+        assertEquals(0, report.updatedCount)
+        assertFalse(report.hasFailures)
     }
 
     // ---- deleteSubscription ------------------------------------------------

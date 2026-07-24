@@ -78,18 +78,12 @@ fun HomeScreen(
     }
 
     fun refreshSubscriptions() {
-        viewModel.refreshSubscriptions { updatedCount ->
+        viewModel.refreshSubscriptions { report ->
             locationViewModel.loadLocations {
                 viewModel.restartVpnIfRunning()
 
-                val message = if (updatedCount > 0) {
-                    "Subscriptions updated: $updatedCount"
-                } else {
-                    "No subscriptions to update"
-                }
-
                 scope.launch {
-                    snackbarHostState.showSnackbar(message)
+                    snackbarHostState.showSnackbar(report.bulkMessage())
                 }
             }
         }

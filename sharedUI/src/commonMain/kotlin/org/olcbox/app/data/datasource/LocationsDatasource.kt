@@ -34,6 +34,12 @@ import org.olcbox.app.net.LinkParser
 import org.olcbox.app.net.LocationKind
 import org.olcbox.app.net.OutboundSpec
 import org.olcbox.app.data.repository.SubscriptionFetchProxy
+import org.olcbox.app.data.repository.SubscriptionRefreshError
+import org.olcbox.app.data.repository.SubscriptionRefreshFailure
+import org.olcbox.app.data.repository.SubscriptionRefreshReport
+
+/** Reports why a subscription fetch failed, without changing the fetch control flow. */
+internal typealias SubscriptionFailureSink = (SubscriptionRefreshError, Int?) -> Unit
 
 interface LocationsDataSource {
     suspend fun loadLocationBundle(): LocationBundleV4?
@@ -161,7 +167,9 @@ class LocationsRepositoryImpl(
         return true
     }
 
-    override suspend fun refreshSubscriptions(subscriptionProxy: SubscriptionFetchProxy?): Int {
+    override suspend fun refreshSubscriptions(
+        subscriptionProxy: SubscriptionFetchProxy?
+    ): SubscriptionRefreshReport {
         return mutationMutex.withLock {
             refreshSubscriptionsUnlocked(
                 onlyUrls = null,
@@ -173,9 +181,9 @@ class LocationsRepositoryImpl(
     override suspend fun refreshSubscription(
         subscriptionUrl: String,
         subscriptionProxy: SubscriptionFetchProxy?
-    ): Int {
+    ): SubscriptionRefreshReport {
         val normalizedUrl = subscriptionUrl.trim()
-        if (normalizedUrl.isBlank()) return 0
+        if (normalizedUrl.isBlank()) return SubscriptionRefreshReport.EMPTY
         return mutationMutex.withLock {
             refreshSubscriptionsUnlocked(
                 onlyUrls = setOf(normalizedUrl),
@@ -187,15 +195,15 @@ class LocationsRepositoryImpl(
     private suspend fun refreshSubscriptionsUnlocked(
         onlyUrls: Set<String>?,
         subscriptionProxy: SubscriptionFetchProxy?
-    ): Int {
+    ): SubscriptionRefreshReport {
         val bundle = getBundleUnlocked()
-        if (bundle.locations.isEmpty()) return 0
+        if (bundle.locations.isEmpty()) return SubscriptionRefreshReport.EMPTY
 
         val groupedByUrl = bundle.locations
             .mapNotNull { entry -> entry.subscriptionUrl?.trim()?.takeIf { it.isNotBlank() }?.let { it to entry } }
             .groupBy({ it.first }, { it.second })
             .filterKeys { url -> onlyUrls == null || url in onlyUrls }
-        if (groupedByUrl.isEmpty()) return 0
+        if (groupedByUrl.isEmpty()) return SubscriptionRefreshReport.EMPTY
 
         val targetUrls = groupedByUrl.keys
         val refreshedLocations = bundle.locations
@@ -208,6 +216,7 @@ class LocationsRepositoryImpl(
         val activeBefore = bundle.activeLocationId
         var activeAfter = activeBefore
         var successfulRefreshes = 0
+        val failures = mutableListOf<SubscriptionRefreshFailure>()
 
         fun preservePreviousEntries(entries: List<LocationEntry>) {
             entries.forEach { entry ->
@@ -219,12 +228,21 @@ class LocationsRepositoryImpl(
 
         groupedByUrl.forEach { (url, previousEntries) ->
             val previousInterval = previousEntries.subscriptionUpdateIntervalHours()
+            // Keep the last reported reason: it belongs to the attempt that
+            // ultimately failed (Identity is retried in Compatibility mode).
+            var lastFailure: SubscriptionRefreshFailure? = null
             val resolved = resolveParsedImport(
                 text = url,
                 fallbackSubscriptionInterval = previousInterval,
-                subscriptionProxy = subscriptionProxy
+                subscriptionProxy = subscriptionProxy,
+                onFailure = { error, status ->
+                    lastFailure = SubscriptionRefreshFailure(url, error, status)
+                }
             ) ?: run {
                 preservePreviousEntries(previousEntries)
+                // Downloaded fine but nothing importable ⇒ Empty.
+                failures += lastFailure
+                    ?: SubscriptionRefreshFailure(url, SubscriptionRefreshError.Empty)
                 return@forEach
             }
             val source = resolved.source
@@ -235,6 +253,7 @@ class LocationsRepositoryImpl(
             val refreshed = resolved.parsed.bundle.locations
             if (refreshed.isEmpty()) {
                 preservePreviousEntries(previousEntries)
+                failures += SubscriptionRefreshFailure(url, SubscriptionRefreshError.Empty)
                 return@forEach
             }
 
@@ -273,7 +292,9 @@ class LocationsRepositoryImpl(
             successfulRefreshes += 1
         }
 
-        if (successfulRefreshes == 0) return 0
+        if (successfulRefreshes == 0) {
+            return SubscriptionRefreshReport(updatedCount = 0, failures = failures)
+        }
 
         saveBundleUnlocked(
             bundle.copy(
@@ -281,10 +302,12 @@ class LocationsRepositoryImpl(
                 locations = refreshedLocations
             )
         )
-        return successfulRefreshes
+        return SubscriptionRefreshReport(updatedCount = successfulRefreshes, failures = failures)
     }
 
-    override suspend fun refreshDueSubscriptions(subscriptionProxy: SubscriptionFetchProxy?): Int {
+    override suspend fun refreshDueSubscriptions(
+        subscriptionProxy: SubscriptionFetchProxy?
+    ): SubscriptionRefreshReport {
         return mutationMutex.withLock {
             val bundle = getBundleUnlocked()
             val now = nowEpochMs()
@@ -301,7 +324,7 @@ class LocationsRepositoryImpl(
                 .toSet()
 
             if (dueUrls.isEmpty()) {
-                0
+                SubscriptionRefreshReport.EMPTY
             } else {
                 refreshSubscriptionsUnlocked(
                     onlyUrls = dueUrls,
@@ -434,7 +457,8 @@ class LocationsRepositoryImpl(
     private suspend fun resolveParsedImport(
         text: String,
         fallbackSubscriptionInterval: Int? = null,
-        subscriptionProxy: SubscriptionFetchProxy? = null
+        subscriptionProxy: SubscriptionFetchProxy? = null,
+        onFailure: SubscriptionFailureSink? = null
     ): ResolvedImport? {
         val input = text.normalizedImportText()
         if (input.isBlank()) return null
@@ -447,13 +471,15 @@ class LocationsRepositoryImpl(
         var source = resolveImportSource(
             text = effective,
             requestMode = SubscriptionRequestMode.Identity,
-            subscriptionProxy = subscriptionProxy
+            subscriptionProxy = subscriptionProxy,
+            onFailure = onFailure
         ) ?: run {
             if (effective.isHttpUrl()) {
                 resolveImportSource(
                     text = effective,
                     requestMode = SubscriptionRequestMode.Compatibility,
-                    subscriptionProxy = subscriptionProxy
+                    subscriptionProxy = subscriptionProxy,
+                    onFailure = onFailure
                 )
             } else {
                 null
@@ -465,7 +491,8 @@ class LocationsRepositoryImpl(
             val fallbackSource = resolveImportSource(
                 text = effective,
                 requestMode = SubscriptionRequestMode.Compatibility,
-                subscriptionProxy = subscriptionProxy
+                subscriptionProxy = subscriptionProxy,
+                onFailure = onFailure
             )
             if (fallbackSource != null) {
                 source = fallbackSource
@@ -494,7 +521,8 @@ class LocationsRepositoryImpl(
     private suspend fun resolveImportSource(
         text: String,
         requestMode: SubscriptionRequestMode,
-        subscriptionProxy: SubscriptionFetchProxy?
+        subscriptionProxy: SubscriptionFetchProxy?,
+        onFailure: SubscriptionFailureSink? = null
     ): ImportSource? {
         if (text.isBlank()) return null
 
@@ -505,7 +533,8 @@ class LocationsRepositoryImpl(
         val downloaded = downloadTextFromUrl(
             url = text,
             requestMode = requestMode,
-            subscriptionProxy = subscriptionProxy
+            subscriptionProxy = subscriptionProxy,
+            onFailure = onFailure
         ) ?: return null
         // crypt1: decrypt the body ONLY when the request URL carries ?crypt=1 (and
         // a codec is baked). Never heuristic-guess — a plaintext subscription must
@@ -531,7 +560,8 @@ class LocationsRepositoryImpl(
     private suspend fun downloadTextFromUrl(
         url: String,
         requestMode: SubscriptionRequestMode,
-        subscriptionProxy: SubscriptionFetchProxy?
+        subscriptionProxy: SubscriptionFetchProxy?,
+        onFailure: SubscriptionFailureSink? = null
     ): DownloadedSubscription? {
         val hwid = if (requestMode == SubscriptionRequestMode.Identity) {
             deviceIdentityProvider.hwid()
@@ -565,16 +595,28 @@ class LocationsRepositoryImpl(
                             }
                         }
                     }
-                }.getOrNull() ?: return@withProxyAuthentication null
+                }.getOrNull() ?: run {
+                    onFailure?.invoke(SubscriptionRefreshError.Unreachable, null)
+                    return@withProxyAuthentication null
+                }
 
                 if (response.status.value !in 200..299) {
+                    val status = response.status.value
+                    onFailure?.invoke(
+                        if (status >= 500) SubscriptionRefreshError.ServerError
+                        else SubscriptionRefreshError.Rejected,
+                        status
+                    )
                     return@withProxyAuthentication null
                 }
 
                 val content = runCatching {
                     response.bodyAsText()
                 }.getOrNull()?.takeIf { it.isNotBlank() }
-                    ?: return@withProxyAuthentication null
+                    ?: run {
+                        onFailure?.invoke(SubscriptionRefreshError.Empty, null)
+                        return@withProxyAuthentication null
+                    }
 
                 DownloadedSubscription(
                     content = content,

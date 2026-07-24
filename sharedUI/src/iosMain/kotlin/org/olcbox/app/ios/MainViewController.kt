@@ -282,12 +282,10 @@ private fun IosApp(
                         platformBridge.shareText("Subscription", ConfigShareService.subscriptionQrText(url))
                     },
                     onSubscriptionRefreshClick = { url ->
-                        dependencies.homeViewModel.refreshSubscription(url) { updatedCount ->
+                        dependencies.homeViewModel.refreshSubscription(url) { report ->
                             reloadLocationsAfterImport {
                                 dependencies.homeViewModel.restartVpnIfRunning()
-                                platformBridge.showMessage(
-                                    if (updatedCount > 0) "Subscription updated" else "Subscription not updated"
-                                )
+                                platformBridge.showMessage(report.singleMessage())
                             }
                         }
                     },

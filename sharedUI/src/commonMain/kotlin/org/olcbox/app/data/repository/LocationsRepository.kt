@@ -11,12 +11,16 @@ interface LocationsRepository {
     suspend fun saveBundle(bundle: LocationBundleV4)
     suspend fun exportBundle(): String
     suspend fun importText(text: String, subscriptionProxy: SubscriptionFetchProxy? = null): Boolean
-    suspend fun refreshSubscriptions(subscriptionProxy: SubscriptionFetchProxy? = null): Int
+    suspend fun refreshSubscriptions(
+        subscriptionProxy: SubscriptionFetchProxy? = null
+    ): SubscriptionRefreshReport
     suspend fun refreshSubscription(
         subscriptionUrl: String,
         subscriptionProxy: SubscriptionFetchProxy? = null
-    ): Int
-    suspend fun refreshDueSubscriptions(subscriptionProxy: SubscriptionFetchProxy? = null): Int
+    ): SubscriptionRefreshReport
+    suspend fun refreshDueSubscriptions(
+        subscriptionProxy: SubscriptionFetchProxy? = null
+    ): SubscriptionRefreshReport
     suspend fun setSubscriptionUpdateInterval(subscriptionUrl: String, hours: Int)
 
     /**

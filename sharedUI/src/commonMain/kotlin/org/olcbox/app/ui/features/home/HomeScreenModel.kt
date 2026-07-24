@@ -15,6 +15,7 @@ import org.olcbox.app.data.exporter.LogExporter
 import org.olcbox.app.data.importer.ConfigImporter
 import org.olcbox.app.data.model.LocationConfig
 import org.olcbox.app.data.repository.LocationsRepository
+import org.olcbox.app.data.repository.SubscriptionRefreshReport
 import org.olcbox.app.ui.features.locations.LocationItem
 import org.olcbox.app.vpn.VpnManager
 import org.olcbox.app.vpn.VpnStatus
@@ -283,28 +284,28 @@ class HomeScreenViewModel(
     }
 
     fun refreshSubscriptions(
-        onComplete: (updatedCount: Int) -> Unit = {}
+        onComplete: (report: SubscriptionRefreshReport) -> Unit = {}
     ) {
         viewModelScope.launch {
-            val updatedCount = locationsRepository.refreshSubscriptions(
+            val report = locationsRepository.refreshSubscriptions(
                 subscriptionProxy = vpnManager.subscriptionFetchProxy()
             )
             loadCurrentConfigNow()
-            onComplete(updatedCount)
+            onComplete(report)
         }
     }
 
     fun refreshSubscription(
         subscriptionUrl: String,
-        onComplete: (updatedCount: Int) -> Unit = {}
+        onComplete: (report: SubscriptionRefreshReport) -> Unit = {}
     ) {
         viewModelScope.launch {
-            val updatedCount = locationsRepository.refreshSubscription(
+            val report = locationsRepository.refreshSubscription(
                 subscriptionUrl = subscriptionUrl,
                 subscriptionProxy = vpnManager.subscriptionFetchProxy()
             )
             loadCurrentConfigNow()
-            onComplete(updatedCount)
+            onComplete(report)
         }
     }
 
@@ -341,12 +342,14 @@ class HomeScreenViewModel(
     }
 
     private suspend fun refreshDueSubscriptionsIfNeeded() {
-        val updatedCount = withContext(Dispatchers.IO) {
+        // Background pass: failures here are not surfaced — the user did not ask
+        // for it, and the next manual refresh will report the reason.
+        val report = withContext(Dispatchers.IO) {
             locationsRepository.refreshDueSubscriptions(
                 subscriptionProxy = vpnManager.subscriptionFetchProxy()
             )
         }
-        if (updatedCount > 0) {
+        if (report.updatedCount > 0) {
             loadCurrentConfigNow()
         }
     }
