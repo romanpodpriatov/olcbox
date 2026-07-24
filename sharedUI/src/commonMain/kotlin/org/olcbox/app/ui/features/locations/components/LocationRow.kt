@@ -177,18 +177,19 @@ fun LocationRow(
 private fun locationSubtitle(location: LocationItem): String {
     val config = location.config
     val metadata = location.metadata
-    val providerName = config?.providerName()
-        ?: LocationConfig.providerDisplayName(LocationConfig.DEFAULT_BYPASS_PROVIDER)
-    val transportName = config?.transportName()
-        ?: LocationConfig.transportDisplayName(LocationConfig.DEFAULT_TRANSPORT)
+    // Kind-aware: olcRTC rows show the carrier (provider · transport), vless/hy2 rows
+    // show their own protocol instead of inheriting the olcRTC defaults.
+    val protocol = config?.protocolLabels()
+        ?: listOf(
+            LocationConfig.providerDisplayName(LocationConfig.DEFAULT_BYPASS_PROVIDER),
+            LocationConfig.transportDisplayName(LocationConfig.DEFAULT_TRANSPORT)
+        )
 
-    return listOfNotNull(
-        providerName,
-        transportName,
+    return (protocol + listOfNotNull(
         metadata?.comment?.takeIf { it.isNotBlank() },
         metadata?.ip?.takeIf { it.isNotBlank() }?.let { "IP $it" },
         quotaText(metadata?.used, metadata?.available)
-    ).joinToString(" · ")
+    )).joinToString(" · ")
 }
 
 private fun quotaText(used: String?, available: String?): String? {

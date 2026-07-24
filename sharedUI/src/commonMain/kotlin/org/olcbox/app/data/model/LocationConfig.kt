@@ -15,6 +15,8 @@ import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.encodeToJsonElement
 import org.olcbox.app.net.LinkParser
 import org.olcbox.app.net.LocationKind
+import org.olcbox.app.net.OutboundSpec
+import org.olcbox.app.net.TransportSpec
 
 @Serializable
 data class LocationConfig(
@@ -58,6 +60,35 @@ data class LocationConfig(
     fun providerName(): String = providerDisplayName(bypassProvider)
 
     fun transportName(): String = transportDisplayName(transport)
+
+    /**
+     * Protocol labels for the location list subtitle.
+     *
+     * [bypassProvider]/[transport] describe the olcRTC carrier (whiteboard stream,
+     * VP8 channel…) and are meaningless for imported xray-side links — those kept
+     * the defaults and rendered as "WB stream · VP8". Only olcRTC locations get the
+     * carrier labels; vless/hysteria2 report what their link actually uses.
+     */
+    fun protocolLabels(): List<String> = when (kind) {
+        LocationKind.Olcrtc -> listOf(providerName(), transportName())
+        LocationKind.Vless -> {
+            val spec = rawLink?.let { LinkParser.parse(it) } as? OutboundSpec.Vless
+            val transportLabel = when {
+                spec == null -> null
+                spec.transport is TransportSpec.Xhttp -> "XHTTP"
+                spec.publicKey.isNotBlank() -> "Reality"
+                else -> "TLS"
+            }
+            listOfNotNull("VLESS", transportLabel)
+        }
+        LocationKind.Hysteria2 -> {
+            val spec = rawLink?.let { LinkParser.parse(it) } as? OutboundSpec.Hysteria2
+            listOfNotNull(
+                "Hysteria2",
+                "Salamander".takeIf { !spec?.obfsPassword.isNullOrBlank() }
+            )
+        }
+    }
 
     companion object {
         const val PROVIDER_JAZZ = "jazz"
