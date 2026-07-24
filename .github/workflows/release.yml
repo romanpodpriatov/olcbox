@@ -234,6 +234,33 @@ jobs:
           go-version: 'stable'
           cache-dependency-path: olcrtc/go.sum
 
+      - name: Bundle sing-box + Xray cores into the app
+        working-directory: olcbox
+        env:
+          SINGBOX_VERSION: "1.11.15"
+          XRAY_VERSION: "25.3.6"
+          MATRIX_ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          dest="desktopApp/src/main/resources/native"
+          mkdir -p "$dest"
+
+          echo "== sing-box (darwin-${MATRIX_ARCH}) =="
+          curl -fsSL "https://github.com/SagerNet/sing-box/releases/download/v${SINGBOX_VERSION}/sing-box-${SINGBOX_VERSION}-darwin-${MATRIX_ARCH}.tar.gz" -o sb.tgz
+          tar xzf sb.tgz
+          cp "sing-box-${SINGBOX_VERSION}-darwin-${MATRIX_ARCH}/sing-box" "$dest/sing-box"
+
+          echo "== Xray (macos-${MATRIX_ARCH}) =="
+          if [ "$MATRIX_ARCH" = "arm64" ]; then xasset="Xray-macos-arm64-v8a.zip"; else xasset="Xray-macos-64.zip"; fi
+          curl -fsSL "https://github.com/XTLS/Xray-core/releases/download/v${XRAY_VERSION}/${xasset}" -o xray.zip
+          unzip -o xray.zip xray -d xray-extract
+          cp xray-extract/xray "$dest/xray"
+
+          chmod +x "$dest/sing-box" "$dest/xray"
+          echo "== bundled cores =="; ls -la "$dest"
+          "$dest/sing-box" version | head -1
+          "$dest/xray" version | head -1
+
       - name: Build macOS DMG
         working-directory: olcbox
         run: |
@@ -578,6 +605,9 @@ jobs:
     steps:
       - name: Checkout olcbox
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
 
       - name: Clear release staging dir
         run: rm -rf dist
@@ -672,3 +702,70 @@ jobs:
           done
 
           gh release edit "$OLCBOX_NIGHTLY_TAG" --draft=false --prerelease
+
+      - name: Publish permanent versioned release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          version_tag="v${OLCBOX_VERSION}"
+          git fetch --tags --force --quiet || true
+
+          # Auto changelog: commits since the previous versioned release tag.
+          prev_tag="$(git tag -l 'v1.0.*' --sort=-version:refname | grep -vx "${version_tag}" | head -1 || true)"
+          {
+            echo "## What's new in ${version_tag}"
+            echo
+            if [ -n "$prev_tag" ]; then
+              echo "Changes since \`${prev_tag}\`:"
+              echo
+              git log --no-merges --pretty=format:'- %s (%h)' "${prev_tag}..HEAD" || true
+            else
+              echo "First versioned release. Recent changes:"
+              echo
+              git log --no-merges --pretty=format:'- %s (%h)' -20 || true
+            fi
+            echo
+            echo
+            cat release-notes.md
+          } > versioned-notes.md
+
+          mapfile -t assets < <(find dist -type f | sort)
+          if [ "${#assets[@]}" -eq 0 ]; then
+            echo "No release assets found"
+            exit 1
+          fi
+
+          # Permanent, immutable per-build release for rollback. Prerelease so it is
+          # NOT returned by /releases/latest (the updater's Stable channel), leaving
+          # auto-update behavior unchanged — these exist purely for manual download.
+          if gh release view "$version_tag" >/dev/null 2>&1; then
+            echo "Release ${version_tag} already exists; refreshing notes + assets"
+            gh release edit "$version_tag" --notes-file versioned-notes.md --prerelease --draft=false
+          else
+            gh release create "$version_tag" \
+              --target "$GITHUB_SHA" \
+              --title "Olcbox ${OLCBOX_VERSION}" \
+              --notes-file versioned-notes.md \
+              --prerelease \
+              --draft
+          fi
+
+          sleep 5
+          for asset in "${assets[@]}"; do
+            echo "Uploading ${asset} to ${version_tag}"
+            for attempt in 1 2 3; do
+              if gh release upload "$version_tag" "$asset" --clobber; then
+                break
+              fi
+              if [ "$attempt" -eq 3 ]; then
+                echo "Failed to upload ${asset} after ${attempt} attempts" >&2
+                exit 1
+              fi
+              echo "Upload failed for ${asset}; retrying in 10 seconds" >&2
+              sleep 10
+            done
+          done
+
+          gh release edit "$version_tag" --draft=false --prerelease
