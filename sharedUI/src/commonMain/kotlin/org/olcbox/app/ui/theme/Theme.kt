@@ -10,7 +10,7 @@ internal val LocalThemeIsDark = compositionLocalOf { mutableStateOf(true) }
 fun AppTheme(
     content: @Composable () -> Unit
 ) {
-    AppTheme(useDynamicColor = true, content = content)
+    AppTheme(useDynamicColor = false, content = content)
 }
 
 @Composable
