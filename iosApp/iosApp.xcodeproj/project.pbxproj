@@ -10,6 +10,7 @@
 		9A0000010000000000000001 /* OlcboxIosApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A0000010000000000000011 /* OlcboxIosApp.swift */; };
 		9A0000010000000000000002 /* SwiftPlatformBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A0000010000000000000012 /* SwiftPlatformBridge.swift */; };
 		9A0000010000000000000003 /* SwiftOlcRtcManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A0000010000000000000013 /* SwiftOlcRtcManager.swift */; };
+		9A0000010000000000000004 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 9A0000010000000000000015 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -18,6 +19,7 @@
 		9A0000010000000000000012 /* SwiftPlatformBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwiftPlatformBridge.swift; sourceTree = "<group>"; };
 		9A0000010000000000000013 /* SwiftOlcRtcManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwiftOlcRtcManager.swift; sourceTree = "<group>"; };
 		9A0000010000000000000014 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		9A0000010000000000000015 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -47,6 +49,7 @@
 				9A0000010000000000000012 /* SwiftPlatformBridge.swift */,
 				9A0000010000000000000013 /* SwiftOlcRtcManager.swift */,
 				9A0000010000000000000014 /* Info.plist */,
+				9A0000010000000000000015 /* Assets.xcassets */,
 			);
 			path = iosApp;
 			sourceTree = "<group>";
@@ -125,6 +128,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				9A0000010000000000000004 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -219,7 +223,7 @@
 		9A00000100000000000000B0 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = "";
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGNING_ALLOWED = NO;
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_ASSET_PATHS = "";
@@ -266,7 +270,7 @@
 		9A00000100000000000000B1 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = "";
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGNING_ALLOWED = NO;
 				CODE_SIGN_STYLE = Automatic;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;

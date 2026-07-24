@@ -159,7 +159,7 @@ final class SwiftPlatformBridge: NSObject, @preconcurrency IosPlatformBridge, UI
     }
 
     private func writeTemporaryFile(defaultName: String, content: String) throws -> URL {
-        let sanitized = (defaultName.isEmpty ? "olcbox-logs.txt" : defaultName)
+        let sanitized = (defaultName.isEmpty ? "proofkit-logs.txt" : defaultName)
             .replacingOccurrences(of: "/", with: "_")
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("\(UUID().uuidString)-\(sanitized)")

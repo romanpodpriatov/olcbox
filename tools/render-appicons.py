@@ -15,6 +15,7 @@ Outputs:
 Usage: python3 tools/render-appicons.py [repo-root]
 """
 from PIL import Image, ImageDraw
+import json
 import os
 import sys
 
@@ -117,6 +118,20 @@ def qs_tile(size: int) -> Image.Image:
     return _glyph_only(size, fraction=0.90, mono=True)
 
 
+def ios_icon(size: int) -> Image.Image:
+    """iOS app icon: square, fully opaque, no rounded corners.
+
+    iOS applies its own superellipse mask, and an alpha channel gets an App Store
+    submission rejected — so this is RGB with the corners left square.
+    """
+    s = size * SS
+    img = Image.new("RGB", (s, s), BG)
+    d = ImageDraw.Draw(img)
+    u = (s * 0.66) / INK_SPAN
+    _mesh(d, u, s / 2, s / 2 + (16.0 - INK_CENTRE_Y) * u, mono=False)
+    return img.resize((size, size), Image.LANCZOS)
+
+
 def save(img: Image.Image, path: str) -> None:
     os.makedirs(os.path.dirname(path), exist_ok=True)
     img.save(path)
@@ -157,6 +172,32 @@ def main(root: str) -> None:
     icns_path = os.path.join(icons, "MacosIcon.icns")
     master.save(icns_path)
     print(f"wrote {icns_path}")
+
+    # iOS: single 1024 icon in the asset catalog (Xcode 14+ single-size form).
+    appiconset = os.path.join(root, "iosApp/iosApp/Assets.xcassets/AppIcon.appiconset")
+    save(ios_icon(1024), os.path.join(appiconset, "AppIcon1024.png"))
+
+    with open(os.path.join(root, "iosApp/iosApp/Assets.xcassets/Contents.json"), "w") as fh:
+        json.dump({"info": {"author": "xcode", "version": 1}}, fh, indent=2)
+        fh.write("\n")
+    with open(os.path.join(appiconset, "Contents.json"), "w") as fh:
+        json.dump(
+            {
+                "images": [
+                    {
+                        "filename": "AppIcon1024.png",
+                        "idiom": "universal",
+                        "platform": "ios",
+                        "size": "1024x1024",
+                    }
+                ],
+                "info": {"author": "xcode", "version": 1},
+            },
+            fh,
+            indent=2,
+        )
+        fh.write("\n")
+    print("wrote iOS asset catalog")
 
 
 if __name__ == "__main__":
