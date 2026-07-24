@@ -8,6 +8,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -175,6 +176,48 @@ fun PkStatusPill(state: PkStatus, text: String, modifier: Modifier = Modifier) {
                 style = MaterialTheme.typography.labelMedium,
                 color = if (state == PkStatus.Idle) pk.textMuted else MaterialTheme.colorScheme.onSurface
             )
+        }
+    }
+}
+
+/**
+ * Mono filter chip. Selected reads as lime-on-dark so the active filter is obvious
+ * at a glance in a long list.
+ */
+@Composable
+fun PkFilterChip(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    count: Int? = null
+) {
+    val pk = LocalPkPalette.current
+    Surface(
+        modifier = Modifier.clickable(onClick = onClick),
+        shape = RoundedCornerShape(999.dp),
+        color = if (selected) pk.accentSoft else MaterialTheme.colorScheme.surfaceContainer,
+        border = BorderStroke(
+            1.dp,
+            if (selected) pk.accent else MaterialTheme.colorScheme.outlineVariant
+        )
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Text(
+                text = label.uppercase(),
+                style = MaterialTheme.typography.labelSmall,
+                color = if (selected) pk.accent else pk.textDim
+            )
+            if (count != null) {
+                Text(
+                    text = count.toString(),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (selected) pk.accent else pk.textMuted
+                )
+            }
         }
     }
 }

@@ -1,6 +1,8 @@
 package org.olcbox.app.ui.features.home.components
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,6 +26,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -31,7 +37,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import org.olcbox.app.net.TransportKind
+import org.olcbox.app.net.transportKind
 import org.olcbox.app.ui.components.kit.PkBrand
+import org.olcbox.app.ui.components.kit.PkFilterChip
 import org.olcbox.app.ui.components.kit.PkSectionLabel
 import org.olcbox.app.ui.features.locations.LocationItem
 import org.olcbox.app.ui.features.locations.PingsState
@@ -54,12 +63,59 @@ fun LocationSelectorScreen(
     showCustomLocation: Boolean = true
 ) {
     Column(modifier = modifier.fillMaxWidth()) {
-        val subscriptionLocations = locations.filter { !it.subscriptionUrl.isNullOrBlank() }
+        // 24 exits x 3 transports is 72 rows out of one subscription; without a
+        // filter the list is unusable. Chips only appear for transports actually
+        // present, so a single-transport subscription looks exactly as before.
+        var transportFilter by rememberSaveable { mutableStateOf<String?>(null) }
+        val countsByKind = locations
+            .mapNotNull { it.config?.transportKind() }
+            .groupingBy { it }
+            .eachCount()
+        val presentKinds = TransportKind.entries.filter { countsByKind.containsKey(it) }
+        // Resolve rather than repair: a filter left over from a subscription that no
+        // longer serves that transport simply reads as "All". Writing the state back
+        // here would be a write during composition.
+        val activeFilter = transportFilter?.let { name ->
+            presentKinds.firstOrNull { it.name == name }
+        }
+
+        if (presentKinds.size > 1) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(bottom = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                PkFilterChip(
+                    label = "All",
+                    selected = activeFilter == null,
+                    count = locations.size,
+                    onClick = { transportFilter = null }
+                )
+                presentKinds.forEach { kind ->
+                    PkFilterChip(
+                        label = kind.label(),
+                        selected = activeFilter == kind,
+                        count = countsByKind[kind],
+                        onClick = {
+                            transportFilter = if (activeFilter == kind) null else kind.name
+                        }
+                    )
+                }
+            }
+        }
+
+        val visibleLocations = activeFilter
+            ?.let { kind -> locations.filter { it.config?.transportKind() == kind } }
+            ?: locations
+
+        val subscriptionLocations = visibleLocations.filter { !it.subscriptionUrl.isNullOrBlank() }
         val subscriptionGroups = subscriptionLocations
             .groupBy { it.subscriptionGroupKey() }
             .values
             .toList()
-        val customLocations = locations.filter { it.subscriptionUrl.isNullOrBlank() }
+        val customLocations = visibleLocations.filter { it.subscriptionUrl.isNullOrBlank() }
 
         if (locations.isEmpty()) {
             RelaySetupCard(
@@ -438,11 +494,25 @@ private fun LocationItem.subscriptionGroupKey(): String {
 
 private fun LocationItem.subscriptionTitle(): String {
     val subscription = metadata?.subscription
+    // Falling back to the literal "Subscriptions" labelled every unnamed
+    // subscription identically, so two of them read as the same heading twice.
+    // Identify by host instead, which is what actually distinguishes them.
+    val name = subscription?.name?.takeIf { it.isNotBlank() }
+        ?: subscriptionUrl?.let { subscriptionHost(it) }
+        ?: "Subscription"
 
     return listOfNotNull(
         subscription?.icon?.takeIf { it.isNotBlank() },
-        subscription?.name?.takeIf { it.isNotBlank() } ?: "Subscriptions"
+        name
     ).joinToString(" ")
+}
+
+/** `https://proofkit.org/sub/<token>` → `proofkit.org`. */
+private fun subscriptionHost(url: String): String? {
+    val withoutScheme = url.trim().substringAfter("://", missingDelimiterValue = "")
+    if (withoutScheme.isBlank()) return null
+    return withoutScheme.substringBefore('/').substringBefore(':')
+        .takeIf { it.isNotBlank() }
 }
 
 private fun LocationItem.subscriptionDetails(): String? {
