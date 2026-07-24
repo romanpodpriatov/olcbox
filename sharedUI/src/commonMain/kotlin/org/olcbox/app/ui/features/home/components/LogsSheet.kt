@@ -1,8 +1,6 @@
 package org.olcbox.app.ui.features.home.components
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -13,7 +11,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material3.BottomSheetDefaults
@@ -30,11 +27,11 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
+import org.olcbox.app.ui.components.kit.PkCardSunken
+import org.olcbox.app.ui.theme.LocalPkPalette
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -122,12 +119,10 @@ fun LogsContent(
             }
         }
 
-        Box(
+        PkCardSunken(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(12.dp))
-                .background(Color.Black.copy(alpha = 0.05f))
         ) {
             LogLines(
                 logs = logs,
@@ -163,7 +158,7 @@ fun LogLines(
         ) { _, log ->
             Text(
                 text = log,
-                fontSize = 12.sp,
+                style = MaterialTheme.typography.labelSmall,
                 color = getLogColor(log),
                 modifier = Modifier.padding(vertical = 2.dp)
             )
@@ -173,10 +168,11 @@ fun LogLines(
 
 @Composable
 private fun getLogColor(log: String): Color {
+    val pk = LocalPkPalette.current
     return when {
-        log.contains("❌") || log.contains("Error") -> Color.Red
-        log.contains("✅") || log.contains("OK") -> Color(0xFF4CAF50)
-        log.contains("⚠️") -> Color(0xFFFFA000)
+        log.contains("❌") || log.contains("Error") -> pk.danger
+        log.contains("✅") || log.contains("OK") -> pk.success
+        log.contains("⚠️") -> pk.warning
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
 }

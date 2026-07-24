@@ -73,7 +73,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.olcbox.app.CurrentAppInfo
 import org.olcbox.app.data.share.SubscriptionShareItem
+import org.olcbox.app.ui.components.kit.PkSectionLabel
+import org.olcbox.app.ui.components.kit.pkVersionLine
 import org.olcbox.app.ui.features.home.components.LogLines
+import org.olcbox.app.ui.theme.LocalPkPalette
 import org.olcbox.app.update.AppUpdateInfo
 import org.olcbox.app.update.AppUpdateSettings
 import kotlin.time.Instant
@@ -278,9 +281,9 @@ private fun SharedSettingsHubContent(
             contentAlignment = Alignment.Center
         ) {
             Text(
-                text = "${CurrentAppInfo.value.name} ${CurrentAppInfo.value.version}",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 12.sp
+                text = pkVersionLine(CurrentAppInfo.value),
+                style = MaterialTheme.typography.labelSmall,
+                color = LocalPkPalette.current.textMuted
             )
         }
     }
@@ -1097,13 +1100,9 @@ private fun SharedDetailHeader(
 
 @Composable
 private fun SharedSectionLabel(text: String) {
-    Text(
-        text = text,
-        modifier = Modifier.padding(start = 2.dp),
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        fontSize = 12.sp,
-        fontWeight = FontWeight.SemiBold
-    )
+    Box(modifier = Modifier.padding(start = 2.dp)) {
+        PkSectionLabel(text)
+    }
 }
 
 @Composable
