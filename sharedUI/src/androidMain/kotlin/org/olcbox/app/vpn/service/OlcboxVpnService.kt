@@ -553,7 +553,7 @@ class OlcboxVpnService : VpnService() {
             setStatus(VpnStatus.Connected)
             resetRecoveryState()
             updateNotification(connectedNotificationText())
-            addLog("Proxy mode connected on SOCKS $socksListenHost:$socksListenPort")
+            addLog("Proxy mode connected on SOCKS $socksListenHost:${activeCorePort ?: socksListenPort}")
             startWatchdog()
             return
         }
@@ -603,9 +603,20 @@ class OlcboxVpnService : VpnService() {
         }
     }
 
-    /** Start a sing-box (reality/hy2) or Xray (xhttp) core on the core SOCKS port. */
+    /**
+     * Start a sing-box (reality/hy2) or Xray (xhttp) core.
+     *
+     * In proxy mode the core listens on [socksListenPort], because that is the
+     * endpoint the app tells other apps to use — putting the core anywhere else
+     * leaves that promised port dead. In tun mode nothing outside talks to it, so
+     * it takes the internal core port and tun2socks follows [activeCorePort].
+     */
     private suspend fun startCore(location: LocationConfig, setErrorOnFailure: Boolean): Boolean {
-        val port = SingBoxConfig.SINGBOX_SOCKS_PORT
+        val port = if (connectionMode == AndroidConnectionMode.Proxy) {
+            socksListenPort
+        } else {
+            SingBoxConfig.SINGBOX_SOCKS_PORT
+        }
         return try {
             val raw = location.rawLink ?: error("core location has no link")
             val spec = LinkParser.parse(raw) ?: error("unparseable core link")
