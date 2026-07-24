@@ -95,12 +95,18 @@ class PacServer(
             socksPassword: String = ""
         ): String {
             val target = socksProxyTarget(socksHost, socksPort, socksUsername, socksPassword)
+            // SOCKS first, SOCKS5 second. "SOCKS5" is a Chrome/Firefox extension that
+            // macOS's own stack (CFNetwork) does not recognise, and a system-wide PAC
+            // whose first entry is unknown falls through to DIRECT instead of trying
+            // the next one — the proxy reads as enabled while every request goes out
+            // untunnelled. "SOCKS" is the standard token and CFNetwork speaks SOCKS5
+            // behind it; browsers that prefer the explicit form still find it second.
             return """
                 function FindProxyForURL(url, host) {
                   if (isPlainHostName(host)) return "DIRECT";
                   if (host == "localhost" || host == "127.0.0.1" || host == "::1") return "DIRECT";
                   if (shExpMatch(host, "127.*")) return "DIRECT";
-                  return "SOCKS5 $target; SOCKS $target";
+                  return "SOCKS $target; SOCKS5 $target";
                 }
             """.trimIndent()
         }

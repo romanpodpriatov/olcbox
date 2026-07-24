@@ -16,7 +16,13 @@ class DesktopProxyModeTest {
 
         assertContains(pac, "isPlainHostName(host)")
         assertContains(pac, "host == \"localhost\"")
-        assertContains(pac, "SOCKS5 127.0.0.1:10808; SOCKS 127.0.0.1:10808")
+        assertContains(pac, "SOCKS 127.0.0.1:10808; SOCKS5 127.0.0.1:10808")
+        // Order matters: macOS reads the first entry and gives up on an unknown
+        // token, so the standard "SOCKS" must come before the browser-only "SOCKS5".
+        assertTrue(
+            pac.indexOf("SOCKS 127.0.0.1") < pac.indexOf("SOCKS5 127.0.0.1"),
+            "standard SOCKS must precede SOCKS5 or macOS falls back to DIRECT"
+        )
     }
 
     @Test
@@ -27,7 +33,7 @@ class DesktopProxyModeTest {
         server.start("127.0.0.1", 10810, "user", "pass")
 
         val pac = server.currentPacContent()
-        assertContains(pac, "SOCKS5 user:pass@127.0.0.1:10810; SOCKS user:pass@127.0.0.1:10810")
+        assertContains(pac, "SOCKS user:pass@127.0.0.1:10810; SOCKS5 user:pass@127.0.0.1:10810")
         assertTrue("SOCKS5 127.0.0.1:10808" !in pac)
 
         server.stop()
