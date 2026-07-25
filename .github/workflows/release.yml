@@ -408,7 +408,8 @@ jobs:
           mkdir -p dist
           cp desktopApp/build/compose/binaries/main-release/dmg/*.dmg "dist/ProofKit-${OLCBOX_VERSION}-macos-${{ matrix.arch }}.dmg"
 
-      - name: Notarise and staple
+      - name: Submit for notarisation
+        id: notarise
         working-directory: olcbox
         env:
           MACOS_NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
@@ -421,55 +422,36 @@ jobs:
 
           if [ -z "${MACOS_NOTARY_KEY_BASE64:-}" ]; then
             echo "No notary credentials; publishing a signed-but-not-notarised DMG."
-            echo "Gatekeeper will still warn on first open until this is configured."
+            echo "id=" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
           key="$RUNNER_TEMP/notary.p8"
           echo "$MACOS_NOTARY_KEY_BASE64" | tr -d '[:space:]' | base64 --decode > "$key"
 
-          # --wait blocks until Apple has a verdict; without it the job would pass
-          # while the DMG is still unapproved, which is worse than failing.
-          #
-          # The verdict alone is useless: "Invalid" names neither the file nor the
-          # reason, and those live in a separate log fetched by submission id. So
-          # capture the id and always print that log when Apple says no.
-          set +e
+          # Deliberately no --wait: Apple's queue has taken up to twenty minutes,
+          # and waiting it out here bills a 10x runner for doing nothing. A 1x
+          # runner polls for the verdict instead, and this machine is only needed
+          # again for the seconds stapling takes.
           out="$(xcrun notarytool submit "$dmg" \
             --key "$key" \
             --key-id "$MACOS_NOTARY_KEY_ID" \
-            --issuer "$MACOS_NOTARY_ISSUER_ID" \
-            --wait --timeout 30m 2>&1)"
-          rc=$?
-          set -e
+            --issuer "$MACOS_NOTARY_ISSUER_ID" 2>&1)"
+          rm -f "$key"
           echo "$out"
 
           sub_id="$(printf '%s\n' "$out" | awk '/id: /{print $2; exit}')"
-          if [ $rc -ne 0 ] || ! printf '%s\n' "$out" | grep -q "status: Accepted"; then
-            echo "== why Apple rejected it =="
-            if [ -n "$sub_id" ]; then
-              xcrun notarytool log "$sub_id" \
-                --key "$key" \
-                --key-id "$MACOS_NOTARY_KEY_ID" \
-                --issuer "$MACOS_NOTARY_ISSUER_ID" || true
-            fi
-            rm -f "$key"
-            exit 1
-          fi
-          rm -f "$key"
-
-          # Stapling puts the approval inside the DMG, so a user who is offline or
-          # behind a filter still opens it without a warning.
-          xcrun stapler staple "$dmg"
-          xcrun stapler validate "$dmg"
-          echo "== gatekeeper verdict =="
-          spctl -a -t open --context context:primary-signature -vv "$dmg" || true
+          test -n "$sub_id" || { echo "no submission id came back"; exit 1; }
+          echo "$sub_id" > dist/notary-submission-id.txt
+          echo "id=$sub_id" >> "$GITHUB_OUTPUT"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
           name: ProofKit-macos-${{ matrix.arch }}-dmg
-          path: olcbox/dist/ProofKit-*-macos-${{ matrix.arch }}.dmg
+          path: |
+            olcbox/dist/ProofKit-*-macos-${{ matrix.arch }}.dmg
+            olcbox/dist/notary-submission-id.txt
 
   build-linux:
     needs: [release_version, plan]
@@ -774,6 +756,73 @@ jobs:
           name: ProofKit-ios-unsigned-ipa
           path: olcbox/dist/ProofKit-${{ env.OLCBOX_VERSION }}-ios-unsigned.ipa
 
+
+  notarise-wait:
+    name: Wait for Apple (1x runner)
+    needs: [plan, build-macos]
+    if: needs.plan.outputs.macos_any == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.plan.outputs.macos_matrix) }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v4
+        with:
+          name: ProofKit-macos-${{ matrix.arch }}-dmg
+          path: dist
+      - name: Wait for the verdict
+        env:
+          MACOS_NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+          MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          MACOS_NOTARY_KEY_BASE64: ${{ secrets.MACOS_NOTARY_KEY_BASE64 }}
+        run: |
+          set -euo pipefail
+          if [ ! -f dist/notary-submission-id.txt ]; then
+            echo "Nothing was submitted; the DMG is unsigned or the credentials are absent."
+            exit 0
+          fi
+          pip install --quiet pyjwt cryptography
+          python3 scripts/notary-wait.py "$(cat dist/notary-submission-id.txt)"
+
+  staple-macos:
+    name: Staple the ticket
+    needs: [plan, release_version, notarise-wait]
+    if: needs.plan.outputs.macos_any == 'true'
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.plan.outputs.macos_matrix) }}
+    runs-on: ${{ matrix.runner }}
+    env:
+      OLCBOX_VERSION: ${{ needs.release_version.outputs.version }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ProofKit-macos-${{ matrix.arch }}-dmg
+          path: dist
+      - name: Staple
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          dmg="dist/ProofKit-${OLCBOX_VERSION}-macos-${ARCH}.dmg"
+          if [ ! -f dist/notary-submission-id.txt ]; then
+            echo "Not notarised; nothing to staple."
+            exit 0
+          fi
+          # Seconds of a 10x runner instead of the twenty minutes the wait used
+          # to cost. Stapling matters because it puts the approval inside the
+          # file, so Gatekeeper is silent even for a user with no working path
+          # to Apple — which, for a VPN's users, is not a rare situation.
+          xcrun stapler staple "$dmg"
+          xcrun stapler validate "$dmg"
+          spctl -a -t open --context context:primary-signature -vv "$dmg" || true
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ProofKit-macos-${{ matrix.arch }}-dmg
+          path: dist/ProofKit-*-macos-${{ matrix.arch }}.dmg
+          overwrite: true
+
   publish-nightly:
     runs-on: ubuntu-latest
     permissions:
@@ -785,6 +834,7 @@ jobs:
       - release_version
       - build-windows
       - build-macos
+      - staple-macos
       - build-linux
       - build-android
       - build-ios
