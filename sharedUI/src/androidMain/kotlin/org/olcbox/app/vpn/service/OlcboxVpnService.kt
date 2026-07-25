@@ -49,6 +49,8 @@ import org.olcbox.app.net.LocationKind
 import org.olcbox.app.net.OutboundSpec
 import org.olcbox.app.net.SingBoxConfig
 import org.olcbox.app.net.TransportSpec
+import org.olcbox.app.net.TunnelExit
+import org.olcbox.app.net.TunnelVerifier
 import org.olcbox.app.net.XrayConfig
 import org.olcbox.app.vpn.AndroidConnectionMode
 import org.olcbox.app.vpn.AndroidSocksProxySettings
@@ -493,10 +495,20 @@ class OlcboxVpnService : VpnService() {
         if (requestedGeneration != generation) return
 
         if (startTransport(location, upstream, requestedGeneration, setErrorOnFailure = false)) {
+            val exit = verifyTunnel(location)
+            if (requestedGeneration != generation) return
+            if (exit == null) {
+                failUnverifiedTunnel(
+                    what = "${activeModeLabel()} transport",
+                    isMigration = true,
+                    requestedGeneration = requestedGeneration
+                )
+                return
+            }
             setStatus(VpnStatus.Connected)
             resetRecoveryState()
             updateNotification(connectedNotificationText())
-            addLog("${activeModeLabel()} transport reconnected")
+            addLog("${activeModeLabel()} transport reconnected — exit ${exit.label()}")
             startWatchdog()
         } else {
             updateUnderlyingNetwork(null)
@@ -550,10 +562,19 @@ class OlcboxVpnService : VpnService() {
 //                stopTransportProcesses(closeTun = true)
 //                return
 //            }
+            val proxyExit = verifyTunnel(location)
+            if (requestedGeneration != generation) return
+            if (proxyExit == null) {
+                failUnverifiedTunnel("Proxy mode", isMigration, requestedGeneration)
+                return
+            }
             setStatus(VpnStatus.Connected)
             resetRecoveryState()
             updateNotification(connectedNotificationText())
-            addLog("Proxy mode connected on SOCKS $socksListenHost:${activeCorePort ?: socksListenPort}")
+            addLog(
+                "Proxy mode connected on SOCKS $socksListenHost:" +
+                    "${activeCorePort ?: socksListenPort} — exit ${proxyExit.label()}"
+            )
             startWatchdog()
             return
         }
@@ -576,11 +597,68 @@ class OlcboxVpnService : VpnService() {
         coroutineContext.ensureActive()
         if (requestedGeneration != generation) return
 
+        val exit = verifyTunnel(location)
+        if (requestedGeneration != generation) return
+        if (exit == null) {
+            failUnverifiedTunnel("VPN tunnel", isMigration, requestedGeneration)
+            return
+        }
+
         setStatus(VpnStatus.Connected)
         resetRecoveryState()
         updateNotification(connectedNotificationText())
-        addLog("VPN tunnel established")
+        addLog("VPN tunnel established — exit ${exit.label()}")
         startWatchdog()
+    }
+
+    /**
+     * Ask the internet what this tunnel looks like from the far end, before the app
+     * is allowed to call itself connected.
+     *
+     * Every connect failure seen in the field so far reported success: a core whose
+     * port was already taken, a hysteria2 outbound rejected at TLS, an xhttp path
+     * that never carried a byte. Each of them ran its steps without error, so the
+     * status meant "we did the setup", not "traffic reaches the internet". A reply
+     * that came back through the tunnel is the one signal that cannot be faked.
+     *
+     * The probe goes through the local SOCKS port the transport opened, which proves
+     * the transport itself reaches the internet. It says nothing about the
+     * tun → tun2socks leg: this app's UID bypasses the tun by design, so its own
+     * traffic cannot travel that path.
+     */
+    private suspend fun verifyTunnel(location: LocationConfig): TunnelExit? {
+        val isOlcrtc = location.kind == LocationKind.Olcrtc
+        updateNotification("Verifying tunnel...")
+        return TunnelVerifier.verify(
+            socksHost = AndroidSocksProxySettings.connectHost(socksListenHost),
+            socksPort = activeCorePort ?: socksListenPort,
+            // Only olcRTC's local proxy asks for a login; the cores listen open.
+            username = if (isOlcrtc) socksUsername else "",
+            password = if (isOlcrtc) socksPassword else ""
+        )
+    }
+
+    /**
+     * A transport that came up but carried nothing. On a first connect that is a
+     * plain failure; during a migration the recovery machinery owns the retry, the
+     * same way a failed transport start is handled.
+     */
+    private suspend fun failUnverifiedTunnel(
+        what: String,
+        isMigration: Boolean,
+        requestedGeneration: Long
+    ) {
+        addLog("$what is up but no traffic reached the internet through it")
+        if (isMigration) {
+            updateUnderlyingNetwork(null)
+            setStatus(VpnStatus.Reconnecting)
+            updateNotification("Waiting for transport...")
+            scheduleTransportRetry(requestedGeneration, "tunnel carried no traffic")
+        } else {
+            stopTransportProcesses(closeTun = true, waitForSocksPort = false)
+            setStatus(VpnStatus.Error("No traffic reached the internet through the tunnel"))
+            updateNotification("Connection failed")
+        }
     }
 
     /**
@@ -714,7 +792,6 @@ class OlcboxVpnService : VpnService() {
             }
             coroutineContext.ensureActive()
             addLog("olcRTC ready on $socksListenHost:$targetSocksPort")
-            addLog("username: $socksUsername, password: $socksPassword")
             markRtcConnected()
             if (keepProcessBound) {
                 addLog("Keeping olcRTC bound to ${getNetName(upstream)}")

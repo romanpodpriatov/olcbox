@@ -3,7 +3,9 @@ package org.olcbox.app.net
 import io.ktor.client.request.get
 import io.ktor.client.statement.bodyAsText
 import org.olcbox.app.data.datasource.createProxyHttpClient
+import org.olcbox.app.data.datasource.withProxyAuthentication
 import org.olcbox.app.data.repository.SubscriptionFetchProxy
+import kotlin.coroutines.cancellation.CancellationException
 
 /** What the far end of the tunnel looks like from the internet. */
 data class TunnelExit(
@@ -54,6 +56,15 @@ object TunnelVerifier {
      */
     const val PROBE_URL = "https://1.1.1.1/cdn-cgi/trace"
 
+    /**
+     * Same endpoint reached by name instead of by address. Some networks and some
+     * exits blackhole 1.1.1.1 specifically; a tunnel that works must not be called
+     * dead because one address is unreachable from the far end.
+     */
+    const val FALLBACK_PROBE_URL = "https://cloudflare.com/cdn-cgi/trace"
+
+    val DEFAULT_PROBE_URLS = listOf(PROBE_URL, FALLBACK_PROBE_URL)
+
     const val DEFAULT_TIMEOUT_MS = 8_000L
 
     /**
@@ -77,27 +88,56 @@ object TunnelVerifier {
     /**
      * Runs the probe through the given local SOCKS proxy. Returns null when the
      * tunnel did not carry the request — the caller decides how loudly to say so.
+     *
+     * The URLs are tried in order and the first answer wins, so one unreachable
+     * endpoint cannot condemn a working tunnel. [probeUrls] is also how tests point
+     * the probe at a local server; production callers leave it alone.
      */
     suspend fun verify(
         socksHost: String,
         socksPort: Int,
         username: String = "",
         password: String = "",
-        timeoutMs: Long = DEFAULT_TIMEOUT_MS
+        timeoutMs: Long = DEFAULT_TIMEOUT_MS,
+        probeUrls: List<String> = DEFAULT_PROBE_URLS
     ): TunnelExit? {
+        val proxy = SubscriptionFetchProxy(
+            host = socksHost,
+            port = socksPort,
+            username = username,
+            password = password
+        )
         val client = createProxyHttpClient(
-            subscriptionProxy = SubscriptionFetchProxy(
-                host = socksHost,
-                port = socksPort,
-                username = username,
-                password = password
-            ),
+            subscriptionProxy = proxy,
             connectTimeoutMs = timeoutMs,
             requestTimeoutMs = timeoutMs,
             socketTimeoutMs = timeoutMs
         )
         return try {
-            parseTrace(client.get(PROBE_URL).bodyAsText())
+            // SOCKS credentials reach the client through the platform authenticator,
+            // the same route subscription downloads use — passing them to the proxy
+            // description alone does nothing. olcRTC's local proxy is the one that
+            // demands a login, so without this a working olcRTC tunnel would fail
+            // its own verification and be reported as dead.
+            withProxyAuthentication(proxy) {
+                var exit: TunnelExit? = null
+                for (url in probeUrls) {
+                    exit = try {
+                        parseTrace(client.get(url).bodyAsText())
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (_: Exception) {
+                        null
+                    }
+                    if (exit != null) break
+                }
+                exit
+            }
+        } catch (e: CancellationException) {
+            // A superseded connect must stay cancelled, not be reported as a dead
+            // tunnel — CancellationException is an Exception and would be swallowed
+            // by the catch below.
+            throw e
         } catch (_: Exception) {
             null
         } finally {
