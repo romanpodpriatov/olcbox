@@ -89,13 +89,19 @@ jobs:
           # The macOS matrix is built here rather than filtered in the job: a
           # matrix leg cannot be skipped by an `if`, so a disabled arch would still
           # occupy a 10x runner.
+          # Written as full `if` blocks, not `[ ... ] && ...`: steps run under
+          # `bash -e`, where a test that evaluates false is the line's exit status
+          # and kills the step. `mobile` builds no macOS leg and would have died here.
           legs=""
-          [ "$mac_arm" = true ] && legs='{"runner":"macos-latest","arch":"arm64"}'
+          if [ "$mac_arm" = true ]; then
+            legs='{"runner":"macos-latest","arch":"arm64"}'
+          fi
           if [ "$mac_intel" = true ]; then
-            [ -n "$legs" ] && legs="$legs,"
+            if [ -n "$legs" ]; then legs="$legs,"; fi
             legs="$legs{\"runner\":\"macos-15-intel\",\"arch\":\"amd64\"}"
           fi
-          any=false; [ -n "$legs" ] && any=true
+          any=false
+          if [ -n "$legs" ]; then any=true; fi
           {
             echo "macos_any=$any"
             echo "macos_matrix={\"include\":[$legs]}"

@@ -6,6 +6,12 @@ name: core verify
 on:
   push:
     branches: [feat/singbox-ci-verify]
+    # Editing the release pipeline or prose cannot break the cores, and this
+    # workflow spends ~25 minutes of emulator time to say so.
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+      - '.github/workflows/release.yml'
   workflow_dispatch:
 
 permissions:
