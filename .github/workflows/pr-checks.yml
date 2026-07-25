@@ -4,12 +4,20 @@ on:
   pull_request:
     branches:
       - main
+  # TEMPORARY, drop when this branch merges: the Gradle checks are the only way
+  # to run the KMP tests (they never run locally), and nothing else fires on a
+  # push to a branch that has no PR open yet.
+  push:
+    branches:
+      - feat/partner-link-resolver
 
 permissions:
   contents: read
 
 concurrency:
-  group: pr-checks-${{ github.event.pull_request.number }}
+  # Falls back to the ref on push events; without it every branch push would
+  # share one empty group and cancel somebody's open PR run.
+  group: pr-checks-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
