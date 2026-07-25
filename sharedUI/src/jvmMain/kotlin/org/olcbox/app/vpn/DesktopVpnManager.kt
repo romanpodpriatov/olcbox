@@ -65,6 +65,10 @@ class DesktopVpnManager private constructor(
     private val _socksProxySettings = MutableStateFlow(DesktopSocksProxySettings())
     val socksProxySettings: StateFlow<DesktopSocksProxySettings> = _socksProxySettings.asStateFlow()
 
+    /** Where traffic actually comes out, as measured after connecting. */
+    private val _exitInfo = MutableStateFlow<org.olcbox.app.net.TunnelExit?>(null)
+    val exitInfo: StateFlow<org.olcbox.app.net.TunnelExit?> = _exitInfo.asStateFlow()
+
     private var operationJob: Job? = null
     private var logJob: Job? = null
     private var tunLogJob: Job? = null
@@ -289,14 +293,33 @@ class DesktopVpnManager private constructor(
                 error("core exited before desktop proxy was enabled")
             }
 
-            setStatus(VpnStatus.Connected)
-            addLog(
-                when (desktopMode) {
-                    DesktopMode.LinuxTun -> "Desktop Linux TUN connected"
-                    DesktopMode.WindowsTun -> "Desktop Windows TUN connected"
-                    DesktopMode.SystemProxy -> "Desktop proxy connected"
-                }
+            // Prove it before claiming it. Every failure in the field so far reported
+            // "connected" — a port collision, a rejected certificate, a browser that
+            // never used the proxy — because the status meant "we ran the steps", not
+            // "traffic reaches the internet".
+            val exit = org.olcbox.app.net.TunnelVerifier.verify(
+                socksHost = socksSettings.host,
+                socksPort = effectiveSocksPort,
+                username = if (isOlcrtc) socksSettings.username else "",
+                password = if (isOlcrtc) socksSettings.password else ""
             )
+            if (requestGeneration != generation) {
+                throw CancellationException("Desktop start superseded")
+            }
+
+            val transport = when (desktopMode) {
+                DesktopMode.LinuxTun -> "Desktop Linux TUN"
+                DesktopMode.WindowsTun -> "Desktop Windows TUN"
+                DesktopMode.SystemProxy -> "Desktop proxy"
+            }
+            if (exit == null) {
+                // The tunnel is up as far as we could set it up, but nothing came
+                // back. Say so plainly rather than showing a green light.
+                error("$transport is up but no traffic reached the internet through it")
+            }
+            _exitInfo.value = exit
+            setStatus(VpnStatus.Connected)
+            addLog("$transport connected — exit ${exit.label()}")
         } catch (e: Exception) {
             if (e is CancellationException) {
                 addLog("Desktop start cancelled")
@@ -538,7 +561,8 @@ class DesktopVpnManager private constructor(
         deleteOlcRtcConfig()
 
         if (finalStatus) {
-            setStatus(VpnStatus.Disconnected)
+            _exitInfo.value = null
+        setStatus(VpnStatus.Disconnected)
             addLog(
                 when (DesktopPaths.os) {
                     DesktopOs.Linux -> "Desktop Linux TUN stopped"
