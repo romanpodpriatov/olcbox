@@ -2,11 +2,27 @@ name: Build ProofKit Releases
 
 on:
   workflow_dispatch:
+    inputs:
+      platforms:
+        description: 'What to build (macOS minutes bill at 10x — build only what you need)'
+        type: choice
+        default: 'test-macos'
+        options:
+          - test-macos   # Apple Silicon DMG only — the usual "give me something to try"
+          - desktop      # macOS arm64 + Windows + Linux
+          - mobile       # Android only
+          - all          # every platform, and publish the release
   push:
     branches: [ main, universal-carrier ]
 
 permissions:
   contents: read
+
+# A newer build supersedes an older one: without this a dispatch made while another
+# run is in flight pays for both, and only the later result is ever used.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   OLCBOX_VERSION_MAJOR_MINOR: "1.0"
@@ -27,6 +43,64 @@ env:
   OLCBOX_ADMIN_PASS_SHA256: ${{ secrets.OLCBOX_ADMIN_PASS_SHA256 }}
 
 jobs:
+  # Decides which platform jobs run. A push to a release branch always builds
+  # everything; a manual dispatch builds only what was asked for.
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      macos_arm64: ${{ steps.p.outputs.macos_arm64 }}
+      macos_intel: ${{ steps.p.outputs.macos_intel }}
+      windows: ${{ steps.p.outputs.windows }}
+      linux: ${{ steps.p.outputs.linux }}
+      android: ${{ steps.p.outputs.android }}
+      ios: ${{ steps.p.outputs.ios }}
+      publish: ${{ steps.p.outputs.publish }}
+      macos_any: ${{ steps.p.outputs.macos_any }}
+      macos_matrix: ${{ steps.p.outputs.macos_matrix }}
+    steps:
+      - name: Resolve requested platforms
+        id: p
+        run: |
+          sel="${{ github.event_name == 'push' && 'all' || inputs.platforms }}"
+          echo "selection: $sel"
+          mac_arm=false; mac_intel=false; win=false; lin=false; andr=false; ios=false; pub=false
+          case "$sel" in
+            all)
+              mac_arm=true; mac_intel=true; win=true; lin=true; andr=true; ios=true; pub=true ;;
+            desktop)
+              mac_arm=true; win=true; lin=true ;;
+            mobile)
+              andr=true ;;
+            *)
+              mac_arm=true ;;
+          esac
+          # Each key written exactly once: duplicate keys in $GITHUB_OUTPUT are
+          # ambiguous and would make the selection depend on parsing order.
+          {
+            echo "macos_arm64=$mac_arm"
+            echo "macos_intel=$mac_intel"
+            echo "windows=$win"
+            echo "linux=$lin"
+            echo "android=$andr"
+            echo "ios=$ios"
+            echo "publish=$pub"
+          } >> "$GITHUB_OUTPUT"
+
+          # The macOS matrix is built here rather than filtered in the job: a
+          # matrix leg cannot be skipped by an `if`, so a disabled arch would still
+          # occupy a 10x runner.
+          legs=""
+          [ "$mac_arm" = true ] && legs='{"runner":"macos-latest","arch":"arm64"}'
+          if [ "$mac_intel" = true ]; then
+            [ -n "$legs" ] && legs="$legs,"
+            legs="$legs{\"runner\":\"macos-15-intel\",\"arch\":\"amd64\"}"
+          fi
+          any=false; [ -n "$legs" ] && any=true
+          {
+            echo "macos_any=$any"
+            echo "macos_matrix={\"include\":[$legs]}"
+          } >> "$GITHUB_OUTPUT"
+
   release_version:
     runs-on: ubuntu-latest
     outputs:
@@ -61,7 +135,8 @@ jobs:
           fi
 
   build-windows:
-    needs: release_version
+    needs: [release_version, plan]
+    if: needs.plan.outputs.windows == 'true'
     runs-on: windows-latest
     permissions:
       contents: read
@@ -192,15 +267,11 @@ jobs:
             olcbox/dist/ProofKit-*-windows-amd64-portable.zip
 
   build-macos:
-    needs: release_version
+    needs: [release_version, plan]
+    if: needs.plan.outputs.macos_any == 'true'
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - runner: macos-latest
-            arch: arm64
-          - runner: macos-15-intel
-            arch: amd64
+      matrix: ${{ fromJson(needs.plan.outputs.macos_matrix) }}
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
@@ -280,7 +351,8 @@ jobs:
           path: olcbox/dist/ProofKit-*-macos-${{ matrix.arch }}.dmg
 
   build-linux:
-    needs: release_version
+    needs: [release_version, plan]
+    if: needs.plan.outputs.linux == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -346,7 +418,8 @@ jobs:
           path: olcbox/dist/ProofKit-*-linux-amd64.AppImage
 
   build-android:
-    needs: release_version
+    needs: [release_version, plan]
+    if: needs.plan.outputs.android == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -487,7 +560,8 @@ jobs:
             olcbox/dist/ProofKit-*-android-armeabi-v7a-release.apk
 
   build-ios:
-    needs: release_version
+    needs: [release_version, plan]
+    if: needs.plan.outputs.ios == 'true'
     runs-on: macos-latest
     permissions:
       contents: read
@@ -586,12 +660,18 @@ jobs:
       id-token: write
       attestations: write
     needs:
+      - plan
       - release_version
       - build-windows
       - build-macos
       - build-linux
       - build-android
       - build-ios
+    # Only a full build publishes. A partial run would otherwise replace the nightly
+    # release with whichever platforms happened to be selected, silently dropping the
+    # rest. Skipped builds must not block this, hence the explicit failure check
+    # instead of relying on `needs` alone.
+    if: ${{ needs.plan.outputs.publish == 'true' && !cancelled() && !contains(needs.*.result, 'failure') }}
     concurrency:
       group: publish-${{ github.repository }}-${{ needs.release_version.outputs.nightly_tag }}
       cancel-in-progress: false

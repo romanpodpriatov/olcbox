@@ -16,6 +16,11 @@ env:
   XRAY_VERSION: "25.3.6"
   ANDROID_NDK_VERSION: "28.2.13676358"
 
+# Superseded pushes stop paying: a new commit cancels the run for the previous one.
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # Task 8 (Android): both cores publish prebuilt android binaries, so we exec
   # them from nativeLibraryDir (the v2rayNG pattern) instead of gomobile libbox/
