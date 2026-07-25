@@ -311,6 +311,38 @@ jobs:
           go-version: 'stable'
           cache-dependency-path: olcrtc/go.sum
 
+      - name: Import Developer ID certificate
+        env:
+          MACOS_CODESIGN_CERTIFICATE_BASE64: ${{ secrets.MACOS_CODESIGN_CERTIFICATE_BASE64 }}
+          MACOS_CODESIGN_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CODESIGN_CERTIFICATE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "${MACOS_CODESIGN_CERTIFICATE_BASE64:-}" ]; then
+            echo "No macOS signing secrets; the build stays unsigned (Gatekeeper will need xattr)."
+            exit 0
+          fi
+
+          # A dedicated keychain, so nothing leaks into the runner's login one and
+          # the private key is reachable by codesign without an interactive prompt.
+          kc="$RUNNER_TEMP/olcbox-signing.keychain-db"
+          pw="$(uuidgen)"
+          security create-keychain -p "$pw" "$kc"
+          security set-keychain-settings -lut 3600 "$kc"
+          security unlock-keychain -p "$pw" "$kc"
+
+          cert="$RUNNER_TEMP/developer-id.p12"
+          echo "$MACOS_CODESIGN_CERTIFICATE_BASE64" | tr -d '[:space:]' | base64 --decode > "$cert"
+          security import "$cert" -k "$kc" -P "$MACOS_CODESIGN_CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign -T /usr/bin/security
+          rm -f "$cert"
+
+          # Without this codesign blocks on a UI prompt that no one can answer.
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$pw" "$kc" >/dev/null
+          security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
+
+          echo "== identities available =="
+          security find-identity -v -p codesigning "$kc"
+
       - name: Bundle sing-box + Xray cores into the app
         working-directory: olcbox
         env:
@@ -338,8 +370,32 @@ jobs:
           "$dest/sing-box" version | head -1
           "$dest/xray" version | head -1
 
+      - name: Sign the bundled cores
+        working-directory: olcbox
+        env:
+          MACOS_SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${MACOS_SIGN_IDENTITY:-}" ]; then
+            echo "No signing identity; leaving the cores as downloaded."
+            exit 0
+          fi
+
+          # sing-box and Xray arrive from their own release pages carrying somebody
+          # else's signature or none at all. The app spawns them, so on Apple
+          # Silicon they must be signed too — an unsigned helper is killed on exec
+          # and the app looks broken for reasons nothing in its log explains.
+          for core in desktopApp/src/main/resources/native/sing-box desktopApp/src/main/resources/native/xray; do
+            codesign --force --timestamp --options runtime \
+              --entitlements desktopApp/macos-entitlements.plist \
+              --sign "$MACOS_SIGN_IDENTITY" "$core"
+            codesign --verify --verbose=2 "$core"
+          done
+
       - name: Build macOS DMG
         working-directory: olcbox
+        env:
+          MACOS_SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
         run: |
           export OLCRTC_REPO="${{ github.workspace }}/olcrtc"
           ./gradlew -Polcbox.version="${OLCBOX_VERSION}" :desktopApp:packageReleaseDmg --stacktrace
@@ -349,6 +405,42 @@ jobs:
         run: |
           mkdir -p dist
           cp desktopApp/build/compose/binaries/main-release/dmg/*.dmg "dist/ProofKit-${OLCBOX_VERSION}-macos-${{ matrix.arch }}.dmg"
+
+      - name: Notarise and staple
+        working-directory: olcbox
+        env:
+          MACOS_NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+          MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          MACOS_NOTARY_KEY_BASE64: ${{ secrets.MACOS_NOTARY_KEY_BASE64 }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          dmg="dist/ProofKit-${OLCBOX_VERSION}-macos-${ARCH}.dmg"
+
+          if [ -z "${MACOS_NOTARY_KEY_BASE64:-}" ]; then
+            echo "No notary credentials; publishing a signed-but-not-notarised DMG."
+            echo "Gatekeeper will still warn on first open until this is configured."
+            exit 0
+          fi
+
+          key="$RUNNER_TEMP/notary.p8"
+          echo "$MACOS_NOTARY_KEY_BASE64" | tr -d '[:space:]' | base64 --decode > "$key"
+
+          # --wait blocks until Apple has a verdict; without it the job would pass
+          # while the DMG is still unapproved, which is worse than failing.
+          xcrun notarytool submit "$dmg" \
+            --key "$key" \
+            --key-id "$MACOS_NOTARY_KEY_ID" \
+            --issuer "$MACOS_NOTARY_ISSUER_ID" \
+            --wait --timeout 30m
+          rm -f "$key"
+
+          # Stapling puts the approval inside the DMG, so a user who is offline or
+          # behind a filter still opens it without a warning.
+          xcrun stapler staple "$dmg"
+          xcrun stapler validate "$dmg"
+          echo "== gatekeeper verdict =="
+          spctl -a -t open --context context:primary-signature -vv "$dmg" || true
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7

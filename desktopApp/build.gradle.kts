@@ -482,6 +482,25 @@ compose.desktop {
             macOS {
                 iconFile.set(project.file("appIcons/MacosIcon.icns"))
                 bundleID = "org.olcbox.app.desktopApp"
+
+                // Signed only when CI has the Developer ID identity in its
+                // keychain; a developer without it still gets a build, exactly
+                // like the Windows job behaves without its certificate.
+                //
+                // Unsigned is not merely "shows a warning" on Apple Silicon —
+                // the kernel refuses to execute an unsigned binary at all, which
+                // is why the unsigned DMG had to be talked through xattr.
+                val signIdentity = providers.environmentVariable("MACOS_SIGN_IDENTITY").orNull
+                if (!signIdentity.isNullOrBlank()) {
+                    signing {
+                        sign.set(true)
+                        identity.set(signIdentity)
+                    }
+                    // Hardened runtime is required for notarisation, and a JVM
+                    // app cannot start under it without these.
+                    entitlementsFile.set(project.file("macos-entitlements.plist"))
+                    runtimeEntitlementsFile.set(project.file("macos-entitlements.plist"))
+                }
             }
         }
     }
