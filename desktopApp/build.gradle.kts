@@ -166,6 +166,29 @@ fun registerOlcRtcBuildTask(
     doFirst {
         outputFile.get().asFile.parentFile.mkdirs()
     }
+
+    // Notarisation rejected the build over exactly this kind of file: the olcrtc
+    // engine is produced here, long after CI has signed sing-box and xray, and it
+    // travels inside the app's jar. Apple scans in there and wants a Developer ID
+    // signature, a secure timestamp and the hardened runtime on every Mach-O.
+    //
+    // Signed at execution time with plain ProcessBuilder and System.getenv, and
+    // with no reference to `project` — a task action that touches the project
+    // breaks the configuration cache this build relies on.
+    val signTarget = outputFile.map { it.asFile.absolutePath }
+    val entitlementsPath = layout.projectDirectory.file("macos-entitlements.plist").asFile.absolutePath
+    val signOnDarwin = goos == "darwin"
+    doLast {
+        val identity = System.getenv("MACOS_SIGN_IDENTITY")
+        if (signOnDarwin && !identity.isNullOrBlank()) {
+            val exit = ProcessBuilder(
+                "codesign", "--force", "--timestamp", "--options", "runtime",
+                "--entitlements", entitlementsPath,
+                "--sign", identity, signTarget.get()
+            ).inheritIO().start().waitFor()
+            check(exit == 0) { "codesign failed for ${signTarget.get()}" }
+        }
+    }
 }
 
 fun registerOlcRtcLibraryBuildTask(
@@ -195,6 +218,29 @@ fun registerOlcRtcLibraryBuildTask(
 
     doFirst {
         outputFile.get().asFile.parentFile.mkdirs()
+    }
+
+    // Notarisation rejected the build over exactly this kind of file: the olcrtc
+    // engine is produced here, long after CI has signed sing-box and xray, and it
+    // travels inside the app's jar. Apple scans in there and wants a Developer ID
+    // signature, a secure timestamp and the hardened runtime on every Mach-O.
+    //
+    // Signed at execution time with plain ProcessBuilder and System.getenv, and
+    // with no reference to `project` — a task action that touches the project
+    // breaks the configuration cache this build relies on.
+    val signTarget = outputFile.map { it.asFile.absolutePath }
+    val entitlementsPath = layout.projectDirectory.file("macos-entitlements.plist").asFile.absolutePath
+    val signOnDarwin = goos == "darwin"
+    doLast {
+        val identity = System.getenv("MACOS_SIGN_IDENTITY")
+        if (signOnDarwin && !identity.isNullOrBlank()) {
+            val exit = ProcessBuilder(
+                "codesign", "--force", "--timestamp", "--options", "runtime",
+                "--entitlements", entitlementsPath,
+                "--sign", identity, signTarget.get()
+            ).inheritIO().start().waitFor()
+            check(exit == 0) { "codesign failed for ${signTarget.get()}" }
+        }
     }
 }
 
