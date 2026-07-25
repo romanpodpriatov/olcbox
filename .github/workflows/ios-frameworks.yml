@@ -1,0 +1,92 @@
+name: iOS Frameworks
+
+# The two Go frameworks the NetworkExtension needs. They change only when their
+# pinned versions change, and macOS runners bill at 10x — so this never runs on
+# push. Build once per version, publish, and let every other job download the
+# result instead of paying for it again.
+on:
+  workflow_dispatch:
+    inputs:
+      framework:
+        description: Which framework to build
+        type: choice
+        options: [both, libbox, libxray]
+        default: both
+      publish:
+        description: Attach the result to the ios-frameworks release tag
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ios-frameworks
+  cancel-in-progress: false
+
+env:
+  SINGBOX_VERSION: 1.11.15
+  XRAY_VERSION: 25.3.6
+
+jobs:
+  build:
+    name: gomobile bind
+    runs-on: macos-latest
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v7
+        with:
+          # Not negotiable: the sagernet gomobile fork does not build on 1.24.
+          go-version: '1.23'
+
+      - name: Cache built frameworks
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: dist/frameworks
+          key: ios-frameworks-sb${{ env.SINGBOX_VERSION }}-xray${{ env.XRAY_VERSION }}-${{ hashFiles('scripts/build-lib*-ios.sh') }}
+
+      - name: Build Libbox
+        if: steps.cache.outputs.cache-hit != 'true' && inputs.framework != 'libxray'
+        run: bash scripts/build-libbox-ios.sh "$PWD/dist/frameworks"
+
+      - name: Build LibXray
+        if: steps.cache.outputs.cache-hit != 'true' && inputs.framework != 'libbox'
+        run: bash scripts/build-libxray-ios.sh "$PWD/dist/frameworks"
+
+      - name: Report what was produced
+        run: |
+          echo "### iOS frameworks" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          du -sh dist/frameworks/* 2>/dev/null >> "$GITHUB_STEP_SUMMARY" || echo "nothing built" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Package
+        run: |
+          cd dist/frameworks
+          for fw in *.xcframework; do
+            [ -d "$fw" ] || continue
+            zip -qry "../${fw%.xcframework}-ios.zip" "$fw"
+          done
+          ls -la ../
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ios-frameworks
+          path: dist/*.zip
+          if-no-files-found: error
+
+      # A release asset outlives the 90-day artifact retention, so the extension
+      # build can fetch a known framework months later without a macOS runner.
+      - name: Publish to the ios-frameworks tag
+        if: inputs.publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="ios-frameworks-sb${SINGBOX_VERSION}-xray${XRAY_VERSION}"
+          gh release view "$tag" >/dev/null 2>&1 || \
+            gh release create "$tag" --prerelease --notes "gomobile frameworks for the iOS NetworkExtension: sing-box ${SINGBOX_VERSION}, Xray ${XRAY_VERSION}."
+          gh release upload "$tag" dist/*.zip --clobber
