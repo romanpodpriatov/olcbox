@@ -400,6 +400,18 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
+      # The emulator action splits `script` on newlines and runs each line in its
+      # own `sh -c`, so an `export` there is discarded before the next line and a
+      # `\` continuation is passed to the command as a literal argument. The
+      # environment therefore has to be set here, and the run below stays one line.
+      - name: Export the emulator test environment
+        run: |
+          {
+            echo "OLCRTC_REPO=${{ github.workspace }}/olcrtc"
+            echo "ANDROID_NDK_HOME=${ANDROID_HOME}/ndk/${ANDROID_NDK_VERSION}"
+            echo "ANDROID_NDK_ROOT=${ANDROID_HOME}/ndk/${ANDROID_NDK_VERSION}"
+          } >> "$GITHUB_ENV"
+
       - name: Run instrumented core tests
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -408,9 +420,4 @@ jobs:
           target: google_apis
           disable-animations: true
           working-directory: olcbox
-          script: |
-            export OLCRTC_REPO="${{ github.workspace }}/olcrtc"
-            export ANDROID_NDK_HOME="${ANDROID_HOME}/ndk/${ANDROID_NDK_VERSION}"
-            export ANDROID_NDK_ROOT="${ANDROID_NDK_HOME}"
-            ./gradlew :androidApp:connectedDebugAndroidTest \
-              -Polcbox.android.abiFilters=x86_64 --stacktrace
+          script: ./gradlew :androidApp:connectedDebugAndroidTest -Polcbox.android.abiFilters=x86_64 --stacktrace
