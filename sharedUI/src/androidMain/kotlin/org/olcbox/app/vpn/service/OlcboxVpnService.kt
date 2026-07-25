@@ -243,7 +243,7 @@ class OlcboxVpnService : VpnService() {
 
                 is VpnStatus.Reconnecting -> {
                     if (isBenignWifiRefresh(previousTransport, nextTransport) &&
-                        Mobile.isRunning() &&
+                        isActiveTransportRunning() &&
                         canReconnectTransportInPlace()
                     ) {
                         setStatus(VpnStatus.Connected)
@@ -1025,9 +1025,10 @@ class OlcboxVpnService : VpnService() {
             while (isActive && OlcboxVpnState.status.value is VpnStatus.Connected) {
                 delay(WATCHDOG_INTERVAL_MS)
                 when {
-                    !Mobile.isRunning() -> {
-                        addLog("Watchdog: olcRTC stopped")
-                        requestTransportRecovery("olcRTC stopped", fullRestart = false)
+                    !isActiveTransportRunning() -> {
+                        val what = activeTransportLabel()
+                        addLog("Watchdog: $what stopped")
+                        requestTransportRecovery("$what stopped", fullRestart = false)
                         return@launch
                     }
 
@@ -1324,7 +1325,7 @@ class OlcboxVpnService : VpnService() {
 
         val txDelta = stats.txPackets - previous.txPackets
         val rxDelta = stats.rxPackets - previous.rxPackets
-        if (txDelta >= WATCHDOG_STALLED_TX_PACKET_DELTA && rxDelta <= 0L && Mobile.isRunning()) {
+        if (txDelta >= WATCHDOG_STALLED_TX_PACKET_DELTA && rxDelta <= 0L && isActiveTransportRunning()) {
             watchdogStalledSamples++
         } else if (rxDelta > 0L || txDelta <= 0L) {
             watchdogStalledSamples = 0
@@ -1460,9 +1461,28 @@ class OlcboxVpnService : VpnService() {
     private fun canReconnectTransportInPlace(): Boolean {
         return when (connectionMode) {
             AndroidConnectionMode.Tun -> vpnInterface != null && tun2socksThread?.isAlive == true
-            AndroidConnectionMode.Proxy -> Mobile.isRunning()
+            AndroidConnectionMode.Proxy -> isActiveTransportRunning()
         }
     }
+
+    /**
+     * Whether the transport that is supposed to be carrying traffic is still alive.
+     *
+     * olcRTC runs inside the gomobile library; sing-box and Xray run as child
+     * processes. Everything here was written when olcRTC was the only transport and
+     * asked `Mobile.isRunning()` directly — which is false whenever a core is the
+     * active transport, so the watchdog declared every core connection dead fifteen
+     * seconds after it came up and restarted it, forever.
+     */
+    private fun isActiveTransportRunning(): Boolean =
+        if (activeCorePort != null) {
+            singBoxCore.isRunning() || xrayCore.isRunning()
+        } else {
+            Mobile.isRunning()
+        }
+
+    private fun activeTransportLabel(): String =
+        if (activeCorePort != null) "core transport" else "olcRTC"
 
     private fun shouldRestartForStartCommand(): Boolean {
         return when (OlcboxVpnState.status.value) {
@@ -1478,7 +1498,7 @@ class OlcboxVpnService : VpnService() {
             vpnInterface != null ||
             tun2socksThread != null ||
             socksProxy != null ||
-            Mobile.isRunning()
+            isActiveTransportRunning()
     }
 
     private fun registerNetworkMonitor() {

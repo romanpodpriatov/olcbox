@@ -2,6 +2,7 @@ package org.olcbox.app
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -105,6 +106,22 @@ class CorePackagingTest {
             process.destroy()
             process.waitFor()
         }
+    }
+
+    /**
+     * The watchdog used to ask olcRTC whether it was running no matter which
+     * transport was actually carrying traffic, and treated "no" as a dead tunnel.
+     * That is only a sound question for olcRTC connections; this pins the answer it
+     * gives for the others — a core connection was being told its tunnel had died
+     * fifteen seconds after it came up, and restarted, forever.
+     */
+    @Test
+    fun olcrtcReportsNotRunningWhenItWasNeverStarted() {
+        assertFalse(
+            "olcRTC claims to be running without being started — the watchdog's " +
+                "transport check would need rethinking",
+            mobile.Mobile.isRunning()
+        )
     }
 
     private fun waitForPort(port: Int, timeoutMs: Long = 15_000): Boolean {

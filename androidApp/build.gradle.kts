@@ -137,4 +137,7 @@ dependencies {
     // the app does — extracted into nativeLibraryDir and exec'd on a real Android.
     androidTestImplementation("androidx.test:runner:1.6.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    // sharedUI keeps the olcRTC binding to itself; the tests need it directly to
+    // pin what its liveness check reports when olcRTC was never started.
+    androidTestImplementation(project(":sharedUI:olcrtc-bin"))
 }
