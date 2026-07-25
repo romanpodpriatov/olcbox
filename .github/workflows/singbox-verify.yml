@@ -314,3 +314,98 @@ jobs:
           echo "HTTP via hy2 tunnel (:$IN_PORT): $code"
           kill $CLI $SRV 2>/dev/null || true
           [ "$code" = "200" ]
+
+  # The Android connect path had only ever been compile-checked. Everything that
+  # actually broke on desktop — packaging, exec, a config that ignored its port —
+  # is invisible to a compiler, so this runs the packaged core on an emulator.
+  # x86_64 because that is what boots fast on a runner; sing-box publishes an
+  # android-amd64 build, and the packaging being exercised is ABI-independent.
+  android-instrumented:
+    name: instrumented core test (emulator)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout olcbox
+        uses: actions/checkout@v7
+        with:
+          path: olcbox
+
+      - name: Checkout olcrtc
+        uses: actions/checkout@v7
+        with:
+          repository: romanpodpriatov/olcrtc
+          ref: proofkit-udp-spike
+          path: olcrtc
+          submodules: recursive
+
+      - name: Setup JDK
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: 'stable'
+          cache-dependency-path: olcrtc/go.sum
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v4
+
+      - name: Install Android SDK packages
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0" "ndk;${ANDROID_NDK_VERSION}"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Install Go mobile tooling
+        run: |
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+          go install golang.org/x/mobile/cmd/gomobile@latest
+
+      - name: Initialize gomobile
+        working-directory: olcrtc
+        run: |
+          export ANDROID_NDK_HOME="${ANDROID_HOME}/ndk/${ANDROID_NDK_VERSION}"
+          export ANDROID_NDK_ROOT="${ANDROID_NDK_HOME}"
+          gomobile init
+
+      - name: Bundle x86_64 cores into jniLibs
+        working-directory: olcbox
+        run: |
+          set -ex
+          dest="androidApp/jniLibs/x86_64"
+          mkdir -p "$dest"
+          # sing-box ships a native android-amd64 build.
+          curl -fsSL "https://github.com/SagerNet/sing-box/releases/download/v${SINGBOX_VERSION}/sing-box-${SINGBOX_VERSION}-android-amd64.tar.gz" -o sb.tgz
+          tar xzf sb.tgz
+          cp "$(find . -maxdepth 2 -type f -name sing-box | head -1)" "$dest/libsingboxcore.so"
+          # Xray has no android-x86_64 asset; its linux-64 build is a static Go
+          # binary and runs on Android x86_64 unchanged.
+          curl -fsSL "https://github.com/XTLS/Xray-core/releases/download/v${XRAY_VERSION}/Xray-linux-64.zip" -o xray.zip
+          rm -rf xray-x && mkdir -p xray-x && (cd xray-x && unzip -o ../xray.zip)
+          cp "$(find xray-x -maxdepth 2 -type f -name xray | head -1)" "$dest/libxraycore.so"
+          ls -la "$dest"
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Run instrumented core tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          working-directory: olcbox
+          script: |
+            export OLCRTC_REPO="${{ github.workspace }}/olcrtc"
+            export ANDROID_NDK_HOME="${ANDROID_HOME}/ndk/${ANDROID_NDK_VERSION}"
+            export ANDROID_NDK_ROOT="${ANDROID_NDK_HOME}"
+            ./gradlew :androidApp:connectedDebugAndroidTest \
+              -Polcbox.android.abiFilters=x86_64 --stacktrace

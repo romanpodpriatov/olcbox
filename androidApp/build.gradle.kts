@@ -49,6 +49,7 @@ android {
         applicationId = "org.olcbox.app"
         versionCode = olcboxVersionCode.get()
         versionName = olcboxVersion.get()
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         ndk {
             abiFilters += androidAbiFilters
@@ -95,6 +96,11 @@ android {
         getByName("main") {
             jniLibs.srcDirs("src/main/jniLibs", "jniLibs")
         }
+        // Stated explicitly rather than relying on the plugin default, so the
+        // instrumented sources cannot silently stop being compiled.
+        getByName("androidTest") {
+            java.srcDirs("src/androidTest/kotlin")
+        }
     }
 
     compileOptions {
@@ -126,4 +132,9 @@ dependencies {
     implementation(project(":sharedUI"))
     implementation(libs.androidx.activityCompose)
     implementation(libs.androidx.datastore.preferences)
+
+    // Instrumented tests: the only way to exercise the packaged core binary the way
+    // the app does — extracted into nativeLibraryDir and exec'd on a real Android.
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
 }

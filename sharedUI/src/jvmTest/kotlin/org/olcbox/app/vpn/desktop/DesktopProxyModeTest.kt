@@ -50,8 +50,8 @@ class DesktopProxyModeTest {
 
         assertContains(
             pac,
-            "SOCKS5 user%20name:p%40ss%3Aword@127.0.0.1:10808; " +
-                    "SOCKS user%20name:p%40ss%3Aword@127.0.0.1:10808"
+            "SOCKS user%20name:p%40ss%3Aword@127.0.0.1:10808; " +
+                    "SOCKS5 user%20name:p%40ss%3Aword@127.0.0.1:10808"
         )
     }
 
