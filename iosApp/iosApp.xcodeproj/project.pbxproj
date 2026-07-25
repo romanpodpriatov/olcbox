@@ -258,7 +258,7 @@
 					"-framework",
 					OlcRtcMobile,
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = org.olcbox.app.ios;
+				PRODUCT_BUNDLE_IDENTIFIER = org.proofkit.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
@@ -304,7 +304,7 @@
 					"-framework",
 					OlcRtcMobile,
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = org.olcbox.app.ios;
+				PRODUCT_BUNDLE_IDENTIFIER = org.proofkit.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;

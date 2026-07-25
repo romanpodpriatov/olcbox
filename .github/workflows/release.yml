@@ -12,8 +12,6 @@ on:
           - desktop      # macOS arm64 + Windows + Linux
           - mobile       # Android only
           - all          # every platform, and publish the release
-  push:
-    branches: [ main, universal-carrier ]
 
 permissions:
   contents: read
@@ -61,7 +59,11 @@ jobs:
       - name: Resolve requested platforms
         id: p
         run: |
-          sel="${{ github.event_name == 'push' && 'all' || inputs.platforms }}"
+          # Dispatch is the only trigger, so the selection is always the input.
+          # It used to fall back to "all" on a push to main, which meant every
+          # commit — a doc fix included — paid for two 10x macOS legs plus four
+          # more platforms.
+          sel="${{ inputs.platforms }}"
           echo "selection: $sel"
           mac_arm=false; mac_intel=false; win=false; lin=false; andr=false; ios=false; pub=false
           case "$sel" in
