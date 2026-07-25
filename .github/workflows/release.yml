@@ -430,11 +430,32 @@ jobs:
 
           # --wait blocks until Apple has a verdict; without it the job would pass
           # while the DMG is still unapproved, which is worse than failing.
-          xcrun notarytool submit "$dmg" \
+          #
+          # The verdict alone is useless: "Invalid" names neither the file nor the
+          # reason, and those live in a separate log fetched by submission id. So
+          # capture the id and always print that log when Apple says no.
+          set +e
+          out="$(xcrun notarytool submit "$dmg" \
             --key "$key" \
             --key-id "$MACOS_NOTARY_KEY_ID" \
             --issuer "$MACOS_NOTARY_ISSUER_ID" \
-            --wait --timeout 30m
+            --wait --timeout 30m 2>&1)"
+          rc=$?
+          set -e
+          echo "$out"
+
+          sub_id="$(printf '%s\n' "$out" | awk '/id: /{print $2; exit}')"
+          if [ $rc -ne 0 ] || ! printf '%s\n' "$out" | grep -q "status: Accepted"; then
+            echo "== why Apple rejected it =="
+            if [ -n "$sub_id" ]; then
+              xcrun notarytool log "$sub_id" \
+                --key "$key" \
+                --key-id "$MACOS_NOTARY_KEY_ID" \
+                --issuer "$MACOS_NOTARY_ISSUER_ID" || true
+            fi
+            rm -f "$key"
+            exit 1
+          fi
           rm -f "$key"
 
           # Stapling puts the approval inside the DMG, so a user who is offline or
