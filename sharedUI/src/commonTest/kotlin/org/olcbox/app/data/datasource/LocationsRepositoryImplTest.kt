@@ -14,6 +14,8 @@ import org.olcbox.app.data.model.LocationConfig
 import org.olcbox.app.data.model.LocationEntry
 import org.olcbox.app.data.share.ConfigShareService
 import io.ktor.http.HttpStatusCode
+import org.olcbox.app.net.PartnerLinkResolver
+import org.olcbox.app.net.PartnerLinkResult
 import org.olcbox.app.data.repository.SubscriptionRefreshError
 import kotlin.test.assertFalse
 import kotlin.test.Test
@@ -956,6 +958,64 @@ class LocationsRepositoryImplTest {
         assertEquals(0, repo.deleteSubscription("https://example.com/other"))
         assertEquals(0, repo.deleteSubscription("   "))
         assertEquals(1, repo.getAllLocations().size)
+    }
+
+    // --- partner (Happ) links -------------------------------------------
+
+    private class FakeResolver(private val result: PartnerLinkResult) : PartnerLinkResolver {
+        var asked: String? = null
+        override suspend fun resolve(link: String): PartnerLinkResult {
+            asked = link
+            return result
+        }
+    }
+
+    private val happLink = "happ://crypt5/fzvdQQSl2kKPyNPhAeRV4WSh12xLFV8"
+
+    @Test
+    fun aPastedHappLinkIsResolvedThenImportedLikeAnyOtherLink() = runTest {
+        val source = FakeLocationsDataSource()
+        val resolved = "olcrtc://wbstream?seichannel@room-01#${"c".repeat(64)}${'$'}DE / partner"
+        val resolver = FakeResolver(PartnerLinkResult.Resolved(resolved))
+
+        val imported = LocationsRepositoryImpl(
+            dataSource = source,
+            partnerLinkResolver = resolver,
+        ).importText(happLink)
+
+        assertTrue(imported)
+        assertEquals(happLink, resolver.asked)
+        assertNotNull(source.stored)
+        assertEquals(1, source.stored!!.locations.size)
+    }
+
+    @Test
+    fun anUnresolvableHappLinkFailsWithoutTouchingStoredLocations() = runTest {
+        val source = FakeLocationsDataSource()
+        val resolver = FakeResolver(PartnerLinkResult.NotFound)
+
+        val imported = LocationsRepositoryImpl(
+            dataSource = source,
+            partnerLinkResolver = resolver,
+        ).importText(happLink)
+
+        assertFalse(imported)
+        assertNull(source.stored)
+    }
+
+    @Test
+    fun aPlainInlineConfigNeverGoesNearTheResolver() = runTest {
+        val source = FakeLocationsDataSource()
+        val resolver = FakeResolver(PartnerLinkResult.NotFound)
+        val input = "olcrtc://wbstream?seichannel@room-01#${"d".repeat(64)}${'$'}RU / plain"
+
+        val imported = LocationsRepositoryImpl(
+            dataSource = source,
+            partnerLinkResolver = resolver,
+        ).importText(input)
+
+        assertTrue(imported)
+        assertNull(resolver.asked)
     }
 
     private class FakeLocationsDataSource(

@@ -30,7 +30,11 @@ import org.olcbox.app.data.model.LocationEntry
 import org.olcbox.app.data.model.LocationMetadata
 import org.olcbox.app.data.model.SubscriptionMetadata
 import org.olcbox.app.data.repository.LocationsRepository
+import org.olcbox.app.net.HttpPartnerLinkResolver
 import org.olcbox.app.net.LinkParser
+import org.olcbox.app.net.PartnerLinkResolver
+import org.olcbox.app.net.PartnerLinkResult
+import org.olcbox.app.net.isPartnerLink
 import org.olcbox.app.net.LocationKind
 import org.olcbox.app.net.OutboundSpec
 import org.olcbox.app.data.repository.SubscriptionFetchProxy
@@ -67,7 +71,8 @@ class LocationsRepositoryImpl(
     private val httpClient: HttpClient = createProxyHttpClient(),
     private val deviceIdentityProvider: DeviceIdentityProvider = PersistentDeviceIdentityProvider(dataSource),
     private val nowEpochMs: () -> Long = { kotlin.time.Clock.System.now().toEpochMilliseconds() },
-    private val cryptCodec: CryptCodec? = CryptCodec.default()
+    private val cryptCodec: CryptCodec? = CryptCodec.default(),
+    private val partnerLinkResolver: PartnerLinkResolver? = HttpPartnerLinkResolver(httpClient)
 ) : LocationsRepository {
     private data class ImportSource(
         val content: String,
@@ -463,10 +468,29 @@ class LocationsRepositoryImpl(
         val input = text.normalizedImportText()
         if (input.isBlank()) return null
 
+        // A partner's Happ link is opaque to us. Whoever minted it can say what it
+        // points at and hands back a crypt1 link, which the next step already knows
+        // how to open. Marker-only, so nothing else takes this detour.
+        val resolvedInput = if (isPartnerLink(input) && partnerLinkResolver != null) {
+            when (val result = partnerLinkResolver.resolve(input)) {
+                is PartnerLinkResult.Resolved -> result.link
+                PartnerLinkResult.NotFound -> {
+                    onFailure?.invoke(SubscriptionRefreshError.Rejected, 404)
+                    return null
+                }
+                PartnerLinkResult.Unavailable -> {
+                    onFailure?.invoke(SubscriptionRefreshError.Unreachable, null)
+                    return null
+                }
+            }
+        } else {
+            input
+        }
+
         // crypt1: a pasted `olcrtc://crypt1/<blob>` link decrypts to either an
         // http(s) subscription URL or inline olcrtc:// lines. Marker-only, so a
         // plain link falls straight through unchanged.
-        val effective = cryptCodec?.decryptLink(input) ?: input
+        val effective = cryptCodec?.decryptLink(resolvedInput) ?: resolvedInput
 
         var source = resolveImportSource(
             text = effective,

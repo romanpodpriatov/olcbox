@@ -20,6 +20,10 @@ val olcboxVersionValue = olcboxVersion.get()
 // crypt1 client key + admin unlock hash: baked from CI env (absent locally ⇒ features off).
 val olcboxCryptKeyV1 = providers.environmentVariable("OLCBOX_CRYPT_KEY_V1").orElse("")
 val olcboxAdminPassSha256 = providers.environmentVariable("OLCBOX_ADMIN_PASS_SHA256").orElse("")
+// Where the app asks what a partner's opaque link points at. Not a secret —
+// overridable only so a test build can aim at something other than production.
+val olcboxResolverBase = providers.environmentVariable("OLCBOX_RESOLVER_BASE")
+    .orElse("https://proofkit.org/api/v1")
 val generatedAppInfoDir = layout.buildDirectory.dir("generated/source/olcboxAppInfo/commonMain")
 
 val olcrtcRepoPath = providers.environmentVariable("OLCRTC_REPO")
@@ -40,6 +44,9 @@ abstract class GenerateAppInfoTask : DefaultTask() {
     @get:Input
     abstract val adminPassSha256: Property<String>
 
+    @get:Input
+    abstract val resolverBase: Property<String>
+
     @get:OutputDirectory
     abstract val outputDir: DirectoryProperty
 
@@ -57,6 +64,7 @@ abstract class GenerateAppInfoTask : DefaultTask() {
                 const val VERSION: String = "${esc(version.get())}"
                 const val CRYPT_KEY_V1: String = "${esc(cryptKeyV1.get())}"
                 const val ADMIN_PASS_SHA256: String = "${esc(adminPassSha256.get())}"
+                const val RESOLVER_BASE: String = "${esc(resolverBase.get())}"
             }
             """.trimIndent() + "\n"
         )
@@ -67,6 +75,7 @@ val generateAppInfo by tasks.registering(GenerateAppInfoTask::class) {
     version.set(olcboxVersionValue)
     cryptKeyV1.set(olcboxCryptKeyV1)
     adminPassSha256.set(olcboxAdminPassSha256)
+    resolverBase.set(olcboxResolverBase)
     outputDir.set(generatedAppInfoDir)
 }
 

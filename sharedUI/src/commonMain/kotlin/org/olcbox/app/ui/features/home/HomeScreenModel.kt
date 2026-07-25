@@ -1,5 +1,6 @@
 package org.olcbox.app.ui.features.home
 
+import org.olcbox.app.net.isPartnerLink
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
@@ -265,7 +266,15 @@ class HomeScreenViewModel(
                     )
                 }
                 if (!imported) {
-                    onError("No valid ProofKit config found")
+                    // A partner link that did not resolve is not a malformed config
+                    // — the user's next move is their provider's bot, not another paste.
+                    onError(
+                        if (isPartnerLink(rawText)) {
+                            "Link not recognised. Open your provider's bot and copy the subscription link again."
+                        } else {
+                            "No valid ProofKit config found"
+                        }
+                    )
                     return@launch
                 }
                 loadCurrentConfigNow()
