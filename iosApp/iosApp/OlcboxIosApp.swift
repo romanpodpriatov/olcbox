@@ -94,7 +94,11 @@ private struct TunnelDebugControl: View {
                 "address": ["172.19.0.1/30"],
                 "mtu": 9000,
                 "auto_route": true,
-                "stack": "gvisor",
+                // "system", not "gvisor": gvisor is a full userspace network
+                // stack and the extension's memory cap is 15-50 MB. The engine
+                // started once and then stopped producing any log at all, which
+                // is what being killed for memory looks like from outside.
+                "stack": "system",
             ]],
             "outbounds": [["type": "direct", "tag": "direct"]],
         ]
