@@ -142,8 +142,10 @@ private struct TunnelDebugControl: View {
                         channelOK = false
                         await tunnel.start()
                         // The extension writes its echo while starting up; give
-                        // it a moment rather than racing it.
-                        try? await Task.sleep(for: .seconds(2))
+                        // it a moment rather than racing it. nanoseconds rather
+                        // than .seconds: the latter needs iOS 16 and this app
+                        // still supports older.
+                        try? await Task.sleep(nanoseconds: 2_000_000_000)
                         let seen = Self.readEcho()
                         channelOK = (seen == sent)
                         channel = channelOK ? "channel OK \(sent)" : "echo: \(seen ?? "none")"
