@@ -21,6 +21,33 @@ class SingBoxConfigTest {
         assertEquals("127.0.0.1", inb["listen"]!!.jsonPrimitive.content)
     }
 
+    // --- iOS: the core owns the tun -------------------------------------
+
+    @Test fun tunInboundInsteadOfSocks() {
+        val inb = inbounds(SingBoxConfig.buildTun(vless()))[0].jsonObject
+        assertEquals("tun", inb["type"]!!.jsonPrimitive.content)
+        assertEquals(SingBoxConfig.TUN_ADDRESS, inb["address"]!!.jsonArray[0].jsonPrimitive.content)
+        assertEquals(SingBoxConfig.TUN_MTU, inb["mtu"]!!.jsonPrimitive.content.toInt())
+    }
+
+    @Test fun tunUsesGvisorBecauseTheSystemStackCannotForwardInAnExtension() {
+        // The system stack needs raw-socket privileges the Network Extension
+        // sandbox withholds: the tun comes up and carries nothing. This was
+        // learned on a device, so it is pinned here.
+        val inb = inbounds(SingBoxConfig.buildTun(vless()))[0].jsonObject
+        assertEquals("gvisor", inb["stack"]!!.jsonPrimitive.content)
+    }
+
+    @Test fun tunAndSocksShareTheSameOutbound() {
+        // The whole point of the second builder is a different inbound, not a
+        // different transport: a drift here would mean iOS quietly connecting
+        // differently from every other platform.
+        assertEquals(
+            outbound(SingBoxConfig.build(vless())),
+            outbound(SingBoxConfig.buildTun(vless())),
+        )
+    }
+
     @Test fun vlessRealityOutbound() {
         val o = outbound(SingBoxConfig.build(vless()))
         assertEquals("vless", o["type"]!!.jsonPrimitive.content)

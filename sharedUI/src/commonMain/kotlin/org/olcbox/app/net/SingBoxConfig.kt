@@ -1,6 +1,7 @@
 package org.olcbox.app.net
 
 import kotlinx.serialization.json.JsonArrayBuilder
+import kotlinx.serialization.json.add
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -26,6 +27,50 @@ object SingBoxConfig {
 
     fun build(outbound: OutboundSpec, socksPort: Int = SINGBOX_SOCKS_PORT): String =
         render(socksPort) { addOutbound(outbound) }
+
+    /// iOS addressing. Fixed rather than negotiated: the extension applies these
+    /// same values to the system when it hands the core its descriptor, so the two
+    /// halves have to agree and one constant is easier to keep honest than two.
+    const val TUN_ADDRESS = "172.19.0.1/30"
+    const val TUN_MTU = 9000
+
+    /**
+     * Config for a core that owns the tun itself, as on iOS.
+     *
+     * The desktop and Android builds put the core behind a SOCKS port and bridge
+     * packets into it separately. In a Network Extension there is no room for that
+     * hop — the core is handed the tunnel descriptor and does the whole job.
+     *
+     * The gvisor stack is not a preference: the system stack needs raw-socket
+     * privileges the extension sandbox withholds, and a tun built on it comes up
+     * and forwards nothing.
+     */
+    fun buildTun(
+        outbound: OutboundSpec,
+        address: String = TUN_ADDRESS,
+        mtu: Int = TUN_MTU,
+    ): String = renderTun(address, mtu) { addOutbound(outbound) }
+
+    private fun renderTun(
+        address: String,
+        mtu: Int,
+        outbounds: JsonArrayBuilder.() -> Unit,
+    ): String {
+        val obj = buildJsonObject {
+            putJsonObject("log") { put("level", "info") }
+            putJsonArray("inbounds") {
+                addJsonObject {
+                    put("type", "tun"); put("tag", "tun-in")
+                    putJsonArray("address") { add(address) }
+                    put("mtu", mtu)
+                    put("auto_route", true)
+                    put("stack", "gvisor")
+                }
+            }
+            putJsonArray("outbounds", outbounds)
+        }
+        return obj.toString()
+    }
 
     fun buildOlcrtcSocks(olcrtcPort: Int, socksPort: Int = SINGBOX_SOCKS_PORT): String =
         render(socksPort) {
