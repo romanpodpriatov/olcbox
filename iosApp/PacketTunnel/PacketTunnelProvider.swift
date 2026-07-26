@@ -54,6 +54,23 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
             return
         }
 
+        // Applied before the engine starts: libbox asks for the descriptor
+        // synchronously and complains if answering takes long.
+        setTunnelNetworkSettings(LibboxPlatform.tunnelSettings()) { [weak self] error in
+            if let error {
+                self?.log.error("tunnel settings rejected: \(error.localizedDescription, privacy: .public)")
+                completionHandler(error)
+                return
+            }
+            self?.startEngine(config: config, container: container, completionHandler: completionHandler)
+        }
+    }
+
+    private func startEngine(
+        config: String,
+        container: URL,
+        completionHandler: @escaping (Error?) -> Void
+    ) {
         do {
             // libbox keeps its state on disk; inside the group so the app can
             // read logs and caches too.

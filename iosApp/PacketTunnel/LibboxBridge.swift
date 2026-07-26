@@ -47,36 +47,32 @@ final class LibboxPlatform: NSObject, LibboxPlatformInterfaceProtocol {
                           userInfo: [NSLocalizedDescriptionKey: "provider went away"])
         }
 
-        let settings = NEPacketTunnelNetworkSettings(tunnelRemoteAddress: Tun.address)
-        let ipv4 = NEIPv4Settings(addresses: [Tun.address], subnetMasks: [Tun.mask])
-        ipv4.includedRoutes = [NEIPv4Route.default()]
-        settings.ipv4Settings = ipv4
-        settings.mtu = NSNumber(value: options?.getMTU() ?? Int32(Tun.mtu))
-
-        let dns = NEDNSSettings(servers: Tun.dns)
-        dns.matchDomains = [""]
-        settings.dnsSettings = dns
-
-        // libbox calls this synchronously and expects a descriptor back, so the
-        // asynchronous system call has to be waited out here.
-        let applied = DispatchSemaphore(value: 0)
-        var applyError: Error?
-        provider.setTunnelNetworkSettings(settings) { error in
-            applyError = error
-            applied.signal()
-        }
-        applied.wait()
-        if let applyError {
-            log.error("tunnel settings rejected: \(applyError.localizedDescription, privacy: .public)")
-            throw applyError
-        }
-
+        // Nothing slow happens here on purpose. libbox calls this synchronously
+        // from its own start-up path and warns when it blocks — the first version
+        // applied the tunnel settings here and waited on the callback, which is
+        // what produced "open interface take too much time". The settings are
+        // applied before the engine starts now, so this only hands over the
+        // descriptor.
         guard let fd = Self.tunnelFileDescriptor(of: provider.packetFlow) else {
             throw NSError(domain: "org.proofkit.tunnel", code: 2,
                           userInfo: [NSLocalizedDescriptionKey: "no descriptor behind packetFlow"])
         }
         log.info("tun opened, fd=\(fd, privacy: .public)")
         ret0_?.pointee = fd
+    }
+
+    /// The settings libbox's tun inbound is configured to expect.
+    static func tunnelSettings() -> NEPacketTunnelNetworkSettings {
+        let settings = NEPacketTunnelNetworkSettings(tunnelRemoteAddress: Tun.address)
+        let ipv4 = NEIPv4Settings(addresses: [Tun.address], subnetMasks: [Tun.mask])
+        ipv4.includedRoutes = [NEIPv4Route.default()]
+        settings.ipv4Settings = ipv4
+        settings.mtu = NSNumber(value: Tun.mtu)
+
+        let dns = NEDNSSettings(servers: Tun.dns)
+        dns.matchDomains = [""]
+        settings.dnsSettings = dns
+        return settings
     }
 
     private static func tunnelFileDescriptor(of flow: NEPacketTunnelFlow) -> Int32? {
