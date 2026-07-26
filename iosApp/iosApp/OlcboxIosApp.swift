@@ -75,78 +75,23 @@ private struct TunnelDebugControl: View {
     @State private var engine = ""
     @AppStorage("debug.link") private var link = ""
 
-    /// Turns a hysteria2:// link into the outbound sing-box wants.
+    /// Builds the config with the same code every other platform uses.
     ///
-    /// Deliberately not committed as a constant: this repository is public and a
-    /// subscription link is a working credential. It is typed in on the device
-    /// and kept only there.
+    /// The first version parsed the link in Swift, which meant iOS would drift
+    /// from Android and desktop the first time a transport gained a field.
+    /// LinkParser and SingBoxConfig are already validated against sing-box
+    /// 1.11.15 in CI; iOS inherits that rather than re-earning it.
     ///
-    /// Shape follows the project's own SingBoxConfig builder, which is validated
-    /// against sing-box 1.11.15 — including the pinned-certificate case: a
-    /// published pin means a self-signed certificate, so checking it against the
-    /// system store would only ever fail.
-    private static func outbound(from link: String) -> [String: Any]? {
-        guard let url = URLComponents(string: link.trimmingCharacters(in: .whitespacesAndNewlines)),
-              let host = url.host, let port = url.port, let password = url.user
-        else { return nil }
-
-        let query = Dictionary(uniqueKeysWithValues: (url.queryItems ?? []).map { ($0.name, $0.value ?? "") })
-        let sni = query["sni"] ?? host
-
-        switch url.scheme {
-        case "hysteria2", "hy2":
-            var out: [String: Any] = [
-                "type": "hysteria2", "tag": "out",
-                "server": host, "server_port": port,
-                "password": password,
-                "tls": [
-                    "enabled": true,
-                    "server_name": sni,
-                    "insecure": query["insecure"] == "1" || query["pinSHA256"] != nil,
-                ],
-            ]
-            if let obfs = query["obfs-password"], !obfs.isEmpty {
-                out["obfs"] = ["type": "salamander", "password": obfs]
-            }
-            return out
-
-        case "vless":
-            var tls: [String: Any] = ["enabled": true, "server_name": sni, "utls": ["enabled": true, "fingerprint": query["fp"] ?? "chrome"]]
-            if query["security"] == "reality" {
-                tls["reality"] = ["enabled": true, "public_key": query["pbk"] ?? "", "short_id": query["sid"] ?? ""]
-            }
-            var out: [String: Any] = [
-                "type": "vless", "tag": "out",
-                "server": host, "server_port": port,
-                "uuid": password,
-                "tls": tls,
-            ]
-            if let flow = query["flow"], !flow.isEmpty { out["flow"] = flow }
-            return out
-
-        default:
-            return nil
-        }
-    }
-
-    /// The last lines sing-box wrote about itself.
-    private static func readEngineLog() -> String {
-        guard let container = FileManager.default.containerURL(
-            forSecurityApplicationGroupIdentifier: appGroupId
-        ), let data = try? Data(contentsOf: container.appendingPathComponent("engine.log")),
-              let text = String(data: data, encoding: .utf8)
-        else { return "" }
-        return text
-    }
-
-    /// Whatever the extension managed to write before it stopped.
-    private static func readStage() -> String {
-        guard let container = FileManager.default.containerURL(
-            forSecurityApplicationGroupIdentifier: appGroupId
-        ), let data = try? Data(contentsOf: container.appendingPathComponent("stage.txt")),
-              let text = String(data: data, encoding: .utf8)
-        else { return "stage: -" }
-        return "stage: \(text)"
+    /// The link is typed in on the device and never committed: this repository is
+    /// public and a subscription link is a working credential.
+    private static func configFor(link: String) -> String? {
+        let trimmed = link.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, let spec = LinkParser.shared.parse(line: trimmed) else { return nil }
+        return SingBoxConfig.shared.buildTun(
+            outbound: spec,
+            address: SingBoxConfig.shared.TUN_ADDRESS,
+            mtu: SingBoxConfig.shared.TUN_MTU
+        )
     }
 
     /// Writes the config the extension will hand to sing-box.
@@ -158,36 +103,17 @@ private struct TunnelDebugControl: View {
     ///
     /// The tun block must agree with LibboxPlatform.Tun in the extension: the app
     /// decides the addressing and the extension applies it to the system.
-    private static func writeConfig(outbound: [String: Any]?) -> String {
+    private static func writeConfig(json: String?) -> String {
         guard let container = FileManager.default.containerURL(
             forSecurityApplicationGroupIdentifier: appGroupId
         ) else { return "no container" }
 
-        let config: [String: Any] = [
-            "log": ["level": "info", "timestamp": true],
-            "inbounds": [[
-                "type": "tun",
-                "tag": "tun-in",
-                "address": ["172.19.0.1/30"],
-                "mtu": 9000,
-                "auto_route": true,
-                // gvisor, not "system": the system stack needs raw-socket
-                // privileges the extension sandbox does not grant, so the tun
-                // comes up and forwards nothing — which is exactly what we saw.
-                // Every libbox client on iOS runs gvisor for this reason. Its
-                // memory appetite against the extension's cap is the real risk
-                // here, and the thing to watch under load.
-                "stack": "gvisor",
-            ]],
-            "outbounds": [outbound ?? ["type": "direct", "tag": "direct"]],
-        ]
-
-        guard let data = try? JSONSerialization.data(withJSONObject: config, options: [.prettyPrinted])
-        else { return "encode failed" }
+        // With no link, the direct outbound that proved the plumbing.
+        let content = json ?? #"{"log":{"level":"info"},"inbounds":[{"type":"tun","tag":"tun-in","address":["172.19.0.1/30"],"mtu":9000,"auto_route":true,"stack":"gvisor"}],"outbounds":[{"type":"direct","tag":"direct"}]}"#
 
         do {
-            try data.write(to: container.appendingPathComponent("config.json"))
-            return "config \(data.count)B"
+            try Data(content.utf8).write(to: container.appendingPathComponent("config.json"))
+            return "config \(content.utf8.count)B"
         } catch {
             return "write failed"
         }
@@ -255,9 +181,9 @@ private struct TunnelDebugControl: View {
             HStack(spacing: 6) {
                 Button("tun on") {
                     Task {
-                        let out = Self.outbound(from: link)
-                        channel = Self.writeConfig(outbound: out)
-                            + (out == nil ? " (direct)" : " (proxy)")
+                        let json = Self.configFor(link: link)
+                        channel = Self.writeConfig(json: json)
+                            + (json == nil ? " (direct)" : " (proxy)")
                         channelOK = channel.hasPrefix("config")
                         stage = "stage: -"
                         await tunnel.start()
