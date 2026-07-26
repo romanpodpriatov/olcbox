@@ -238,7 +238,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -e\nexport PATH=\"$HOME/go/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\"\nif [ -z \"$ARCHS\" ] || [ \"$ARCHS\" = \"undefined_arch\" ]; then\n  export ARCHS=arm64\nfi\nGRADLE_VERSION_ARGS=\"\"\nif [ -n \"$OLCBOX_VERSION\" ]; then\n  GRADLE_VERSION_ARGS=\"-Polcbox.version=$OLCBOX_VERSION\"\nfi\ncd \"$SRCROOT/..\"\n./gradlew $GRADLE_VERSION_ARGS :sharedUI:fetchLibboxIosXcframework :sharedUI:buildOlcrtcIosXcframework :sharedUI:embedAndSignAppleFrameworkForXcode --no-configuration-cache\n";
+			shellScript = "set -e\nexport PATH=\"$HOME/go/bin:/usr/local/go/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\"\nif [ -z \"$ARCHS\" ] || [ \"$ARCHS\" = \"undefined_arch\" ]; then\n  export ARCHS=arm64\nfi\nGRADLE_VERSION_ARGS=\"\"\nif [ -n \"$OLCBOX_VERSION\" ]; then\n  GRADLE_VERSION_ARGS=\"-Polcbox.version=$OLCBOX_VERSION\"\nfi\ncd \"$SRCROOT/..\"\n./gradlew $GRADLE_VERSION_ARGS :sharedUI:fetchLibboxIosXcframework :sharedUI:buildOlcrtcIosXcframework :sharedUI:embedAndSignAppleFrameworkForXcode --no-configuration-cache\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
