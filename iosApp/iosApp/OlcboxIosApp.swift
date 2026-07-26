@@ -99,7 +99,8 @@ final class PacketTunnelController: ObservableObject {
     @Published private(set) var status: String = "not loaded"
 
     private var manager: NETunnelProviderManager?
-    private var observer: NSObjectProtocol?
+    // Touched from deinit, which is not actor-isolated, so it cannot be either.
+    private nonisolated(unsafe) var observer: NSObjectProtocol?
 
     private let log = Logger(subsystem: "org.proofkit.app", category: "tunnel-controller")
 
@@ -110,7 +111,10 @@ final class PacketTunnelController: ObservableObject {
             queue: .main
         ) { [weak self] note in
             guard let connection = note.object as? NEVPNConnection else { return }
-            Task { @MainActor in self?.status = Self.describe(connection.status) }
+            // NEVPNConnection is not Sendable; its status is a plain enum. Read
+            // it here rather than carrying the connection into the task.
+            let text = Self.describe(connection.status)
+            Task { @MainActor in self?.status = text }
         }
     }
 
@@ -166,7 +170,7 @@ final class PacketTunnelController: ObservableObject {
         log.info("stopVPNTunnel requested")
     }
 
-    private static func describe(_ status: NEVPNStatus) -> String {
+    private nonisolated static func describe(_ status: NEVPNStatus) -> String {
         switch status {
         case .invalid: return "invalid"
         case .disconnected: return "disconnected"
