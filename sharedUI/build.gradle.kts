@@ -79,6 +79,23 @@ val generateAppInfo by tasks.registering(GenerateAppInfoTask::class) {
     outputDir.set(generatedAppInfoDir)
 }
 
+// libbox comes prebuilt from the iOS Frameworks workflow rather than being
+// compiled here: it needs Go and the sagernet gomobile fork, and twenty minutes
+// of a macOS runner that has already been spent once.
+val libboxIosDir = layout.buildDirectory.dir("generated/libbox/ios")
+
+val fetchLibboxIosXcframework by tasks.registering(Exec::class) {
+    group = "build"
+    description = "Downloads the prebuilt Libbox.xcframework for the packet tunnel extension."
+
+    outputs.dir(libboxIosDir)
+    commandLine(
+        "bash",
+        rootProject.file("scripts/fetch-libbox-ios.sh").absolutePath,
+        libboxIosDir.get().asFile.absolutePath
+    )
+}
+
 val buildOlcrtcIosXcframework by tasks.registering(Exec::class) {
     group = "build"
     description = "Builds olcrtc iOS XCFramework from OLCRTC_REPO using gomobile."
