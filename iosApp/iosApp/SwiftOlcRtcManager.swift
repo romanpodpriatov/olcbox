@@ -177,7 +177,7 @@ final class SwiftOlcRtcManager: NSObject, @unchecked Sendable, IosOlcRtcBridge {
         return Int(UInt16(bigEndian: boundAddr.sin_port))
     }
 
-    private func makeLogger() -> (String) -> Void {
+    private func makeLogger() -> @Sendable (String) -> Void {
         return { [weak self] message in
             self?.log(message)
         }
@@ -252,7 +252,10 @@ private final class SilentAudioKeepAlive: NSObject, @unchecked Sendable {
     private var engine: AVAudioEngine?
     private var player: AVAudioPlayerNode?
     private var running = false
-    private var log: ((String) -> Void)?
+    // @Sendable because it is stored here and called from queue.async, which
+    // is a Sendable context. Both classes are already @unchecked Sendable —
+    // they synchronise themselves — so nothing else has to change.
+    private var log: (@Sendable (String) -> Void)?
 
     // Amplitude of the keep-alive tone. Inaudible (~ -70 dBFS) but non-zero so the
     // output route is genuinely "producing audio". If a device still suspends the
@@ -261,7 +264,7 @@ private final class SilentAudioKeepAlive: NSObject, @unchecked Sendable {
     private let sampleRate: Double = 44_100
     private let toneHz: Float = 50
 
-    func start(log: @escaping (String) -> Void) {
+    func start(log: @escaping @Sendable (String) -> Void) {
         queue.async {
             self.log = log
             guard !self.running else { return }
@@ -272,7 +275,7 @@ private final class SilentAudioKeepAlive: NSObject, @unchecked Sendable {
         }
     }
 
-    func stop(log: @escaping (String) -> Void) {
+    func stop(log: @escaping @Sendable (String) -> Void) {
         queue.async {
             self.log = log
             guard self.running else { return }
