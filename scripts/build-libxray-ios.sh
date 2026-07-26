@@ -20,10 +20,14 @@ echo "== libXray, pinned to xray-core v${XRAY_VERSION} =="
 git clone --depth 1 https://github.com/XTLS/libXray "$work/libXray"
 cd "$work/libXray"
 
-# libXray tracks its own release cadence; pin the core so the framework matches
-# the Xray version the shared XrayConfig builder is CI-validated against.
-go mod edit -require="github.com/xtls/xray-core@v${XRAY_VERSION}"
-go mod tidy
+# Do not force a core version here. Xray-core tags v25.x on a module path with no
+# /v25 suffix, so Go rejects that requirement outright — and libXray's own go.mod
+# already names a version it is known to build against. Build what it asks for and
+# report what came out; a mismatch with the version our XrayConfig builder is
+# validated against is worth knowing, not worth breaking the build over.
+go mod download
+resolved="$(go list -m github.com/xtls/xray-core 2>/dev/null || echo 'unknown')"
+echo "== xray-core resolved to: ${resolved} (our config builder is validated against ${XRAY_VERSION}) =="
 
 echo "== gomobile (sagernet fork) =="
 go install github.com/sagernet/gomobile/cmd/gomobile@latest
