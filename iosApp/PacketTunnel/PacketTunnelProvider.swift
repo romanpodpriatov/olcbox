@@ -1,3 +1,4 @@
+import Libbox
 import NetworkExtension
 import os
 
@@ -17,6 +18,13 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     /// the tunnel.
     private static let appGroup = "group.org.proofkit.app"
 
+    private var boxService: LibboxBoxService?
+
+    private static func failure(_ reason: String) -> NSError {
+        NSError(domain: "org.proofkit.tunnel", code: 10,
+                userInfo: [NSLocalizedDescriptionKey: reason])
+    }
+
     override func startTunnel(
         options: [String: NSObject]?,
         completionHandler: @escaping (Error?) -> Void
@@ -27,69 +35,66 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
             forSecurityApplicationGroupIdentifier: Self.appGroup
         ) {
             log.info("app group reachable at \(container.path, privacy: .public)")
-            readConfigAndEcho(in: container)
         } else {
             // Not fatal here — the passthrough needs no config — but it would be
             // fatal later, so say so while the cause is still obvious.
             log.error("app group \(Self.appGroup, privacy: .public) is NOT reachable")
         }
 
-        let settings = NEPacketTunnelNetworkSettings(tunnelRemoteAddress: "127.0.0.1")
-
-        // 198.18.0.0/15 is reserved for benchmarking and is what tunnel clients
-        // conventionally use: it cannot collide with a real network the device is on.
-        let ipv4 = NEIPv4Settings(addresses: ["198.18.0.1"], subnetMasks: ["255.255.255.0"])
-        ipv4.includedRoutes = [NEIPv4Route.default()]
-        settings.ipv4Settings = ipv4
-
-        settings.dnsSettings = NEDNSSettings(servers: ["1.1.1.1", "8.8.8.8"])
-
-        // 1400 leaves room for the outer headers every transport adds. The real
-        // value belongs with the transport once one exists.
-        settings.mtu = 1400
-
-        setTunnelNetworkSettings(settings) { [weak self] error in
-            if let error {
-                self?.log.error("setTunnelNetworkSettings failed: \(error.localizedDescription, privacy: .public)")
-                completionHandler(error)
-                return
-            }
-            self?.log.info("tun established")
-            completionHandler(nil)
-        }
-    }
-
-
-    /// Reads what the app left for us and writes back what we saw.
-    ///
-    /// The real config will travel this exact path, so it is worth knowing the
-    /// path works before a core is depending on it: a silent failure here would
-    /// later look like the core refusing to start.
-    private func readConfigAndEcho(in container: URL) {
-        let configURL = container.appendingPathComponent("config.json")
-        let echoURL = container.appendingPathComponent("echo.json")
-
-        guard let data = try? Data(contentsOf: configURL) else {
-            log.error("no config.json in the shared container")
-            try? Data("{\"seen\":false}".utf8).write(to: echoURL)
+        guard let container = FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: Self.appGroup
+        ) else {
+            completionHandler(Self.failure("app group unavailable"))
             return
         }
 
-        let token = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])
-            .flatMap { $0?["token"] as? String } ?? "unreadable"
-        log.info("config.json read: \(data.count, privacy: .public) bytes, token=\(token, privacy: .public)")
+        let configURL = container.appendingPathComponent("config.json")
+        guard let config = try? String(contentsOf: configURL, encoding: .utf8), !config.isEmpty else {
+            completionHandler(Self.failure("no config in the shared container"))
+            return
+        }
 
-        let echo = ["seen": true, "token": token, "bytes": data.count] as [String: Any]
-        if let out = try? JSONSerialization.data(withJSONObject: echo) {
-            try? out.write(to: echoURL)
+        do {
+            // libbox keeps its state on disk; inside the group so the app can
+            // read logs and caches too.
+            let setup = LibboxSetupOptions()
+            setup.basePath = container.appendingPathComponent("libbox").path
+            setup.workingPath = container.appendingPathComponent("libbox/work").path
+            setup.tempPath = NSTemporaryDirectory()
+            setup.username = ""
+            setup.isTVOS = false
+            setup.fixAndroidStack = false
+            try? FileManager.default.createDirectory(
+                atPath: setup.workingPath, withIntermediateDirectories: true
+            )
+            try LibboxSetup(setup)
+
+            // The platform object is what libbox calls back into; openTun is where
+            // the system settings get applied, so there is no separate call here.
+            let platform = LibboxPlatform(provider: self)
+            let service = try LibboxNewService(config, platform)
+            try service.start()
+            self.boxService = service
+
+            log.info("sing-box started, config \(config.count, privacy: .public) bytes")
+            completionHandler(nil)
+        } catch {
+            log.error("sing-box failed to start: \(error.localizedDescription, privacy: .public)")
+            completionHandler(error)
         }
     }
+    }
+
 
     override func stopTunnel(
         with reason: NEProviderStopReason,
         completionHandler: @escaping () -> Void
     ) {
         log.info("stopTunnel reason=\(reason.rawValue, privacy: .public)")
+        // Closing the service is what releases the tun descriptor; skipping it
+        // leaves the next start fighting the previous one for it.
+        try? boxService?.close()
+        boxService = nil
         completionHandler()
     }
 

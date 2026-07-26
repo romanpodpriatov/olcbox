@@ -72,38 +72,42 @@ private struct TunnelDebugControl: View {
     @State private var channel = "channel: untested"
     @State private var channelOK = false
 
-    /// Leaves a config for the extension and reports what came back.
+    /// Writes the config the extension will hand to sing-box.
     ///
-    /// A token per attempt, so a stale echo from an earlier run cannot be
-    /// mistaken for a fresh success — which is exactly the kind of false green
-    /// that costs an afternoon.
+    /// A direct outbound first, deliberately. If the tunnel comes up and traffic
+    /// flows with this, then libbox owns the tun and moves packets — and when a
+    /// real server is added afterwards, a failure can only be the server. Proving
+    /// both at once means diagnosing both at once.
+    ///
+    /// The tun block must agree with LibboxPlatform.Tun in the extension: the app
+    /// decides the addressing and the extension applies it to the system.
     private static func writeConfig() -> String {
         guard let container = FileManager.default.containerURL(
             forSecurityApplicationGroupIdentifier: appGroupId
         ) else { return "no container" }
 
-        let token = UUID().uuidString.prefix(8).lowercased()
-        let payload: [String: Any] = ["token": String(token), "written": Date().timeIntervalSince1970]
-        let echoURL = container.appendingPathComponent("echo.json")
-        try? FileManager.default.removeItem(at: echoURL)
+        let config: [String: Any] = [
+            "log": ["level": "info", "timestamp": true],
+            "inbounds": [[
+                "type": "tun",
+                "tag": "tun-in",
+                "address": ["172.19.0.1/30"],
+                "mtu": 9000,
+                "auto_route": true,
+                "stack": "gvisor",
+            ]],
+            "outbounds": [["type": "direct", "tag": "direct"]],
+        ]
 
-        guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return "encode failed" }
+        guard let data = try? JSONSerialization.data(withJSONObject: config, options: [.prettyPrinted])
+        else { return "encode failed" }
+
         do {
             try data.write(to: container.appendingPathComponent("config.json"))
-            return String(token)
+            return "config \(data.count)B"
         } catch {
             return "write failed"
         }
-    }
-
-    private static func readEcho() -> String? {
-        guard let container = FileManager.default.containerURL(
-            forSecurityApplicationGroupIdentifier: appGroupId
-        ), let data = try? Data(contentsOf: container.appendingPathComponent("echo.json")),
-              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-        else { return nil }
-        guard obj["seen"] as? Bool == true else { return "extension saw nothing" }
-        return obj["token"] as? String
     }
 
     var body: some View {
@@ -137,18 +141,9 @@ private struct TunnelDebugControl: View {
             HStack(spacing: 6) {
                 Button("tun on") {
                     Task {
-                        let sent = Self.writeConfig()
-                        channel = "sent \(sent)"
-                        channelOK = false
+                        channel = Self.writeConfig()
+                        channelOK = channel.hasPrefix("config")
                         await tunnel.start()
-                        // The extension writes its echo while starting up; give
-                        // it a moment rather than racing it. nanoseconds rather
-                        // than .seconds: the latter needs iOS 16 and this app
-                        // still supports older.
-                        try? await Task.sleep(nanoseconds: 2_000_000_000)
-                        let seen = Self.readEcho()
-                        channelOK = (seen == sent)
-                        channel = channelOK ? "channel OK \(sent)" : "echo: \(seen ?? "none")"
                     }
                 }
                 Button("off") { tunnel.stop() }
