@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import Libbox
 import NetworkExtension
@@ -76,12 +77,36 @@ final class LibboxPlatform: NSObject, LibboxPlatformInterfaceProtocol {
     }
 
     private static func tunnelFileDescriptor(of flow: NEPacketTunnelFlow) -> Int32? {
+        // The key path every libbox client uses. It stopped answering on iOS 26,
+        // so it is tried first and no longer trusted.
         if let value = flow.value(forKeyPath: "socket.fileDescriptor") as? Int32 {
             return value
         }
-        // Older runtimes box it differently; try the number form before giving up.
         if let number = flow.value(forKeyPath: "socket.fileDescriptor") as? NSNumber {
             return number.int32Value
+        }
+        return findUtunDescriptor()
+    }
+
+    /// Finds the tunnel descriptor by asking each open socket what interface it
+    /// is, rather than by reaching into a private property.
+    ///
+    /// The extension owns exactly one utun — the one the system just created for
+    /// this tunnel — so the first match is the right one. Slower than a key path
+    /// and considerably harder for a system update to take away.
+    private static func findUtunDescriptor() -> Int32? {
+        let controlProtocol: Int32 = 2   // SYSPROTO_CONTROL
+        let interfaceNameOption: Int32 = 2   // UTUN_OPT_IFNAME
+
+        for fd in Int32(0) ..< Int32(1024) {
+            var name = [CChar](repeating: 0, count: Int(IFNAMSIZ))
+            var length = socklen_t(name.count)
+            let result = getsockopt(fd, controlProtocol, interfaceNameOption, &name, &length)
+            guard result == 0 else { continue }
+            let interface = String(cString: name)
+            if interface.hasPrefix("utun") {
+                return fd
+            }
         }
         return nil
     }
