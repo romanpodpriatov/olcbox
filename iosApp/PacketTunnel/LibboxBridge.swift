@@ -98,7 +98,7 @@ final class LibboxPlatform: NSObject, LibboxPlatformInterfaceProtocol {
     func useProcFS() -> Bool { false }
 
     /// Let Go bind sockets itself rather than routing every one through Swift.
-    func usePlatformAutoDetectInterfaceControl() -> Bool { false }
+    func usePlatformAutoDetectControl() -> Bool { false }
 
     /// Only meaningful with a multipath configuration we do not use.
     func includeAllNetworks() -> Bool { false }
@@ -114,8 +114,8 @@ final class LibboxPlatform: NSObject, LibboxPlatformInterfaceProtocol {
 
     // MARK: - Android-only, and unsupported capabilities
 
-    func autoDetectInterfaceControl(_ fd: Int32) throws {
-        // Never called: usePlatformAutoDetectInterfaceControl() is false.
+    func autoDetectControl(_ fd: Int32) throws {
+        // Never called: usePlatformAutoDetectControl() is false.
     }
 
     func findConnectionOwner(
@@ -145,7 +145,7 @@ final class LibboxPlatform: NSObject, LibboxPlatformInterfaceProtocol {
 
     func readWIFIState() -> LibboxWIFIState? { nil }
 
-    func sendNotification(_ notification: LibboxNotification?) throws {
+    func send(_ notification: LibboxNotification?) throws {
         // The extension has no UI; anything worth saying goes to the log.
     }
 
