@@ -370,6 +370,13 @@ final class SwiftPacketTunnelBridge: NSObject, IosPacketTunnelBridge {
         // controller lives on the main actor, so the hop is explicit.
         let done = DispatchSemaphore(value: 0)
         Task { @MainActor in
+            // Starting an already-running tunnel does nothing at all, and the
+            // extension keeps the config it was launched with — which looked
+            // exactly like a working VPN that does not change your IP.
+            if running {
+                Self.controller.stop()
+                try? await Task.sleep(nanoseconds: 700_000_000)
+            }
             await Self.controller.start()
             done.signal()
         }
