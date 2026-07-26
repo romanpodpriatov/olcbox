@@ -8,16 +8,20 @@ import os
 struct OlcboxIosApp: App {
     private let platformBridge: SwiftPlatformBridge
     private let olcRtcBridge: SwiftOlcRtcManager
+    private let packetTunnelBridge: SwiftPacketTunnelBridge
     private let appSession: IosAppSession
 
     init() {
         let platformBridge = SwiftPlatformBridge()
         let olcRtcBridge = SwiftOlcRtcManager()
+        let packetTunnelBridge = SwiftPacketTunnelBridge()
         self.platformBridge = platformBridge
         self.olcRtcBridge = olcRtcBridge
+        self.packetTunnelBridge = packetTunnelBridge
         self.appSession = IosAppFactory().createSession(
             platformBridge: platformBridge,
-            olcRtcBridge: olcRtcBridge
+            olcRtcBridge: olcRtcBridge,
+            packetTunnelBridge: packetTunnelBridge
         )
     }
 
@@ -325,5 +329,55 @@ final class PacketTunnelController: ObservableObject {
         case .disconnecting: return "disconnecting"
         @unknown default: return "unknown"
         }
+    }
+}
+
+/// The app's half of starting the packet tunnel.
+///
+/// Kotlin decides *what* to run and hands over a finished config; only the app
+/// can ask the system to launch the extension, so that part lives here. The
+/// config goes through the App Group because a tunnel provider is a separate
+/// process — there is no argument to pass it.
+final class SwiftPacketTunnelBridge: NSObject, IosPacketTunnelBridge {
+
+    private let controller = PacketTunnelController()
+    private static let appGroupId = "group.org.proofkit.app"
+
+    func start(config: String) -> IosBridgeResult {
+        guard let container = FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: Self.appGroupId
+        ) else {
+            return IosBridgeResult(success: false, message: "app group unavailable")
+        }
+        do {
+            try Data(config.utf8).write(to: container.appendingPathComponent("config.json"))
+        } catch {
+            return IosBridgeResult(success: false, message: "could not hand over the config: \(error.localizedDescription)")
+        }
+
+        // Kotlin calls this from a background dispatcher and expects an answer;
+        // the manager is main-actor bound, so the hop is explicit.
+        let done = DispatchSemaphore(value: 0)
+        var failure: String?
+        Task { @MainActor in
+            await controller.start()
+            done.signal()
+        }
+        done.wait()
+        return IosBridgeResult(success: failure == nil, message: failure)
+    }
+
+    func stop() {
+        Task { @MainActor in controller.stop() }
+    }
+
+    func isRunning() -> Bool {
+        // Status is observed by the Kotlin manager through its own state; this is
+        // only a coarse answer for callers that ask directly.
+        controllerIsConnected
+    }
+
+    private var controllerIsConnected: Bool {
+        MainActor.assumeIsolated { controller.status == "connected" }
     }
 }
