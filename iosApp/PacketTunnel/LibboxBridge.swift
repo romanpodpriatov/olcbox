@@ -118,8 +118,13 @@ final class LibboxPlatform: NSObject, LibboxPlatformInterfaceProtocol {
     /// procfs is a Linux notion; there is nothing to read here.
     func useProcFS() -> Bool { false }
 
-    /// Let Go bind sockets itself rather than routing every one through Swift.
-    func usePlatformAutoDetectControl() -> Bool { false }
+    /// Every outbound socket has to be pinned to the physical interface.
+    ///
+    /// The default route now points into our own tun, so a socket left to the
+    /// system's judgement comes straight back to us and dials forever. sing-box
+    /// said so plainly: "open outbound connection: dial tcp …: i/o timeout"
+    /// while its inbound side was happily receiving the same connection.
+    func usePlatformAutoDetectControl() -> Bool { true }
 
     /// Only meaningful with a multipath configuration we do not use.
     func includeAllNetworks() -> Bool { false }
@@ -156,7 +161,44 @@ final class LibboxPlatform: NSObject, LibboxPlatformInterfaceProtocol {
     // MARK: - Android-only, and unsupported capabilities
 
     func autoDetectControl(_ fd: Int32) throws {
-        // Never called: usePlatformAutoDetectControl() is false.
+        guard let index = Self.physicalInterfaceIndex() else {
+            // Better to let it try than to fail the connection outright: without
+            // a physical interface there is nothing to bind to anyway.
+            return
+        }
+        var scope = index
+        let size = socklen_t(MemoryLayout<UInt32>.size)
+        // IP_BOUND_IF / IPV6_BOUND_IF. Both are set because the socket family is
+        // not known here and the wrong one simply fails harmlessly.
+        setsockopt(fd, IPPROTO_IP, 25, &scope, size)
+        setsockopt(fd, IPPROTO_IPV6, 125, &scope, size)
+    }
+
+    /// The interface the device actually reaches the internet through.
+    ///
+    /// Wi-Fi wins over cellular when both are up, matching what the system would
+    /// have chosen if our tun were not in the way.
+    private static func physicalInterfaceIndex() -> UInt32? {
+        var addresses: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&addresses) == 0, let first = addresses else { return nil }
+        defer { freeifaddrs(addresses) }
+
+        var cellular: UInt32?
+        for entry in sequence(first: first, next: { $0.pointee.ifa_next }) {
+            guard entry.pointee.ifa_addr?.pointee.sa_family == UInt8(AF_INET),
+                  entry.pointee.ifa_flags & UInt32(IFF_UP) != 0,
+                  entry.pointee.ifa_flags & UInt32(IFF_LOOPBACK) == 0
+            else { continue }
+
+            let name = String(cString: entry.pointee.ifa_name)
+            if name.hasPrefix("en") {
+                return if_nametoindex(name)
+            }
+            if name.hasPrefix("pdp_ip"), cellular == nil {
+                cellular = if_nametoindex(name)
+            }
+        }
+        return cellular
     }
 
     func findConnectionOwner(
