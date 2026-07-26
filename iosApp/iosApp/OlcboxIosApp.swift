@@ -73,6 +73,61 @@ private struct TunnelDebugControl: View {
     @State private var channelOK = false
     @State private var stage = "stage: -"
     @State private var engine = ""
+    @AppStorage("debug.link") private var link = ""
+
+    /// Turns a hysteria2:// link into the outbound sing-box wants.
+    ///
+    /// Deliberately not committed as a constant: this repository is public and a
+    /// subscription link is a working credential. It is typed in on the device
+    /// and kept only there.
+    ///
+    /// Shape follows the project's own SingBoxConfig builder, which is validated
+    /// against sing-box 1.11.15 — including the pinned-certificate case: a
+    /// published pin means a self-signed certificate, so checking it against the
+    /// system store would only ever fail.
+    private static func outbound(from link: String) -> [String: Any]? {
+        guard let url = URLComponents(string: link.trimmingCharacters(in: .whitespacesAndNewlines)),
+              let host = url.host, let port = url.port, let password = url.user
+        else { return nil }
+
+        let query = Dictionary(uniqueKeysWithValues: (url.queryItems ?? []).map { ($0.name, $0.value ?? "") })
+        let sni = query["sni"] ?? host
+
+        switch url.scheme {
+        case "hysteria2", "hy2":
+            var out: [String: Any] = [
+                "type": "hysteria2", "tag": "out",
+                "server": host, "server_port": port,
+                "password": password,
+                "tls": [
+                    "enabled": true,
+                    "server_name": sni,
+                    "insecure": query["insecure"] == "1" || query["pinSHA256"] != nil,
+                ],
+            ]
+            if let obfs = query["obfs-password"], !obfs.isEmpty {
+                out["obfs"] = ["type": "salamander", "password": obfs]
+            }
+            return out
+
+        case "vless":
+            var tls: [String: Any] = ["enabled": true, "server_name": sni, "utls": ["enabled": true, "fingerprint": query["fp"] ?? "chrome"]]
+            if query["security"] == "reality" {
+                tls["reality"] = ["enabled": true, "public_key": query["pbk"] ?? "", "short_id": query["sid"] ?? ""]
+            }
+            var out: [String: Any] = [
+                "type": "vless", "tag": "out",
+                "server": host, "server_port": port,
+                "uuid": password,
+                "tls": tls,
+            ]
+            if let flow = query["flow"], !flow.isEmpty { out["flow"] = flow }
+            return out
+
+        default:
+            return nil
+        }
+    }
 
     /// The last lines sing-box wrote about itself.
     private static func readEngineLog() -> String {
@@ -103,7 +158,7 @@ private struct TunnelDebugControl: View {
     ///
     /// The tun block must agree with LibboxPlatform.Tun in the extension: the app
     /// decides the addressing and the extension applies it to the system.
-    private static func writeConfig() -> String {
+    private static func writeConfig(outbound: [String: Any]?) -> String {
         guard let container = FileManager.default.containerURL(
             forSecurityApplicationGroupIdentifier: appGroupId
         ) else { return "no container" }
@@ -124,7 +179,7 @@ private struct TunnelDebugControl: View {
                 // here, and the thing to watch under load.
                 "stack": "gvisor",
             ]],
-            "outbounds": [["type": "direct", "tag": "direct"]],
+            "outbounds": [outbound ?? ["type": "direct", "tag": "direct"]],
         ]
 
         guard let data = try? JSONSerialization.data(withJSONObject: config, options: [.prettyPrinted])
@@ -188,10 +243,21 @@ private struct TunnelDebugControl: View {
                 .foregroundStyle(channelOK ? .green : .orange)
                 .clipShape(RoundedRectangle(cornerRadius: 4))
 
+            TextField("paste vless:// or hysteria2:// link", text: $link)
+                .font(.system(size: 9).monospaced())
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .padding(4)
+                .background(.white.opacity(0.9))
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+                .frame(width: 300)
+
             HStack(spacing: 6) {
                 Button("tun on") {
                     Task {
-                        channel = Self.writeConfig()
+                        let out = Self.outbound(from: link)
+                        channel = Self.writeConfig(outbound: out)
+                            + (out == nil ? " (direct)" : " (proxy)")
                         channelOK = channel.hasPrefix("config")
                         stage = "stage: -"
                         await tunnel.start()
