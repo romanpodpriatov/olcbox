@@ -30,34 +30,51 @@ env:
 
 jobs:
   build:
-    name: gomobile bind
+    name: gomobile bind (${{ matrix.framework }})
     runs-on: macos-latest
     timeout-minutes: 90
 
+    strategy:
+      # One failing framework must not throw away the other's twenty minutes of
+      # a 10x runner.
+      fail-fast: false
+      matrix:
+        include:
+          # The sagernet gomobile fork does not build on 1.24, and libXray's
+          # go.mod uses the `tool` directive, which does not exist before it.
+          # The two cannot share a toolchain, so they no longer share a job.
+          - framework: libbox
+            go: '1.23'
+          - framework: libxray
+            go: 'stable'
+
     steps:
       - uses: actions/checkout@v5
+        if: inputs.framework == 'both' || inputs.framework == matrix.framework
 
       - uses: actions/setup-go@v7
+        if: inputs.framework == 'both' || inputs.framework == matrix.framework
         with:
-          # Not negotiable: the sagernet gomobile fork does not build on 1.24.
-          go-version: '1.23'
+          go-version: ${{ matrix.go }}
 
       - name: Cache built frameworks
         id: cache
+        if: inputs.framework == 'both' || inputs.framework == matrix.framework
         uses: actions/cache@v4
         with:
           path: dist/frameworks
-          key: ios-frameworks-sb${{ env.SINGBOX_VERSION }}-xray${{ env.XRAY_VERSION }}-${{ hashFiles('scripts/build-lib*-ios.sh') }}
+          key: ios-${{ matrix.framework }}-sb${{ env.SINGBOX_VERSION }}-xray${{ env.XRAY_VERSION }}-${{ hashFiles('scripts/build-lib*-ios.sh') }}
 
       - name: Build Libbox
-        if: steps.cache.outputs.cache-hit != 'true' && inputs.framework != 'libxray'
+        if: matrix.framework == 'libbox' && steps.cache.outputs.cache-hit != 'true' && (inputs.framework == 'both' || inputs.framework == 'libbox')
         run: bash scripts/build-libbox-ios.sh "$PWD/dist/frameworks"
 
       - name: Build LibXray
-        if: steps.cache.outputs.cache-hit != 'true' && inputs.framework != 'libbox'
+        if: matrix.framework == 'libxray' && steps.cache.outputs.cache-hit != 'true' && (inputs.framework == 'both' || inputs.framework == 'libxray')
         run: bash scripts/build-libxray-ios.sh "$PWD/dist/frameworks"
 
       - name: Report what was produced
+        if: inputs.framework == 'both' || inputs.framework == matrix.framework
         run: |
           echo "### iOS frameworks" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
@@ -65,6 +82,7 @@ jobs:
           echo '```' >> "$GITHUB_STEP_SUMMARY"
 
       - name: Package
+        if: inputs.framework == 'both' || inputs.framework == matrix.framework
         run: |
           cd dist/frameworks
           for fw in *.xcframework; do
@@ -74,15 +92,16 @@ jobs:
           ls -la ../
 
       - uses: actions/upload-artifact@v4
+        if: inputs.framework == 'both' || inputs.framework == matrix.framework
         with:
-          name: ios-frameworks
+          name: ios-frameworks-${{ matrix.framework }}
           path: dist/*.zip
           if-no-files-found: error
 
       # A release asset outlives the 90-day artifact retention, so the extension
       # build can fetch a known framework months later without a macOS runner.
       - name: Publish to the ios-frameworks tag
-        if: inputs.publish
+        if: inputs.publish && (inputs.framework == 'both' || inputs.framework == matrix.framework)
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
