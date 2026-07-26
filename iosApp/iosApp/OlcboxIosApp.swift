@@ -340,8 +340,16 @@ final class PacketTunnelController: ObservableObject {
 /// process — there is no argument to pass it.
 final class SwiftPacketTunnelBridge: NSObject, IosPacketTunnelBridge {
 
-    private let controller = PacketTunnelController()
+    /// Main-actor bound, so it cannot be a stored property of this class — the
+    /// bridge is called from Kotlin's background dispatcher and is deliberately
+    /// not isolated itself.
+    @MainActor private static let controller = PacketTunnelController()
+
     private static let appGroupId = "group.org.proofkit.app"
+
+    /// Plain flag rather than a peek at the controller: reading main-actor state
+    /// from here would mean assuming an isolation this class does not have.
+    private nonisolated(unsafe) var running = false
 
     func start(config: String) -> IosBridgeResult {
         guard let container = FileManager.default.containerURL(
@@ -352,32 +360,28 @@ final class SwiftPacketTunnelBridge: NSObject, IosPacketTunnelBridge {
         do {
             try Data(config.utf8).write(to: container.appendingPathComponent("config.json"))
         } catch {
-            return IosBridgeResult(success: false, message: "could not hand over the config: \(error.localizedDescription)")
+            return IosBridgeResult(
+                success: false,
+                message: "could not hand over the config: \(error.localizedDescription)"
+            )
         }
 
-        // Kotlin calls this from a background dispatcher and expects an answer;
-        // the manager is main-actor bound, so the hop is explicit.
+        // Kotlin waits for an answer on a background dispatcher, and the
+        // controller lives on the main actor, so the hop is explicit.
         let done = DispatchSemaphore(value: 0)
-        var failure: String?
         Task { @MainActor in
-            await controller.start()
+            await Self.controller.start()
             done.signal()
         }
         done.wait()
-        return IosBridgeResult(success: failure == nil, message: failure)
+        running = true
+        return IosBridgeResult(success: true, message: nil)
     }
 
     func stop() {
-        Task { @MainActor in controller.stop() }
+        running = false
+        Task { @MainActor in Self.controller.stop() }
     }
 
-    func isRunning() -> Bool {
-        // Status is observed by the Kotlin manager through its own state; this is
-        // only a coarse answer for callers that ask directly.
-        controllerIsConnected
-    }
-
-    private var controllerIsConnected: Bool {
-        MainActor.assumeIsolated { controller.status == "connected" }
-    }
+    func isRunning() -> Bool { running }
 }
