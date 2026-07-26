@@ -71,6 +71,17 @@ private struct TunnelDebugControl: View {
 
     @State private var channel = "channel: untested"
     @State private var channelOK = false
+    @State private var stage = "stage: -"
+
+    /// Whatever the extension managed to write before it stopped.
+    private static func readStage() -> String {
+        guard let container = FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: appGroupId
+        ), let data = try? Data(contentsOf: container.appendingPathComponent("stage.txt")),
+              let text = String(data: data, encoding: .utf8)
+        else { return "stage: -" }
+        return "stage: \(text)"
+    }
 
     /// Writes the config the extension will hand to sing-box.
     ///
@@ -136,6 +147,14 @@ private struct TunnelDebugControl: View {
                 .foregroundStyle(.white)
                 .clipShape(RoundedRectangle(cornerRadius: 4))
 
+            Text(stage)
+                .font(.caption2.monospaced())
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(.black.opacity(0.6))
+                .foregroundStyle(stage.contains("ready") ? .green : .yellow)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+
             Text(channel)
                 .font(.caption2.monospaced())
                 .padding(.horizontal, 6)
@@ -149,7 +168,15 @@ private struct TunnelDebugControl: View {
                     Task {
                         channel = Self.writeConfig()
                         channelOK = channel.hasPrefix("config")
+                        stage = "stage: -"
                         await tunnel.start()
+                        // Poll rather than wait once: the interesting case is the
+                        // extension dying part-way, and then the last stage it
+                        // wrote is the answer.
+                        for _ in 0..<10 {
+                            try? await Task.sleep(nanoseconds: 700_000_000)
+                            stage = Self.readStage()
+                        }
                     }
                 }
                 Button("off") { tunnel.stop() }

@@ -25,9 +25,23 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     /// still linked but never called: if the tunnel then comes up, the fault is in
     /// starting libbox; if it still does not, the fault is in loading the framework
     /// at all, and no amount of reordering our own calls will help.
-    private static let useLibbox = false
+    private static let useLibbox = true
 
     private var boxService: LibboxBoxService?
+
+    /// Progress written where the app can read it.
+    ///
+    /// The extension's log lines never reach the person debugging this, so a
+    /// breadcrumb that survives the process dying is worth more than a perfect
+    /// log nobody sees: whatever stage is on screen when it dies is the stage
+    /// that killed it.
+    private func mark(_ stage: String) {
+        log.info("stage: \(stage, privacy: .public)")
+        guard let container = FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: Self.appGroup
+        ) else { return }
+        try? Data(stage.utf8).write(to: container.appendingPathComponent("stage.txt"))
+    }
 
     private static func failure(_ reason: String) -> NSError {
         NSError(domain: "org.proofkit.tunnel", code: 10,
@@ -86,6 +100,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         completionHandler: @escaping (Error?) -> Void
     ) {
         do {
+            mark("setup")
             // libbox keeps its state on disk; inside the group so the app can
             // read logs and caches too.
             let setup = LibboxSetupOptions()
@@ -103,6 +118,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
             var setupError: NSError?
             LibboxSetup(setup, &setupError)
             if let setupError { throw setupError }
+            mark("service")
 
             // The platform object is what libbox calls back into; openTun is where
             // the system settings get applied, so there is no separate call here.
@@ -111,13 +127,15 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
             guard let service = LibboxNewService(config, platform, &serviceError) else {
                 throw serviceError ?? Self.failure("sing-box would not take the config")
             }
+            mark("starting")
             try service.start()
+            mark("ready")
             self.boxService = service
 
             log.info("sing-box started, config \(config.count, privacy: .public) bytes")
             completionHandler(nil)
         } catch {
-            log.error("sing-box failed to start: \(error.localizedDescription, privacy: .public)")
+            mark("failed: \(error.localizedDescription)")
             completionHandler(error)
         }
     }
