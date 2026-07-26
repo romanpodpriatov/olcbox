@@ -32,12 +32,6 @@ struct OlcboxIosApp: App {
                 appSession: appSession
             )
             .ignoresSafeArea()
-            #if DEBUG
-            // Scaffolding, not product: the real Connect lives in the shared UI
-            // and drives this same controller once the tunnel is proven on a
-            // device. Until then there has to be something to press.
-            .overlay(alignment: .bottomTrailing) { TunnelDebugControl() }
-            #endif
         }
     }
 }
@@ -57,224 +51,6 @@ private struct ComposeHostView: UIViewControllerRepresentable {
     }
 }
 
-#if DEBUG
-/// Temporary: starts and stops the packet tunnel so the entitlement, the
-/// provisioning profile and the app↔extension wiring can be checked on hardware
-/// before any transport exists to confuse the result.
-private struct TunnelDebugControl: View {
-    @StateObject private var tunnel = PacketTunnelController()
-
-    private static let appGroupId = "group.org.proofkit.app"
-
-    /// The app and the extension share this container; if the app cannot see it,
-    /// neither can the extension, and the config would never arrive.
-    private static let appGroupOK = FileManager.default.containerURL(
-        forSecurityApplicationGroupIdentifier: appGroupId
-    ) != nil
-    private static let appGroupState = appGroupOK ? "group OK" : "group MISSING"
-
-    @State private var channel = "channel: untested"
-    @State private var channelOK = false
-    @State private var stage = "stage: -"
-    @State private var engine = ""
-    @State private var exitIP = "exit ip: ?"
-
-    /// Asks a plain-text service where the request came from.
-    ///
-    /// In-app rather than in Safari because a browser caches, and because the
-    /// question is specifically whether *this app's* traffic leaves through the
-    /// tunnel. Caching is defeated by policy and by a fresh query each time
-    /// rather than by hoping.
-    private static func measureExitIP() async -> String {
-        let nonce = Int.random(in: 100_000...999_999)
-        guard let url = URL(string: "https://ifconfig.co/ip?x=\(nonce)") else { return "exit ip: bad url" }
-        var request = URLRequest(url: url)
-        request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
-        request.timeoutInterval = 12
-        do {
-            let (data, _) = try await URLSession(configuration: .ephemeral).data(for: request)
-            let ip = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
-            return "exit ip: \(ip)"
-        } catch {
-            return "exit ip: \(error.localizedDescription)"
-        }
-    }
-    @AppStorage("debug.link") private var link = ""
-
-    /// Builds the config with the same code every other platform uses.
-    ///
-    /// The first version parsed the link in Swift, which meant iOS would drift
-    /// from Android and desktop the first time a transport gained a field.
-    /// LinkParser and SingBoxConfig are already validated against sing-box
-    /// 1.11.15 in CI; iOS inherits that rather than re-earning it.
-    ///
-    /// The link is typed in on the device and never committed: this repository is
-    /// public and a subscription link is a working credential.
-    private static func configFor(link: String) -> String? {
-        let trimmed = link.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, let spec = LinkParser.shared.parse(line: trimmed) else { return nil }
-        return SingBoxConfig.shared.buildTun(
-            outbound: spec,
-            address: SingBoxConfig.shared.TUN_ADDRESS,
-            mtu: SingBoxConfig.shared.TUN_MTU
-        )
-    }
-
-    /// Writes the config the extension will hand to sing-box.
-    ///
-    /// A direct outbound first, deliberately. If the tunnel comes up and traffic
-    /// flows with this, then libbox owns the tun and moves packets — and when a
-    /// real server is added afterwards, a failure can only be the server. Proving
-    /// both at once means diagnosing both at once.
-    ///
-    /// The tun block must agree with LibboxPlatform.Tun in the extension: the app
-    /// decides the addressing and the extension applies it to the system.
-    /// Whatever the extension managed to write before it stopped.
-    private static func readStage() -> String {
-        guard let container = FileManager.default.containerURL(
-            forSecurityApplicationGroupIdentifier: appGroupId
-        ), let data = try? Data(contentsOf: container.appendingPathComponent("stage.txt")),
-              let text = String(data: data, encoding: .utf8)
-        else { return "stage: -" }
-        return "stage: \(text)"
-    }
-
-    /// The last lines sing-box wrote about itself.
-    private static func readEngineLog() -> String {
-        guard let container = FileManager.default.containerURL(
-            forSecurityApplicationGroupIdentifier: appGroupId
-        ), let data = try? Data(contentsOf: container.appendingPathComponent("engine.log")),
-              let text = String(data: data, encoding: .utf8)
-        else { return "" }
-        return text
-    }
-
-    private static func writeConfig(json: String?) -> String {
-        guard let container = FileManager.default.containerURL(
-            forSecurityApplicationGroupIdentifier: appGroupId
-        ) else { return "no container" }
-
-        // With no link, the direct outbound that proved the plumbing.
-        let content = json ?? #"{"log":{"level":"info"},"inbounds":[{"type":"tun","tag":"tun-in","address":["172.19.0.1/30"],"mtu":9000,"auto_route":true,"stack":"gvisor"}],"outbounds":[{"type":"direct","tag":"direct"}]}"#
-
-        do {
-            try Data(content.utf8).write(to: container.appendingPathComponent("config.json"))
-            return "config \(content.utf8.count)B"
-        } catch {
-            return "write failed"
-        }
-    }
-
-    var body: some View {
-        VStack(alignment: .trailing, spacing: 6) {
-            // Hunting one line in Console means reading the whole device's log
-            // firehose. The answer fits on screen.
-            Text(Self.appGroupState)
-                .font(.caption2.monospaced())
-                .padding(.horizontal, 6)
-                .padding(.vertical, 3)
-                .background(.black.opacity(0.6))
-                .foregroundStyle(Self.appGroupOK ? .green : .red)
-                .clipShape(RoundedRectangle(cornerRadius: 4))
-
-            Text(tunnel.status)
-                .font(.caption2.monospaced())
-                .padding(.horizontal, 6)
-                .padding(.vertical, 3)
-                .background(.black.opacity(0.6))
-                .foregroundStyle(.white)
-                .clipShape(RoundedRectangle(cornerRadius: 4))
-
-            if !engine.isEmpty {
-                ScrollView {
-                    Text(engine)
-                        .font(.system(size: 8).monospaced())
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .textSelection(.enabled)
-                }
-                .frame(width: 300, height: 150)
-                .padding(4)
-                .background(.black.opacity(0.75))
-                .clipShape(RoundedRectangle(cornerRadius: 4))
-            }
-
-            Text(exitIP)
-                .font(.caption2.monospaced())
-                .padding(.horizontal, 6)
-                .padding(.vertical, 3)
-                .background(.black.opacity(0.6))
-                .foregroundStyle(.cyan)
-                .clipShape(RoundedRectangle(cornerRadius: 4))
-                .textSelection(.enabled)
-
-            Text(stage)
-                .font(.caption2.monospaced())
-                .padding(.horizontal, 6)
-                .padding(.vertical, 3)
-                .background(.black.opacity(0.6))
-                .foregroundStyle(stage.contains("ready") ? .green : .yellow)
-                .clipShape(RoundedRectangle(cornerRadius: 4))
-
-            Text(channel)
-                .font(.caption2.monospaced())
-                .padding(.horizontal, 6)
-                .padding(.vertical, 3)
-                .background(.black.opacity(0.6))
-                .foregroundStyle(channelOK ? .green : .orange)
-                .clipShape(RoundedRectangle(cornerRadius: 4))
-
-            TextField("paste vless:// or hysteria2:// link", text: $link)
-                .font(.system(size: 9).monospaced())
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .padding(4)
-                .background(.white.opacity(0.9))
-                .clipShape(RoundedRectangle(cornerRadius: 4))
-                .frame(width: 300)
-
-            HStack(spacing: 6) {
-                Button("tun on") {
-                    Task {
-                        let json = Self.configFor(link: link)
-                        channel = Self.writeConfig(json: json)
-                            + (json == nil ? " (direct)" : " (proxy)")
-                        channelOK = channel.hasPrefix("config")
-                        stage = "stage: -"
-                        await tunnel.start()
-                        // Poll rather than wait once: the interesting case is the
-                        // extension dying part-way, and then the last stage it
-                        // wrote is the answer.
-                        for _ in 0..<10 {
-                            try? await Task.sleep(nanoseconds: 700_000_000)
-                            stage = Self.readStage()
-                            engine = Self.readEngineLog()
-                        }
-                    }
-                }
-                Button("off") { tunnel.stop() }
-                Button("ip") {
-                    Task {
-                        exitIP = "exit ip: …"
-                        exitIP = await Self.measureExitIP()
-                    }
-                }
-            }
-            .font(.caption)
-            .buttonStyle(.borderedProminent)
-        }
-        .padding(12)
-        .task { await tunnel.prepare() }
-    }
-}
-#endif
-
-/// Installs and starts the packet tunnel extension.
-///
-/// The extension cannot start itself: iOS runs it only on behalf of a saved VPN
-/// configuration that the containing app creates. This is that side of the wiring,
-/// deliberately separate from the Compose UI — the Connect button belongs to the
-/// shared layer and comes once the tunnel is proven on a device.
 @MainActor
 final class PacketTunnelController: ObservableObject {
 
@@ -356,6 +132,52 @@ final class PacketTunnelController: ObservableObject {
         log.info("stopVPNTunnel requested")
     }
 
+    /// Waits for the system to say the tunnel is actually up.
+    ///
+    /// `startVPNTunnel()` only queues the request: it returns without error for
+    /// a tunnel that is about to die, and an extension that throws out of
+    /// `startTunnel` reports nothing back to the app at all. Without this the
+    /// app said "connected" over a dead tunnel — which is exactly how a
+    /// transport sing-box could not even parse went unnoticed.
+    ///
+    /// Returns nil on success, or a description of what went wrong.
+    func waitUntilUp(timeout: TimeInterval = 20) async -> String? {
+        guard let manager else { return "no VPN configuration" }
+        var sawAttempt = false
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            switch manager.connection.status {
+            case .connected:
+                return nil
+            case .connecting, .reasserting:
+                sawAttempt = true
+            case .disconnected, .invalid:
+                // Only after an attempt began: the status is still
+                // `disconnected` for a moment after the request is queued.
+                if sawAttempt { return Self.lastStage() ?? "the tunnel stopped right after starting" }
+            case .disconnecting:
+                break
+            @unknown default:
+                break
+            }
+            try? await Task.sleep(nanoseconds: 250_000_000)
+        }
+        return Self.lastStage() ?? "timed out waiting for the tunnel"
+    }
+
+    /// The extension's own breadcrumb, which is the only thing that knows *why*
+    /// a start failed — the system tells the app nothing but "disconnected".
+    private static func lastStage() -> String? {
+        guard let container = FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: "group.org.proofkit.app"
+        ) else { return nil }
+        let stage = try? String(
+            contentsOf: container.appendingPathComponent("stage.txt"), encoding: .utf8
+        )
+        guard let stage, stage.hasPrefix("failed") else { return nil }
+        return stage
+    }
+
     private nonisolated static func describe(_ status: NEVPNStatus) -> String {
         switch status {
         case .invalid: return "invalid"
@@ -388,14 +210,23 @@ final class SwiftPacketTunnelBridge: NSObject, IosPacketTunnelBridge {
     /// from here would mean assuming an isolation this class does not have.
     private nonisolated(unsafe) var running = false
 
-    func start(config: String) -> IosBridgeResult {
+    func start(config: String, xrayConfig: String?) -> IosBridgeResult {
         guard let container = FileManager.default.containerURL(
             forSecurityApplicationGroupIdentifier: Self.appGroupId
         ) else {
             return IosBridgeResult(success: false, message: "app group unavailable")
         }
+        let xrayURL = container.appendingPathComponent("xray.json")
         do {
             try Data(config.utf8).write(to: container.appendingPathComponent("config.json"))
+            // Removed rather than left behind: a stale file from a previous
+            // xhttp connection would start a second core behind a tunnel that
+            // does not use one.
+            if let xrayConfig {
+                try Data(xrayConfig.utf8).write(to: xrayURL)
+            } else if FileManager.default.fileExists(atPath: xrayURL.path) {
+                try FileManager.default.removeItem(at: xrayURL)
+            }
         } catch {
             return IosBridgeResult(
                 success: false,
@@ -408,6 +239,10 @@ final class SwiftPacketTunnelBridge: NSObject, IosPacketTunnelBridge {
         // Read before the hop: capturing self in a main-actor task would mean
         // sending a non-Sendable object across isolation for one boolean.
         let wasRunning = running
+        let failure = UnsafeMutablePointer<String?>.allocate(capacity: 1)
+        failure.initialize(to: nil)
+        defer { failure.deinitialize(count: 1); failure.deallocate() }
+
         let done = DispatchSemaphore(value: 0)
         Task { @MainActor in
             // Starting an already-running tunnel does nothing at all, and the
@@ -418,9 +253,15 @@ final class SwiftPacketTunnelBridge: NSObject, IosPacketTunnelBridge {
                 try? await Task.sleep(nanoseconds: 700_000_000)
             }
             await Self.controller.start()
+            failure.pointee = await Self.controller.waitUntilUp()
             done.signal()
         }
         done.wait()
+
+        if let reason = failure.pointee {
+            running = false
+            return IosBridgeResult(success: false, message: reason)
+        }
         running = true
         return IosBridgeResult(success: true, message: nil)
     }

@@ -83,6 +83,7 @@ val generateAppInfo by tasks.registering(GenerateAppInfoTask::class) {
 // compiled here: it needs Go and the sagernet gomobile fork, and twenty minutes
 // of a macOS runner that has already been spent once.
 val libboxIosDir = layout.buildDirectory.dir("generated/libbox/ios")
+val libXrayIosDir = layout.buildDirectory.dir("generated/libxray/ios")
 
 val fetchLibboxIosXcframework by tasks.registering(Exec::class) {
     group = "build"
@@ -93,6 +94,18 @@ val fetchLibboxIosXcframework by tasks.registering(Exec::class) {
         "bash",
         rootProject.file("scripts/fetch-libbox-ios.sh").absolutePath,
         libboxIosDir.get().asFile.absolutePath
+    )
+}
+
+val fetchLibXrayIosXcframework by tasks.registering(Exec::class) {
+    group = "build"
+    description = "Downloads the prebuilt LibXray.xcframework — xhttp locations only."
+
+    outputs.dir(libXrayIosDir)
+    commandLine(
+        "bash",
+        rootProject.file("scripts/fetch-libxray-ios.sh").absolutePath,
+        libXrayIosDir.get().asFile.absolutePath
     )
 }
 

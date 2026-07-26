@@ -25,7 +25,10 @@ import org.olcbox.app.ios.IosLogWriter
 import org.olcbox.app.ios.IosPacketTunnelBridge
 import org.olcbox.app.net.LinkParser
 import org.olcbox.app.net.LocationKind
+import org.olcbox.app.net.OutboundSpec
 import org.olcbox.app.net.SingBoxConfig
+import org.olcbox.app.net.TransportSpec
+import org.olcbox.app.net.XrayConfig
 import org.olcbox.app.ios.IosOlcRtcBridge
 import org.olcbox.app.ios.IosOlcRtcCheckRequest
 import org.olcbox.app.ios.IosOlcRtcStartRequest
@@ -196,13 +199,28 @@ class IosVpnManager(
             return
         }
 
-        // Same builder Android and desktop use, so a transport gaining a field
+        // Same builders Android and desktop use, so a transport gaining a field
         // reaches iOS without anyone remembering to update a second copy.
-        val config = SingBoxConfig.buildTun(spec)
-        addLog("Starting packet tunnel, transport=\${location.kind}, config=\${config.length} bytes")
+        //
+        // xhttp is the one transport sing-box does not implement, so it runs on
+        // Xray and sing-box becomes the tun front-end for it. Every other
+        // transport is a native sing-box outbound with no second core involved.
+        val vless = spec as? OutboundSpec.Vless
+        val xrayConfig = if (vless != null && vless.transport is TransportSpec.Xhttp) {
+            XrayConfig.buildXhttp(vless)
+        } else {
+            null
+        }
+        val config = if (xrayConfig != null) {
+            SingBoxConfig.buildTunSocks(XrayConfig.XRAY_SOCKS_PORT)
+        } else {
+            SingBoxConfig.buildTun(spec)
+        }
+        val engine = if (xrayConfig != null) "xray+sing-box" else "sing-box"
+        addLog("Starting packet tunnel, transport=${location.kind}, engine=$engine")
 
         val result = withContext(Dispatchers.Default) {
-            packetTunnelBridge.start(config)
+            packetTunnelBridge.start(config, xrayConfig)
         }
         if (requestedGeneration != generation) return
 

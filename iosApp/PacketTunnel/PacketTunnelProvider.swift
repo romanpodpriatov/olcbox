@@ -1,4 +1,5 @@
 import Libbox
+import Network
 import NetworkExtension
 import os
 
@@ -28,6 +29,14 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     private static let useLibbox = true
 
     private var boxService: LibboxBoxService?
+
+    /// Watches for the device changing network underneath the tunnel.
+    ///
+    /// Without this a Wi-Fi to cellular handover is noticed only when a
+    /// connection finally fails, which to a user looks like the VPN randomly
+    /// breaking. sing-box knows how to rebuild its sockets; it just has to be
+    /// told the ground moved.
+    private let pathMonitor = NWPathMonitor()
 
     /// Progress written where the app can read it.
     ///
@@ -77,6 +86,12 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
             return
         }
 
+        // Present only for xhttp. The app deletes it for every other transport,
+        // so a stale file cannot start a second core behind a tunnel that does
+        // not use one.
+        let xrayURL = container.appendingPathComponent("xray.json")
+        let xrayConfig = try? String(contentsOf: xrayURL, encoding: .utf8)
+
         // Applied before the engine starts: libbox asks for the descriptor
         // synchronously and complains if answering takes long.
         setTunnelNetworkSettings(LibboxPlatform.tunnelSettings()) { [weak self] error in
@@ -90,16 +105,29 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
                 completionHandler(nil)
                 return
             }
-            self?.startEngine(config: config, container: container, completionHandler: completionHandler)
+            self?.startEngine(
+                config: config,
+                xrayConfig: xrayConfig?.isEmpty == false ? xrayConfig : nil,
+                container: container,
+                completionHandler: completionHandler
+            )
         }
     }
 
     private func startEngine(
         config: String,
+        xrayConfig: String?,
         container: URL,
         completionHandler: @escaping (Error?) -> Void
     ) {
         do {
+            // Xray first: sing-box's outbound points at its SOCKS port, and a
+            // sing-box that starts against a port nobody is listening on fails
+            // every connection rather than waiting.
+            if let xrayConfig {
+                mark("xray")
+                try XrayEngine.start(configJSON: xrayConfig)
+            }
             mark("setup")
             // libbox keeps its state on disk; inside the group so the app can
             // read logs and caches too.
@@ -130,14 +158,29 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
             mark("starting")
             try service.start()
             mark("ready")
+            startWatchingNetworkChanges()
             self.boxService = service
 
             log.info("sing-box started, config \(config.count, privacy: .public) bytes")
             completionHandler(nil)
         } catch {
             mark("failed: \(error.localizedDescription)")
+            XrayEngine.stop()
             completionHandler(error)
         }
+    }
+
+    private func startWatchingNetworkChanges() {
+        var lastInterface: String?
+        pathMonitor.pathUpdateHandler = { [weak self] path in
+            let current = path.availableInterfaces.first?.name
+            guard current != lastInterface else { return }
+            lastInterface = current
+            guard let self, let service = self.boxService else { return }
+            self.log.info("network changed to \(current ?? "none", privacy: .public), resetting")
+            service.resetNetwork()
+        }
+        pathMonitor.start(queue: DispatchQueue(label: "org.proofkit.path"))
     }
 
     override func stopTunnel(
@@ -147,8 +190,10 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         log.info("stopTunnel reason=\(reason.rawValue, privacy: .public)")
         // Closing the service is what releases the tun descriptor; skipping it
         // leaves the next start fighting the previous one for it.
+        pathMonitor.cancel()
         try? boxService?.close()
         boxService = nil
+        XrayEngine.stop()
         completionHandler()
     }
 

@@ -6,6 +6,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
@@ -71,16 +72,48 @@ class SingBoxConfigTest {
         assertEquals(10808, o["server_port"]!!.jsonPrimitive.content.toInt())
     }
 
-    @Test fun xhttpTransportBlock() {
-        val spec = OutboundSpec.Vless(
-            "u", "1.2.3.4", 443, "sni.x", "PBK", "sid", "chrome", null,
-            TransportSpec.Xhttp("/dl", "sni.x", "packet-up"), "T"
-        )
-        val o = outbound(SingBoxConfig.build(spec))
-        val tr = o["transport"]!!.jsonObject
-        assertEquals("xhttp", tr["type"]!!.jsonPrimitive.content)
-        assertEquals("/dl", tr["path"]!!.jsonPrimitive.content)
+    @Test fun xhttpIsRefusedRatherThanEmitted() {
+        // sing-box has no xhttp transport. This builder used to emit one anyway,
+        // and this test used to assert it did — which is how iOS shipped a tunnel
+        // that connected, refused the config, and carried nothing. xhttp belongs
+        // to Xray; failing loudly is what sends callers there.
+        assertFailsWith<IllegalArgumentException> { SingBoxConfig.build(xhttp()) }
     }
+
+    // --- iOS: xhttp runs on Xray, with sing-box as its tun front-end ------
+
+    @Test fun tunSocksPointsAtTheOtherCore() {
+        val json = SingBoxConfig.buildTunSocks(socksPort = 10810)
+        assertEquals("tun", inbounds(json)[0].jsonObject["type"]!!.jsonPrimitive.content)
+        val o = outbound(json)
+        assertEquals("socks", o["type"]!!.jsonPrimitive.content)
+        assertEquals("127.0.0.1", o["server"]!!.jsonPrimitive.content)
+        assertEquals(10810, o["server_port"]!!.jsonPrimitive.content.toInt())
+    }
+
+    @Test fun tunSocksKeepsTheSameTunAsANativeOutbound() {
+        // The device-side settings the extension applies are fixed, so both
+        // shapes have to describe the same tun or one of them stops forwarding.
+        assertEquals(
+            inbounds(SingBoxConfig.buildTun(vless()))[0],
+            inbounds(SingBoxConfig.buildTunSocks(10810))[0],
+        )
+    }
+
+    @Test fun xrayHandlesTheTransportSingBoxRefuses() {
+        // The pairing that makes xhttp work at all: whatever sing-box turns
+        // down, Xray must accept.
+        val json = Json.parseToJsonElement(XrayConfig.buildXhttp(xhttp())).jsonObject
+        val out = json["outbounds"]!!.jsonArray[0].jsonObject
+        val stream = out["streamSettings"]!!.jsonObject
+        assertEquals("xhttp", stream["network"]!!.jsonPrimitive.content)
+        assertEquals("/dl", stream["xhttpSettings"]!!.jsonObject["path"]!!.jsonPrimitive.content)
+    }
+
+    private fun xhttp() = OutboundSpec.Vless(
+        "u", "1.2.3.4", 443, "sni.x", "PBK", "sid", "chrome", null,
+        TransportSpec.Xhttp("/dl", "sni.x", "packet-up"), "T"
+    )
 
     @Test fun buildOutputIsValidJson() {
         // toString() of the built object must parse back cleanly.

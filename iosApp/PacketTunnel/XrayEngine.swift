@@ -1,0 +1,76 @@
+import Foundation
+import LibXray
+import os
+
+/// Xray-core, running inside the tunnel extension for one transport only.
+///
+/// sing-box has no xhttp transport — the config builder now refuses to pretend
+/// otherwise — so xhttp locations run Xray as a local SOCKS server and sing-box
+/// becomes the tun front-end that feeds it. Every other transport is a native
+/// sing-box outbound and never loads this.
+///
+/// libXray exposes a single entry point, `LibXrayInvoke`, taking and returning
+/// JSON. That is the whole API surface; the request envelope below is its
+/// contract.
+enum XrayEngine {
+
+    private static let log = Logger(subsystem: "org.proofkit.app", category: "xray")
+
+    /// libXray rejects anything it does not recognise here, so it is sent
+    /// explicitly rather than left to default.
+    private static let apiVersion = 1
+
+    private struct Response: Decodable {
+        let success: Bool
+        let error: String?
+    }
+
+    /// Starts Xray with a complete config. Throws with libXray's own message,
+    /// which names the offending field when a config is wrong.
+    static func start(configJSON: String) throws {
+        try invoke(method: "runXrayFromJson", payload: ["configJSON": configJSON])
+        log.info("xray started, config \(configJSON.count, privacy: .public) bytes")
+    }
+
+    static func stop() {
+        // Stopping a core that never started is not an error worth surfacing:
+        // this runs on every teardown, including teardowns of tunnels that
+        // never involved Xray at all.
+        try? invoke(method: "stopXray", payload: [:])
+    }
+
+    static var isRunning: Bool {
+        guard let data = rawInvoke(method: "getXrayState", payload: [:]),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let payload = object["data"] as? [String: Any]
+        else { return false }
+        return payload["running"] as? Bool ?? false
+    }
+
+    private static func invoke(method: String, payload: [String: String]) throws {
+        guard let data = rawInvoke(method: method, payload: payload) else {
+            throw failure("xray \(method): no answer")
+        }
+        let response = try JSONDecoder().decode(Response.self, from: data)
+        guard response.success else {
+            throw failure("xray \(method): \(response.error ?? "refused without a reason")")
+        }
+    }
+
+    private static func rawInvoke(method: String, payload: [String: String]) -> Data? {
+        let request: [String: Any] = [
+            "apiVersion": apiVersion,
+            "method": method,
+            "payload": payload,
+        ]
+        guard let body = try? JSONSerialization.data(withJSONObject: request),
+              let text = String(data: body, encoding: .utf8)
+        else { return nil }
+        return LibXrayInvoke(text).data(using: .utf8)
+    }
+
+    private static func failure(_ reason: String) -> NSError {
+        NSError(domain: "org.proofkit.tunnel", code: 11,
+                userInfo: [NSLocalizedDescriptionKey: reason])
+    }
+}

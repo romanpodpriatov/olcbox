@@ -67,8 +67,15 @@ interface IosOlcRtcBridge {
  * the system to launch — hence a second, deliberately small interface.
  */
 interface IosPacketTunnelBridge {
-    /** [config] is a complete sing-box config with a tun inbound. */
-    fun start(config: String): IosBridgeResult
+    /**
+     * [config] is a complete sing-box config with a tun inbound.
+     *
+     * [xrayConfig], when present, is an Xray config the extension must start
+     * first: sing-box then reaches it through a local SOCKS port instead of
+     * dialling out itself. Only xhttp locations need it, because that is the
+     * one transport sing-box does not implement.
+     */
+    fun start(config: String, xrayConfig: String?): IosBridgeResult
     fun stop()
     fun isRunning(): Boolean
 }

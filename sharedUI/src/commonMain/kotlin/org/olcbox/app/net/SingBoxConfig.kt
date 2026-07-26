@@ -51,6 +51,27 @@ object SingBoxConfig {
         mtu: Int = TUN_MTU,
     ): String = renderTun(address, mtu) { addOutbound(outbound) }
 
+    /**
+     * Config for a core that owns the tun and hands the traffic to another core
+     * listening on a local SOCKS port.
+     *
+     * This is how xhttp works on iOS: sing-box cannot speak that transport, so
+     * Xray runs beside it in the same extension and sing-box becomes the tun
+     * front-end for it. Android reaches the same arrangement from the other
+     * direction — there a separate tun2socks feeds whichever core is running.
+     */
+    fun buildTunSocks(
+        socksPort: Int,
+        address: String = TUN_ADDRESS,
+        mtu: Int = TUN_MTU,
+    ): String = renderTun(address, mtu) {
+        addJsonObject {
+            put("type", "socks"); put("tag", "out")
+            put("server", "127.0.0.1"); put("server_port", socksPort)
+            put("version", "5")
+        }
+    }
+
     private fun renderTun(
         address: String,
         mtu: Int,
@@ -108,11 +129,13 @@ object SingBoxConfig {
                         put("enabled", true); put("public_key", spec.publicKey); put("short_id", spec.shortId)
                     }
                 }
-                val t = spec.transport
-                if (t is TransportSpec.Xhttp) {
-                    putJsonObject("transport") {
-                        put("type", "xhttp"); put("path", t.path); put("host", t.host)
-                    }
+                // Deliberately loud rather than best-effort. sing-box has no
+                // xhttp transport (see XrayConfig), and emitting one anyway
+                // produced a config the core silently refused — on iOS that
+                // looked like a tunnel that connected and carried nothing.
+                // xhttp belongs to Xray; callers route it there.
+                require(spec.transport !is TransportSpec.Xhttp) {
+                    "sing-box cannot speak xhttp — build this location with XrayConfig.buildXhttp"
                 }
             }
             is OutboundSpec.Hysteria2 -> addJsonObject {
