@@ -67,12 +67,19 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
             try? FileManager.default.createDirectory(
                 atPath: setup.workingPath, withIntermediateDirectories: true
             )
-            try LibboxSetup(setup)
+            // Plain C functions, not Objective-C methods, so Swift leaves their
+            // NSError** as an argument rather than turning it into `throws`.
+            var setupError: NSError?
+            LibboxSetup(setup, &setupError)
+            if let setupError { throw setupError }
 
             // The platform object is what libbox calls back into; openTun is where
             // the system settings get applied, so there is no separate call here.
             let platform = LibboxPlatform(provider: self)
-            let service = try LibboxNewService(config, platform)
+            var serviceError: NSError?
+            guard let service = LibboxNewService(config, platform, &serviceError) else {
+                throw serviceError ?? Self.failure("sing-box would not take the config")
+            }
             try service.start()
             self.boxService = service
 
