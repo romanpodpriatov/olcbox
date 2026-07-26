@@ -94,11 +94,13 @@ private struct TunnelDebugControl: View {
                 "address": ["172.19.0.1/30"],
                 "mtu": 9000,
                 "auto_route": true,
-                // "system", not "gvisor": gvisor is a full userspace network
-                // stack and the extension's memory cap is 15-50 MB. The engine
-                // started once and then stopped producing any log at all, which
-                // is what being killed for memory looks like from outside.
-                "stack": "system",
+                // gvisor, not "system": the system stack needs raw-socket
+                // privileges the extension sandbox does not grant, so the tun
+                // comes up and forwards nothing — which is exactly what we saw.
+                // Every libbox client on iOS runs gvisor for this reason. Its
+                // memory appetite against the extension's cap is the real risk
+                // here, and the thing to watch under load.
+                "stack": "gvisor",
             ]],
             "outbounds": [["type": "direct", "tag": "direct"]],
         ]
