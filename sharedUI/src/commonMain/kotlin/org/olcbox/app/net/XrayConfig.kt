@@ -19,7 +19,14 @@ import kotlinx.serialization.json.putJsonObject
 object XrayConfig {
     /** Pinned Xray-core release whose config schema this builder targets. */
     const val XRAY_VERSION = "25.3.6"
-    /** Same port as sing-box: only one core runs at a time. Kept off the PAC port 10809. */
+    /**
+     * Kept off the PAC port 10809.
+     *
+     * The same number as [SingBoxConfig.SINGBOX_SOCKS_PORT] and safely so: on
+     * Android and desktop only one core runs at a time, and on iOS — where both
+     * do — sing-box owns the tun and has no SOCKS inbound of its own, so this
+     * port has exactly one listener either way.
+     */
     const val XRAY_SOCKS_PORT = 10810
 
     /**
