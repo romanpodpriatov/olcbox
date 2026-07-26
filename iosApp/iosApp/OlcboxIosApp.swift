@@ -103,6 +103,26 @@ private struct TunnelDebugControl: View {
     ///
     /// The tun block must agree with LibboxPlatform.Tun in the extension: the app
     /// decides the addressing and the extension applies it to the system.
+    /// Whatever the extension managed to write before it stopped.
+    private static func readStage() -> String {
+        guard let container = FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: appGroupId
+        ), let data = try? Data(contentsOf: container.appendingPathComponent("stage.txt")),
+              let text = String(data: data, encoding: .utf8)
+        else { return "stage: -" }
+        return "stage: \(text)"
+    }
+
+    /// The last lines sing-box wrote about itself.
+    private static func readEngineLog() -> String {
+        guard let container = FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: appGroupId
+        ), let data = try? Data(contentsOf: container.appendingPathComponent("engine.log")),
+              let text = String(data: data, encoding: .utf8)
+        else { return "" }
+        return text
+    }
+
     private static func writeConfig(json: String?) -> String {
         guard let container = FileManager.default.containerURL(
             forSecurityApplicationGroupIdentifier: appGroupId
