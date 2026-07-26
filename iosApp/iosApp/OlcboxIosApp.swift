@@ -77,6 +77,28 @@ private struct TunnelDebugControl: View {
     @State private var channelOK = false
     @State private var stage = "stage: -"
     @State private var engine = ""
+    @State private var exitIP = "exit ip: ?"
+
+    /// Asks a plain-text service where the request came from.
+    ///
+    /// In-app rather than in Safari because a browser caches, and because the
+    /// question is specifically whether *this app's* traffic leaves through the
+    /// tunnel. Caching is defeated by policy and by a fresh query each time
+    /// rather than by hoping.
+    private static func measureExitIP() async -> String {
+        let nonce = Int.random(in: 100_000...999_999)
+        guard let url = URL(string: "https://ifconfig.co/ip?x=\(nonce)") else { return "exit ip: bad url" }
+        var request = URLRequest(url: url)
+        request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        request.timeoutInterval = 12
+        do {
+            let (data, _) = try await URLSession(configuration: .ephemeral).data(for: request)
+            let ip = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+            return "exit ip: \(ip)"
+        } catch {
+            return "exit ip: \(error.localizedDescription)"
+        }
+    }
     @AppStorage("debug.link") private var link = ""
 
     /// Builds the config with the same code every other platform uses.
@@ -177,6 +199,15 @@ private struct TunnelDebugControl: View {
                 .clipShape(RoundedRectangle(cornerRadius: 4))
             }
 
+            Text(exitIP)
+                .font(.caption2.monospaced())
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(.black.opacity(0.6))
+                .foregroundStyle(.cyan)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+                .textSelection(.enabled)
+
             Text(stage)
                 .font(.caption2.monospaced())
                 .padding(.horizontal, 6)
@@ -222,6 +253,12 @@ private struct TunnelDebugControl: View {
                     }
                 }
                 Button("off") { tunnel.stop() }
+                Button("ip") {
+                    Task {
+                        exitIP = "exit ip: …"
+                        exitIP = await Self.measureExitIP()
+                    }
+                }
             }
             .font(.caption)
             .buttonStyle(.borderedProminent)
