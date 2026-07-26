@@ -18,6 +18,15 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     /// the tunnel.
     private static let appGroup = "group.org.proofkit.app"
 
+    /// Temporary bisection switch.
+    ///
+    /// The extension logs nothing at all and the system reports "VPN is inactive",
+    /// so it is dying before our first line runs. With this false the framework is
+    /// still linked but never called: if the tunnel then comes up, the fault is in
+    /// starting libbox; if it still does not, the fault is in loading the framework
+    /// at all, and no amount of reordering our own calls will help.
+    private static let useLibbox = false
+
     private var boxService: LibboxBoxService?
 
     private static func failure(_ reason: String) -> NSError {
@@ -60,6 +69,11 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
             if let error {
                 self?.log.error("tunnel settings rejected: \(error.localizedDescription, privacy: .public)")
                 completionHandler(error)
+                return
+            }
+            guard Self.useLibbox else {
+                self?.log.info("tun established, libbox deliberately not started")
+                completionHandler(nil)
                 return
             }
             self?.startEngine(config: config, container: container, completionHandler: completionHandler)
