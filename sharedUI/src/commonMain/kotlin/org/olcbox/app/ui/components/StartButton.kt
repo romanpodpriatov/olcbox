@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.PowerSettingsNew
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -25,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import org.olcbox.app.ui.icons.PkIcons
 import org.olcbox.app.ui.theme.LocalPkPalette
 
 sealed class StartButtonState {
@@ -95,7 +95,7 @@ fun StartButton(
             verticalArrangement = Arrangement.Center
         ) {
             Icon(
-                imageVector = Icons.Rounded.PowerSettingsNew,
+                imageVector = PkIcons.PowerSettingsNew,
                 contentDescription = "Start Icon",
                 tint = contentColor.copy(alpha = if (isLoading || !enabled) 0.5f else 1f),
                 modifier = Modifier.size(48.dp)

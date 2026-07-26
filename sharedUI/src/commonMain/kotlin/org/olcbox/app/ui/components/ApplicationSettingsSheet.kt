@@ -32,16 +32,11 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.outlined.ContentPaste
-import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material.icons.rounded.ChevronRight
-import androidx.compose.material.icons.rounded.Key
 import androidx.compose.material.icons.rounded.Person
-import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Button
@@ -72,6 +67,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import org.olcbox.app.ui.icons.PkIcons
 import org.olcbox.app.CurrentAppInfo
 import org.olcbox.app.admin.AdminState
 import org.olcbox.app.data.share.SubscriptionShareItem
@@ -254,7 +250,7 @@ private fun SharedSettingsHubContent(
         SharedNavigationRow(
             title = "Connection Settings",
             value = "Mode and SOCKS5 proxy",
-            icon = Icons.Rounded.Public,
+            icon = PkIcons.Public,
             onClick = onConnectionClick
         )
 
@@ -275,7 +271,7 @@ private fun SharedSettingsHubContent(
         SharedNavigationRow(
             title = "Application Logs",
             value = "Diagnostics and export",
-            icon = Icons.Outlined.History,
+            icon = PkIcons.History,
             onClick = onLogsClick
         )
 
@@ -321,7 +317,7 @@ private fun SharedConnectionSettingsContent(
             SharedNavigationRow(
                 title = "Connection Mode",
                 value = "Proxy · Local SOCKS5",
-                icon = Icons.Rounded.Public,
+                icon = PkIcons.Public,
                 onClick = onConnectionModeClick
             )
 
@@ -330,7 +326,7 @@ private fun SharedConnectionSettingsContent(
                 SharedNavigationRow(
                     title = "SOCKS5 Proxy",
                     value = "${socksProxySettings.host}:${socksProxySettings.port}",
-                    icon = Icons.Rounded.Public,
+                    icon = PkIcons.Public,
                     onClick = onSocksProxyClick
                 )
             }
@@ -364,7 +360,7 @@ private fun SharedConnectionModeSettingsContent(
 
         SharedSelectableSettingsCard(
             selected = true,
-            icon = Icons.Rounded.Public,
+            icon = PkIcons.Public,
             title = "Proxy",
             subtitle = "Local SOCKS endpoint"
         )
@@ -429,7 +425,7 @@ private fun SharedSocksProxySettingsContent(
                     placeholder = "127.0.0.1",
                     enabled = false,
                     isError = !hostValid,
-                    leadingIcon = Icons.Rounded.Public,
+                    leadingIcon = PkIcons.Public,
                     supportingText = if (!hostValid) "Listen address is required" else null,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next)
                 )
@@ -443,7 +439,7 @@ private fun SharedSocksProxySettingsContent(
                     placeholder = ApplicationSocksProxySettings.DEFAULT_PORT.toString(),
                     enabled = true,
                     isError = editedPort.isBlank() || !portValid,
-                    leadingIcon = Icons.Rounded.Public,
+                    leadingIcon = PkIcons.Public,
                     supportingText = when {
                         editedPort.isBlank() -> "Port is required"
                         !portValid -> "Use ${ApplicationSocksProxySettings.MIN_PORT}-${ApplicationSocksProxySettings.MAX_PORT}"
@@ -484,7 +480,7 @@ private fun SharedSocksProxySettingsContent(
                     placeholder = "Generated password",
                     enabled = true,
                     isError = editedPassword.isBlank(),
-                    leadingIcon = Icons.Rounded.Key,
+                    leadingIcon = PkIcons.Key,
                     supportingText = when {
                         editedPassword.isBlank() -> "Password is required"
                         passwordChanged && isConnectionActive -> "Saving restarts the active connection"
@@ -676,7 +672,7 @@ private fun SharedSubscriptionsSettingsContent(
             SharedNavigationRow(
                 title = "Copy Full Config",
                 value = "Backup all locations to clipboard",
-                icon = Icons.Outlined.ContentPaste,
+                icon = PkIcons.ContentPaste,
                 showChevron = false,
                 onClick = onCopyConfigClick
             )
@@ -933,7 +929,7 @@ private fun SharedNavigationRow(
             }
             if (showChevron) {
                 Icon(
-                    imageVector = Icons.Rounded.ChevronRight,
+                    imageVector = PkIcons.ChevronRight,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(24.dp)

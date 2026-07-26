@@ -13,9 +13,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material.icons.rounded.PriorityHigh
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -33,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.launch
+import org.olcbox.app.ui.icons.PkIcons
 import org.olcbox.app.data.model.LocationConfig
 import org.olcbox.app.ui.features.home.HomeScreenViewModel
 
@@ -61,7 +60,7 @@ fun PingButton(
     val stateIcon: @Composable () -> Unit = {
         when (pingState) {
             is PingState.Error -> Icon(
-                imageVector = Icons.Rounded.PriorityHigh,
+                imageVector = PkIcons.PriorityHigh,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.error,
                 modifier = Modifier.size(24.dp)
@@ -83,7 +82,7 @@ fun PingButton(
             )
 
             else -> Icon(
-                imageVector = Icons.Outlined.Bolt,
+                imageVector = PkIcons.Bolt,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(24.dp)

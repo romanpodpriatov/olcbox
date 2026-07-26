@@ -5,10 +5,8 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Column
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
-import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -22,6 +20,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import org.olcbox.app.ui.icons.PkIcons
 import org.olcbox.app.admin.AdminState
 import org.olcbox.app.ui.components.AdminPasswordDialog
 import org.olcbox.app.ui.components.kit.PkBrand
@@ -79,7 +78,7 @@ fun HomeScreenAppBar(
                 showHistoryButton -> {
                     IconButton(onClick = onHistoryClick) {
                         Icon(
-                            imageVector = Icons.Outlined.History,
+                            imageVector = PkIcons.History,
                             contentDescription = "History",
                             tint = MaterialTheme.colorScheme.onSurface
                         )
@@ -101,7 +100,7 @@ fun HomeScreenAppBar(
             if (showSplitTunnelingButton) {
                 IconButton(onClick = onSplitTunnelingClick) {
                     Icon(
-                        imageVector = Icons.Outlined.Shield,
+                        imageVector = PkIcons.Shield,
                         contentDescription = "Split tunneling",
                         tint = MaterialTheme.colorScheme.onSurface
                     )

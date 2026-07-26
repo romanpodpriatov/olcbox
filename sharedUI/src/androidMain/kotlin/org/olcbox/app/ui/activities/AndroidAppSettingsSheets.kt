@@ -42,19 +42,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.outlined.Apps
-import androidx.compose.material.icons.outlined.ContentPaste
-import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Share
-import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material.icons.rounded.ChevronRight
-import androidx.compose.material.icons.rounded.Key
 import androidx.compose.material.icons.rounded.Person
-import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -100,6 +93,7 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.olcbox.app.ui.icons.PkIcons
 import org.olcbox.app.CurrentAppInfo
 import org.olcbox.app.admin.AdminState
 import org.olcbox.app.data.share.SubscriptionShareItem
@@ -364,7 +358,7 @@ private fun AppSettingsHubContent(
         SettingsNavigationRow(
             title = "Application Logs",
             value = "Diagnostics and export",
-            icon = Icons.Outlined.History,
+            icon = PkIcons.History,
             enabled = true,
             onClick = onApplicationLogsClick
         )
@@ -422,7 +416,7 @@ private fun ConnectionSettingsContent(
                 SettingsNavigationRow(
                     title = "SOCKS5 Proxy",
                     value = "${proxySettings.host}:${proxySettings.port}",
-                    icon = Icons.Rounded.Public,
+                    icon = PkIcons.Public,
                     enabled = enabled,
                     onClick = onProxySettingsClick
                 )
@@ -430,7 +424,7 @@ private fun ConnectionSettingsContent(
             SettingsNavigationRow(
                 title = "Split Tunneling",
                 value = splitTunnelSettings.settingsSummary(),
-                icon = Icons.Outlined.Apps,
+                icon = PkIcons.Apps,
                 enabled = enabled,
                 onClick = onSplitTunnelingClick
             )
@@ -609,7 +603,7 @@ private fun SplitTunnelingSettingsContent(
             AndroidSplitTunnelMode.ProxySelected -> SplitTunnelAppListAction(
                 title = "Apps Using ProofKit",
                 value = settings.proxyPackages.activeListValue(requireSelection = true),
-                icon = Icons.Outlined.Shield,
+                icon = PkIcons.Shield,
                 enabled = enabled,
                 onClick = { onAppListClick(AndroidSplitTunnelList.Proxy) }
             )
@@ -617,7 +611,7 @@ private fun SplitTunnelingSettingsContent(
             AndroidSplitTunnelMode.BypassSelected -> SplitTunnelAppListAction(
                 title = "Bypassed Apps",
                 value = settings.bypassPackages.activeListValue(requireSelection = false),
-                icon = Icons.Outlined.Apps,
+                icon = PkIcons.Apps,
                 enabled = enabled,
                 onClick = { onAppListClick(AndroidSplitTunnelList.Bypass) }
             )
@@ -1124,7 +1118,7 @@ private fun SubscriptionsSharingSettingsContent(
             SettingsNavigationRow(
                 title = "Copy Full Config",
                 value = "Backup all locations to clipboard",
-                icon = Icons.Outlined.ContentPaste,
+                icon = PkIcons.ContentPaste,
                 enabled = true,
                 showChevron = false,
                 onClick = onCopyConfigClick
@@ -1295,7 +1289,7 @@ private fun SettingsNavigationRow(
 
             if (showChevron) {
                 Icon(
-                    imageVector = Icons.Rounded.ChevronRight,
+                    imageVector = PkIcons.ChevronRight,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(24.dp)
@@ -1842,7 +1836,7 @@ private fun SocksProxySettingsForm(
                 placeholder = AndroidSocksProxySettings.DEFAULT_HOST,
                 enabled = enabled,
                 isError = !hostValid,
-                leadingIcon = Icons.Rounded.Public,
+                leadingIcon = PkIcons.Public,
                 supportingText = when {
                     !hostValid -> "Listen address is required"
                     hostChanged && isConnectionActive -> "Saving restarts the active connection"
@@ -1859,7 +1853,7 @@ private fun SocksProxySettingsForm(
                 placeholder = AndroidSocksProxySettings.DEFAULT_PORT.toString(),
                 enabled = enabled,
                 isError = port.isBlank() || !portValid,
-                leadingIcon = Icons.Rounded.Public,
+                leadingIcon = PkIcons.Public,
                 supportingText = when {
                     port.isBlank() -> "Port is required"
                     !portValid -> "Use ${AndroidSocksProxySettings.MIN_PORT}-${AndroidSocksProxySettings.MAX_PORT}"
@@ -1901,7 +1895,7 @@ private fun SocksProxySettingsForm(
                 placeholder = "Generated password",
                 enabled = enabled,
                 isError = password.isBlank(),
-                leadingIcon = Icons.Rounded.Key,
+                leadingIcon = PkIcons.Key,
                 supportingText = when {
                     password.isBlank() -> "Password is required"
                     passwordChanged && isConnectionActive -> "Saving restarts the active connection"
@@ -1986,7 +1980,7 @@ private fun RussianBypassPresetChips(
             },
             leadingIcon = {
                 Icon(
-                    imageVector = if (active) Icons.Rounded.Check else Icons.Outlined.Apps,
+                    imageVector = if (active) Icons.Rounded.Check else PkIcons.Apps,
                     contentDescription = null,
                     modifier = Modifier.size(18.dp)
                 )
@@ -2283,8 +2277,8 @@ private fun AndroidConnectionMode.description(): String {
 }
 
 private fun AndroidConnectionMode.icon() = when (this) {
-    AndroidConnectionMode.Tun -> Icons.Outlined.Shield
-    AndroidConnectionMode.Proxy -> Icons.Rounded.Public
+    AndroidConnectionMode.Tun -> PkIcons.Shield
+    AndroidConnectionMode.Proxy -> PkIcons.Public
 }
 
 private fun AndroidSplitTunnelSettings.settingsSummary(): String {
@@ -2354,9 +2348,9 @@ private fun AndroidSplitTunnelMode.statusTitle(settings: AndroidSplitTunnelSetti
 }
 
 private fun AndroidSplitTunnelMode.icon() = when (this) {
-    AndroidSplitTunnelMode.AllApps -> Icons.Outlined.Shield
-    AndroidSplitTunnelMode.ProxySelected -> Icons.Outlined.Shield
-    AndroidSplitTunnelMode.BypassSelected -> Icons.Outlined.Apps
+    AndroidSplitTunnelMode.AllApps -> PkIcons.Shield
+    AndroidSplitTunnelMode.ProxySelected -> PkIcons.Shield
+    AndroidSplitTunnelMode.BypassSelected -> PkIcons.Apps
 }
 
 private fun AndroidSplitTunnelList.title(): String {

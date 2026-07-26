@@ -1,5 +1,6 @@
 package org.olcbox.app.ui.activities
 
+import org.olcbox.app.ui.icons.PkIcons
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -17,7 +18,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Button
@@ -112,7 +112,7 @@ internal fun AndroidConfigShareSheet(
                     },
                     modifier = Modifier.weight(1f)
                 ) {
-                    Icon(Icons.Outlined.ContentCopy, contentDescription = null)
+                    Icon(PkIcons.ContentCopy, contentDescription = null)
                     Spacer(Modifier.size(8.dp))
                     Text("Copy")
                 }

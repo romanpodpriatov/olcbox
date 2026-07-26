@@ -13,15 +13,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.automirrored.outlined.OpenInNew
+import org.olcbox.app.ui.icons.PkIcons
 import org.olcbox.app.ui.components.kit.PkBrand
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.Input
 import androidx.compose.material.icons.outlined.Add
-import androidx.compose.material.icons.outlined.FileOpen
-import androidx.compose.material.icons.outlined.QrCodeScanner
 import androidx.compose.material.icons.outlined.Refresh
-import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -81,7 +77,7 @@ fun AddConfigurationSheet(
                     AddSheetAction(
                         title = "Get a subscription",
                         value = "Open ${PkBrand.name} to create one",
-                        icon = Icons.AutoMirrored.Outlined.OpenInNew,
+                        icon = PkIcons.OpenInNew,
                         onClick = onGetSubscriptionClick
                     )
                 }
@@ -90,7 +86,7 @@ fun AddConfigurationSheet(
                     AddSheetAction(
                         title = "Scan QR code",
                         value = "Subscription or olcrtc URI",
-                        icon = Icons.Outlined.QrCodeScanner,
+                        icon = PkIcons.QrCodeScanner,
                         onClick = onScanQrClick
                     )
                 }
@@ -98,14 +94,14 @@ fun AddConfigurationSheet(
                 AddSheetAction(
                     title = "Paste link or URI",
                     value = "HTTP, HTTPS, or olcrtc URI",
-                    icon = Icons.AutoMirrored.Outlined.Input,
+                    icon = PkIcons.Input,
                     onClick = onPasteLinkClick
                 )
 
                 AddSheetAction(
                     title = "Import from file",
                     value = "Read subscription or config file",
-                    icon = Icons.Outlined.FileOpen,
+                    icon = PkIcons.FileOpen,
                     onClick = onImportFileClick
                 )
 
@@ -210,7 +206,7 @@ private fun AddSheetAction(
 
             if (showChevron) {
                 Icon(
-                    imageVector = Icons.Rounded.ChevronRight,
+                    imageVector = PkIcons.ChevronRight,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(24.dp)

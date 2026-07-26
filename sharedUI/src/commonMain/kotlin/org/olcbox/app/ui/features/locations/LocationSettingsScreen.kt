@@ -25,9 +25,6 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material.icons.rounded.Key
-import androidx.compose.material.icons.rounded.MeetingRoom
-import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenuItem
@@ -65,6 +62,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.ime
+import org.olcbox.app.ui.icons.PkIcons
 import org.olcbox.app.data.model.LocationConfig
 import org.olcbox.app.ui.components.PingButton
 import org.olcbox.app.ui.components.kit.PkSectionLabel
@@ -177,7 +175,7 @@ fun LocationSettingsScreen(
                     enabled = !isSaving,
                     isError = viewModel.nameError != null,
                     supportingText = viewModel.nameError,
-                    leadingIcon = Icons.Rounded.Public,
+                    leadingIcon = PkIcons.Public,
                     onClear = { viewModel.onNameChanged("") },
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next)
                 )
@@ -234,7 +232,7 @@ fun LocationSettingsScreen(
                     enabled = !isSaving,
                     isError = viewModel.serverError != null,
                     supportingText = viewModel.serverError,
-                    leadingIcon = Icons.Rounded.MeetingRoom,
+                    leadingIcon = PkIcons.MeetingRoom,
                     onClear = { viewModel.onServerChanged("") },
                     keyboardOptions = KeyboardOptions(
                         keyboardType = roomKeyboardType(config.bypassProvider),
@@ -252,7 +250,7 @@ fun LocationSettingsScreen(
                     enabled = !isSaving,
                     isError = viewModel.keyError != null,
                     supportingText = viewModel.keyError,
-                    leadingIcon = Icons.Rounded.Key,
+                    leadingIcon = PkIcons.Key,
                     onClear = { viewModel.onPasswordChanged("") },
                     visualTransformation = PasswordVisualTransformation(),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done)

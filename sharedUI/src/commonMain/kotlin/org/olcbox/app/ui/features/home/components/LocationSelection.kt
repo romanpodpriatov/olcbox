@@ -15,10 +15,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
-import androidx.compose.material.icons.outlined.QrCodeScanner
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
@@ -37,6 +35,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import org.olcbox.app.ui.icons.PkIcons
 import org.olcbox.app.net.TransportKind
 import org.olcbox.app.net.transportKind
 import org.olcbox.app.ui.components.kit.PkBrand
@@ -281,7 +280,7 @@ private fun RelaySetupCard(
         SetupActionRow(
             title = "Get a subscription",
             subtitle = "Open ${PkBrand.name} to create one",
-            icon = Icons.AutoMirrored.Outlined.OpenInNew,
+            icon = PkIcons.OpenInNew,
             prominent = true,
             onClick = onGetSubscriptionClick
         )
@@ -289,7 +288,7 @@ private fun RelaySetupCard(
         SetupActionRow(
             title = "Add subscription",
             subtitle = "Scan QR, paste URI, or import file",
-            icon = Icons.Outlined.QrCodeScanner,
+            icon = PkIcons.QrCodeScanner,
             onClick = onAddSubscriptionClick
         )
 
