@@ -368,12 +368,15 @@ final class SwiftPacketTunnelBridge: NSObject, IosPacketTunnelBridge {
 
         // Kotlin waits for an answer on a background dispatcher, and the
         // controller lives on the main actor, so the hop is explicit.
+        // Read before the hop: capturing self in a main-actor task would mean
+        // sending a non-Sendable object across isolation for one boolean.
+        let wasRunning = running
         let done = DispatchSemaphore(value: 0)
         Task { @MainActor in
             // Starting an already-running tunnel does nothing at all, and the
             // extension keeps the config it was launched with — which looked
             // exactly like a working VPN that does not change your IP.
-            if running {
+            if wasRunning {
                 Self.controller.stop()
                 try? await Task.sleep(nanoseconds: 700_000_000)
             }
