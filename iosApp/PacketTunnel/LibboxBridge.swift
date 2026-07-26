@@ -129,8 +129,11 @@ final class LibboxPlatform: NSObject, LibboxPlatformInterfaceProtocol {
         throw Self.unsupported("connection ownership is not visible on iOS")
     }
 
-    func packageName(byUid uid: Int32) throws -> String {
-        throw Self.unsupported("no package names on iOS")
+    /// Not `throws`: the Objective-C method returns a non-optional string, so
+    /// Swift keeps the error parameter explicit instead of converting it.
+    func packageName(byUid uid: Int32, error: NSErrorPointer) -> String {
+        error?.pointee = Self.unsupported("no package names on iOS")
+        return ""
     }
 
     func uid(byPackageName packageName: String?, ret0_: UnsafeMutablePointer<Int32>?) throws {
