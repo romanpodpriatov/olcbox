@@ -29,10 +29,17 @@ go mod download
 resolved="$(go list -m github.com/xtls/xray-core 2>/dev/null || echo 'unknown')"
 echo "== xray-core resolved to: ${resolved} (our config builder is validated against ${XRAY_VERSION}) =="
 
-echo "== gomobile (sagernet fork) =="
-go install github.com/sagernet/gomobile/cmd/gomobile@latest
-go install github.com/sagernet/gomobile/cmd/gobind@latest
+# Upstream gomobile, not the sagernet fork. The fork exists for sing-box's
+# -libname handling and does not carry the bind package gobind looks for here;
+# libXray, like our own olcrtc framework, builds with the standard tool.
+echo "== gomobile (upstream) =="
+go install golang.org/x/mobile/cmd/gomobile@latest
+go install golang.org/x/mobile/cmd/gobind@latest
 export PATH="$(go env GOPATH)/bin:$PATH"
+
+# gobind resolves the bind package through the module being built, so it has to
+# be a dependency of it rather than merely installed.
+go get golang.org/x/mobile/bind
 gomobile init
 
 echo "== bind =="
