@@ -83,8 +83,6 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
             completionHandler(error)
         }
     }
-    }
-
 
     override func stopTunnel(
         with reason: NEProviderStopReason,
