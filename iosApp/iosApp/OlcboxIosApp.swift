@@ -60,12 +60,51 @@ private struct ComposeHostView: UIViewControllerRepresentable {
 private struct TunnelDebugControl: View {
     @StateObject private var tunnel = PacketTunnelController()
 
+    private static let appGroupId = "group.org.proofkit.app"
+
     /// The app and the extension share this container; if the app cannot see it,
     /// neither can the extension, and the config would never arrive.
     private static let appGroupOK = FileManager.default.containerURL(
-        forSecurityApplicationGroupIdentifier: "group.org.proofkit.app"
+        forSecurityApplicationGroupIdentifier: appGroupId
     ) != nil
     private static let appGroupState = appGroupOK ? "group OK" : "group MISSING"
+
+    @State private var channel = "channel: untested"
+    @State private var channelOK = false
+
+    /// Leaves a config for the extension and reports what came back.
+    ///
+    /// A token per attempt, so a stale echo from an earlier run cannot be
+    /// mistaken for a fresh success — which is exactly the kind of false green
+    /// that costs an afternoon.
+    private static func writeConfig() -> String {
+        guard let container = FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: appGroupId
+        ) else { return "no container" }
+
+        let token = UUID().uuidString.prefix(8).lowercased()
+        let payload: [String: Any] = ["token": String(token), "written": Date().timeIntervalSince1970]
+        let echoURL = container.appendingPathComponent("echo.json")
+        try? FileManager.default.removeItem(at: echoURL)
+
+        guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return "encode failed" }
+        do {
+            try data.write(to: container.appendingPathComponent("config.json"))
+            return String(token)
+        } catch {
+            return "write failed"
+        }
+    }
+
+    private static func readEcho() -> String? {
+        guard let container = FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: appGroupId
+        ), let data = try? Data(contentsOf: container.appendingPathComponent("echo.json")),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return nil }
+        guard obj["seen"] as? Bool == true else { return "extension saw nothing" }
+        return obj["token"] as? String
+    }
 
     var body: some View {
         VStack(alignment: .trailing, spacing: 6) {
@@ -87,8 +126,29 @@ private struct TunnelDebugControl: View {
                 .foregroundStyle(.white)
                 .clipShape(RoundedRectangle(cornerRadius: 4))
 
+            Text(channel)
+                .font(.caption2.monospaced())
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(.black.opacity(0.6))
+                .foregroundStyle(channelOK ? .green : .orange)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+
             HStack(spacing: 6) {
-                Button("tun on") { Task { await tunnel.start() } }
+                Button("tun on") {
+                    Task {
+                        let sent = Self.writeConfig()
+                        channel = "sent \(sent)"
+                        channelOK = false
+                        await tunnel.start()
+                        // The extension writes its echo while starting up; give
+                        // it a moment rather than racing it.
+                        try? await Task.sleep(for: .seconds(2))
+                        let seen = Self.readEcho()
+                        channelOK = (seen == sent)
+                        channel = channelOK ? "channel OK \(sent)" : "echo: \(seen ?? "none")"
+                    }
+                }
                 Button("off") { tunnel.stop() }
             }
             .font(.caption)

@@ -27,6 +27,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
             forSecurityApplicationGroupIdentifier: Self.appGroup
         ) {
             log.info("app group reachable at \(container.path, privacy: .public)")
+            readConfigAndEcho(in: container)
         } else {
             // Not fatal here — the passthrough needs no config — but it would be
             // fatal later, so say so while the cause is still obvious.
@@ -55,6 +56,32 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
             }
             self?.log.info("tun established")
             completionHandler(nil)
+        }
+    }
+
+
+    /// Reads what the app left for us and writes back what we saw.
+    ///
+    /// The real config will travel this exact path, so it is worth knowing the
+    /// path works before a core is depending on it: a silent failure here would
+    /// later look like the core refusing to start.
+    private func readConfigAndEcho(in container: URL) {
+        let configURL = container.appendingPathComponent("config.json")
+        let echoURL = container.appendingPathComponent("echo.json")
+
+        guard let data = try? Data(contentsOf: configURL) else {
+            log.error("no config.json in the shared container")
+            try? Data("{\"seen\":false}".utf8).write(to: echoURL)
+            return
+        }
+
+        let token = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])
+            .flatMap { $0?["token"] as? String } ?? "unreadable"
+        log.info("config.json read: \(data.count, privacy: .public) bytes, token=\(token, privacy: .public)")
+
+        let echo = ["seen": true, "token": token, "bytes": data.count] as [String: Any]
+        if let out = try? JSONSerialization.data(withJSONObject: echo) {
+            try? out.write(to: echoURL)
         }
     }
 
