@@ -60,8 +60,25 @@ private struct ComposeHostView: UIViewControllerRepresentable {
 private struct TunnelDebugControl: View {
     @StateObject private var tunnel = PacketTunnelController()
 
+    /// The app and the extension share this container; if the app cannot see it,
+    /// neither can the extension, and the config would never arrive.
+    private static let appGroupOK = FileManager.default.containerURL(
+        forSecurityApplicationGroupIdentifier: "group.org.proofkit.app"
+    ) != nil
+    private static let appGroupState = appGroupOK ? "group OK" : "group MISSING"
+
     var body: some View {
         VStack(alignment: .trailing, spacing: 6) {
+            // Hunting one line in Console means reading the whole device's log
+            // firehose. The answer fits on screen.
+            Text(Self.appGroupState)
+                .font(.caption2.monospaced())
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(.black.opacity(0.6))
+                .foregroundStyle(Self.appGroupOK ? .green : .red)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+
             Text(tunnel.status)
                 .font(.caption2.monospaced())
                 .padding(.horizontal, 6)
