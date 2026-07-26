@@ -144,7 +144,7 @@ kotlin {
             // Core only: 864 KB against 36 MB for the extended set, which we
             // were carrying in full for sixteen icons. Those sixteen now live in
             // org.olcbox.app.ui.icons.PkIcons as their own path data.
-            implementation(compose.materialIconsCore)
+            implementation(libs.compose.material.icons.core)
             implementation(libs.kermit)
             implementation(libs.kotlinx.coroutines.core)
             implementation(libs.ktor.client.core)
