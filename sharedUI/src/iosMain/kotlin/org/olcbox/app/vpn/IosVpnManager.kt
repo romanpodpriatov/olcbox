@@ -22,6 +22,10 @@ import org.olcbox.app.data.model.LocationConfig
 import org.olcbox.app.data.repository.LocationsRepository
 import org.olcbox.app.ios.IosBridgeResult
 import org.olcbox.app.ios.IosLogWriter
+import org.olcbox.app.ios.IosPacketTunnelBridge
+import org.olcbox.app.net.LinkParser
+import org.olcbox.app.net.LocationKind
+import org.olcbox.app.net.SingBoxConfig
 import org.olcbox.app.ios.IosOlcRtcBridge
 import org.olcbox.app.ios.IosOlcRtcCheckRequest
 import org.olcbox.app.ios.IosOlcRtcStartRequest
@@ -30,7 +34,8 @@ import platform.Foundation.NSUserDefaults
 
 class IosVpnManager(
     private val locationsRepository: LocationsRepository,
-    private val olcRtcBridge: IosOlcRtcBridge
+    private val olcRtcBridge: IosOlcRtcBridge,
+    private val packetTunnelBridge: IosPacketTunnelBridge
 ) : VpnManager {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -99,7 +104,7 @@ class IosVpnManager(
                     if (requestedGeneration != generation) return@withLock
                 }
 
-                startOlcRtc(requestedGeneration, isRestart = shouldRestart)
+                startActiveLocation(requestedGeneration, isRestart = shouldRestart)
             }
         }
     }
@@ -112,9 +117,13 @@ class IosVpnManager(
         operationJob = scope.launch {
             mutex.withLock {
                 setStatus(VpnStatus.Stopping)
+                // Both, unconditionally: the user may have switched location
+                // between transports, and stopping the one that is not running
+                // costs nothing while leaving it running strands a tunnel.
                 stopOlcRtc()
+                packetTunnelBridge.stop()
                 setStatus(VpnStatus.Disconnected)
-                addLog("iOS SOCKS stopped")
+                addLog("Stopped")
             }
         }
     }
@@ -154,6 +163,60 @@ class IosVpnManager(
         runCatching { olcRtcBridge.setLogWriter(null) }
         runCatching { olcRtcBridge.stop() }
         scope.cancel()
+    }
+
+    /**
+     * olcRTC runs inside the app as a SOCKS provider; everything else runs inside
+     * the packet tunnel extension, which owns the device's traffic outright.
+     *
+     * The two paths are genuinely different mechanisms, not two flavours of one,
+     * so the split is here rather than hidden behind a common start().
+     */
+    private suspend fun startActiveLocation(requestedGeneration: Long, isRestart: Boolean) {
+        val location = locationsRepository.getActiveLocation()?.location?.normalized()
+        if (location != null && location.kind != LocationKind.Olcrtc) {
+            startPacketTunnel(location, requestedGeneration, isRestart)
+            return
+        }
+        startOlcRtc(requestedGeneration, isRestart)
+    }
+
+    private suspend fun startPacketTunnel(
+        location: LocationConfig,
+        requestedGeneration: Long,
+        isRestart: Boolean
+    ) {
+        setStatus(if (isRestart) VpnStatus.Reconnecting else VpnStatus.Connecting)
+
+        val link = location.rawLink
+        val spec = link?.let { LinkParser.parse(it) }
+        if (spec == null) {
+            setStatus(VpnStatus.Error("Location cannot be parsed"))
+            addLog("No usable link on the active location")
+            return
+        }
+
+        // Same builder Android and desktop use, so a transport gaining a field
+        // reaches iOS without anyone remembering to update a second copy.
+        val config = SingBoxConfig.buildTun(spec)
+        addLog("Starting packet tunnel, transport=\${location.kind}, config=\${config.length} bytes")
+
+        val result = withContext(Dispatchers.Default) {
+            packetTunnelBridge.start(config)
+        }
+        if (requestedGeneration != generation) return
+
+        if (result.success) {
+            setStatus(VpnStatus.Connected)
+            addLog("Packet tunnel up")
+            reconnectAttempt = 0
+            lastReadyMark = timeSource.markNow()
+        } else {
+            val message = result.message ?: "packet tunnel start failed"
+            setStatus(VpnStatus.Error(message))
+            addLog("Packet tunnel start failed: $message")
+            packetTunnelBridge.stop()
+        }
     }
 
     private suspend fun startOlcRtc(requestedGeneration: Long, isRestart: Boolean) {

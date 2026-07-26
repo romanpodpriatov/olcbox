@@ -59,6 +59,20 @@ interface IosOlcRtcBridge {
     fun check(request: IosOlcRtcCheckRequest): IosLongResult
 }
 
+/**
+ * Starting and stopping the packet tunnel extension.
+ *
+ * olcRTC has its own bridge because it runs a SOCKS provider inside the app.
+ * Everything else runs inside the Network Extension, which only the app can ask
+ * the system to launch — hence a second, deliberately small interface.
+ */
+interface IosPacketTunnelBridge {
+    /** [config] is a complete sing-box config with a tun inbound. */
+    fun start(config: String): IosBridgeResult
+    fun stop()
+    fun isRunning(): Boolean
+}
+
 interface IosPlatformBridge {
     fun readClipboard(): String?
     fun writeClipboard(text: String)

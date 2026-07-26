@@ -44,24 +44,27 @@ import platform.UIKit.UIViewController
 class IosAppFactory {
     fun createSession(
         platformBridge: IosPlatformBridge,
-        olcRtcBridge: IosOlcRtcBridge
+        olcRtcBridge: IosOlcRtcBridge,
+        packetTunnelBridge: IosPacketTunnelBridge
     ): IosAppSession {
-        return IosAppSession(platformBridge, olcRtcBridge)
+        return IosAppSession(platformBridge, olcRtcBridge, packetTunnelBridge)
     }
 
     fun createViewController(
         platformBridge: IosPlatformBridge,
-        olcRtcBridge: IosOlcRtcBridge
+        olcRtcBridge: IosOlcRtcBridge,
+        packetTunnelBridge: IosPacketTunnelBridge
     ): UIViewController {
-        return createSession(platformBridge, olcRtcBridge).createViewController()
+        return createSession(platformBridge, olcRtcBridge, packetTunnelBridge).createViewController()
     }
 }
 
 class IosAppSession internal constructor(
     private val platformBridge: IosPlatformBridge,
-    olcRtcBridge: IosOlcRtcBridge
+    olcRtcBridge: IosOlcRtcBridge,
+    packetTunnelBridge: IosPacketTunnelBridge
 ) {
-    private val dependencies = IosAppDependencies(platformBridge, olcRtcBridge)
+    private val dependencies = IosAppDependencies(platformBridge, olcRtcBridge, packetTunnelBridge)
 
     fun createViewController(): UIViewController {
         return ComposeUIViewController {
@@ -76,11 +79,12 @@ class IosAppSession internal constructor(
 
 private class IosAppDependencies(
     platformBridge: IosPlatformBridge,
-    olcRtcBridge: IosOlcRtcBridge
+    olcRtcBridge: IosOlcRtcBridge,
+    packetTunnelBridge: IosPacketTunnelBridge
 ) {
     private val locationsDataSource = IosLocationsDataSourceImpl()
     val locationsRepository = LocationsRepositoryImpl(locationsDataSource)
-    val vpnManager = IosVpnManager(locationsRepository, olcRtcBridge)
+    val vpnManager = IosVpnManager(locationsRepository, olcRtcBridge, packetTunnelBridge)
     val updateService = AppUpdateService(
         deviceIdentityProvider = PersistentDeviceIdentityProvider(locationsDataSource)
     )
