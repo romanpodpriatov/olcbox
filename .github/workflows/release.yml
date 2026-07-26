@@ -412,6 +412,7 @@ jobs:
         id: notarise
         working-directory: olcbox
         env:
+          PUBLISH: ${{ needs.plan.outputs.publish }}
           MACOS_NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
           MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
           MACOS_NOTARY_KEY_BASE64: ${{ secrets.MACOS_NOTARY_KEY_BASE64 }}
@@ -420,9 +421,17 @@ jobs:
           set -euo pipefail
           dmg="dist/ProofKit-${OLCBOX_VERSION}-macos-${ARCH}.dmg"
 
+          if [ "${PUBLISH:-false}" != "true" ]; then
+            # Apple notarises a specific binary, so every build would be its own
+            # submission — and their queue has run to forty minutes. A build you
+            # open yourself only needs the signature; right-click → Open once and
+            # it runs. Only what reaches users is worth the wait.
+            echo "Not a published build; signed but not notarised."
+            exit 0
+          fi
+
           if [ -z "${MACOS_NOTARY_KEY_BASE64:-}" ]; then
             echo "No notary credentials; publishing a signed-but-not-notarised DMG."
-            echo "id=" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -760,7 +769,7 @@ jobs:
   notarise-wait:
     name: Wait for Apple (1x runner)
     needs: [plan, build-macos]
-    if: needs.plan.outputs.macos_any == 'true'
+    if: needs.plan.outputs.macos_any == 'true' && needs.plan.outputs.publish == 'true'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -788,7 +797,7 @@ jobs:
   staple-macos:
     name: Staple the ticket
     needs: [plan, release_version, notarise-wait]
-    if: needs.plan.outputs.macos_any == 'true'
+    if: needs.plan.outputs.macos_any == 'true' && needs.plan.outputs.publish == 'true'
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(needs.plan.outputs.macos_matrix) }}
