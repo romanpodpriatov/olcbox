@@ -72,6 +72,17 @@ private struct TunnelDebugControl: View {
     @State private var channel = "channel: untested"
     @State private var channelOK = false
     @State private var stage = "stage: -"
+    @State private var engine = ""
+
+    /// The last lines sing-box wrote about itself.
+    private static func readEngineLog() -> String {
+        guard let container = FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: appGroupId
+        ), let data = try? Data(contentsOf: container.appendingPathComponent("engine.log")),
+              let text = String(data: data, encoding: .utf8)
+        else { return "" }
+        return text
+    }
 
     /// Whatever the extension managed to write before it stopped.
     private static func readStage() -> String {
@@ -147,6 +158,20 @@ private struct TunnelDebugControl: View {
                 .foregroundStyle(.white)
                 .clipShape(RoundedRectangle(cornerRadius: 4))
 
+            if !engine.isEmpty {
+                ScrollView {
+                    Text(engine)
+                        .font(.system(size: 8).monospaced())
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .textSelection(.enabled)
+                }
+                .frame(width: 300, height: 150)
+                .padding(4)
+                .background(.black.opacity(0.75))
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+            }
+
             Text(stage)
                 .font(.caption2.monospaced())
                 .padding(.horizontal, 6)
@@ -176,6 +201,7 @@ private struct TunnelDebugControl: View {
                         for _ in 0..<10 {
                             try? await Task.sleep(nanoseconds: 700_000_000)
                             stage = Self.readStage()
+                            engine = Self.readEngineLog()
                         }
                     }
                 }

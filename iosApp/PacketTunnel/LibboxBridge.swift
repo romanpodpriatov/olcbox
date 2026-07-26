@@ -127,6 +127,26 @@ final class LibboxPlatform: NSObject, LibboxPlatformInterfaceProtocol {
     func writeLog(_ message: String?) {
         guard let message else { return }
         log.info("\(message, privacy: .public)")
+        Self.appendEngineLog(message)
+    }
+
+    /// sing-box explains itself in these lines, and the system log they go to
+    /// never reaches the person debugging. Keeping the last few in the shared
+    /// container costs nothing and is the difference between a diagnosis and a
+    /// guess.
+    private static let engineLogQueue = DispatchQueue(label: "org.proofkit.enginelog")
+    private static var engineLog: [String] = []
+
+    private static func appendEngineLog(_ message: String) {
+        engineLogQueue.async {
+            engineLog.append(message)
+            if engineLog.count > 12 { engineLog.removeFirst(engineLog.count - 12) }
+            guard let container = FileManager.default.containerURL(
+                forSecurityApplicationGroupIdentifier: "group.org.proofkit.app"
+            ) else { return }
+            let text = engineLog.joined(separator: "\n")
+            try? Data(text.utf8).write(to: container.appendingPathComponent("engine.log"))
+        }
     }
 
     func clearDNSCache() {
