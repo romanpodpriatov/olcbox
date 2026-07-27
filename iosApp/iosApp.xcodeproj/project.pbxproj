@@ -480,6 +480,7 @@
 					Libbox,
 					"-framework",
 					LibXray,
+					"-lresolv",
 				);
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 3QJG3J7L66;
@@ -563,6 +564,7 @@
 					Libbox,
 					"-framework",
 					LibXray,
+					"-lresolv",
 				);
 				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 1;
