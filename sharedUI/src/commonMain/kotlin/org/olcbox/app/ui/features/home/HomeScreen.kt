@@ -62,6 +62,7 @@ fun HomeScreen(
     var isLogsSheetOpen by remember { mutableStateOf(false) }
     var isAddSheetOpen by remember { mutableStateOf(false) }
     var isRefreshingSubscriptions by remember { mutableStateOf(false) }
+    var refreshingSubscriptionUrl by remember { mutableStateOf<String?>(null) }
 
     val state by viewModel.state.collectAsState()
     val connectedSince by viewModel.connectedSince.collectAsState()
@@ -72,11 +73,15 @@ fun HomeScreen(
     val locations = locationViewModel.locations.toList()
     val hasSubscriptions = locations.any { !it.subscriptionUrl.isNullOrBlank() }
 
-    // Admin mode reveals only the olcRTC plumbing: the per-location editor and
-    // "create custom location". Everything a user legitimately needs — settings,
-    // subscription management, split tunneling, updates, logs — is always visible.
-    // Fail-safe: a build with no admin hash shows everything (normal olcbox).
-    val admin = AdminState.configuratorVisible
+    // The per-location editor and "create custom location" are plumbing, and
+    // this predicate fails closed: see AdminState.plumbingVisible. Everything a
+    // user legitimately needs — settings, subscription management, split
+    // tunneling, logs — is visible regardless.
+    //
+    // Locations come from a link, a file or a QR code. Building one by hand
+    // means typing a room, a key, a provider and a transport, which is not a
+    // thing to ask of anyone who did not set the network up.
+    val admin = AdminState.plumbingVisible
 
     val requiresSetup = !state.canStartVpn && !state.isVpnConnected && !state.isVpnLoading
 
@@ -100,12 +105,24 @@ fun HomeScreen(
         }
     }
 
+    fun refreshSubscription(url: String) {
+        refreshingSubscriptionUrl = url
+        viewModel.refreshSubscription(url) { report ->
+            locationViewModel.loadLocations {
+                refreshingSubscriptionUrl = null
+                viewModel.restartVpnIfRunning()
+                scope.launch { snackbarHostState.showSnackbar(report.singleMessage()) }
+            }
+        }
+    }
+
     fun refreshHttpPings(targetLocationIds: List<String>? = null) {
         locationViewModel.refreshPings(
             targetLocationIds = targetLocationIds,
             performPing = { config ->
                 viewModel.performPingFor(config)
             },
+            canPing = { config -> viewModel.canPing(config) },
         )
     }
 
@@ -202,6 +219,8 @@ fun HomeScreen(
                         onRefreshClick = { targetIds ->
                             refreshHttpPings(targetIds)
                         },
+                        onRefreshSubscriptionClick = { url -> refreshSubscription(url) },
+                        refreshingSubscriptionUrl = refreshingSubscriptionUrl,
                         onAddSubscriptionClick = {
                             isAddSheetOpen = true
                         },

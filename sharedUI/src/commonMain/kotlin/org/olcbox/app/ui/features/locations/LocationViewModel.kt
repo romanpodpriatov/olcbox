@@ -169,6 +169,12 @@ class LocationViewModel(
     fun refreshPings(
         targetLocationIds: List<String>? = null,
         performPing: suspend (LocationConfig) -> Long?,
+        /**
+         * Asked before probing. Static capability is not enough on its own: on
+         * iOS the only location that can be measured while the tunnel is up is
+         * the one carrying it, and that is a question about state, not kind.
+         */
+        canPing: (LocationConfig) -> Boolean = { it.isPingable() },
         onComplete: (onlineCount: Int, totalCount: Int) -> Unit = { _, _ -> },
         onError: (String) -> Unit = {}
     ) {
@@ -177,7 +183,7 @@ class LocationViewModel(
 
         val pingableLocations = locationsSnapshot
             .filter { location ->
-                location.config?.isPingable() == true &&
+                location.config?.let(canPing) == true &&
                         (targetLocationIds == null || targetLocationIds.contains(location.storageId))
             }
             .filterNot { location ->
@@ -208,7 +214,7 @@ class LocationViewModel(
                 try {
                     val ping = try {
                         pingSemaphore.withPermit {
-                            checkLocationPing(location, performPing)?.toInt()
+                            checkLocationPing(location, performPing, canPing)?.toInt()
                         }
                     } catch (e: CancellationException) {
                         throw e
@@ -294,9 +300,10 @@ class LocationViewModel(
 
     private suspend fun checkLocationPing(
         location: LocationItem,
-        performPing: suspend (LocationConfig) -> Long?
+        performPing: suspend (LocationConfig) -> Long?,
+        canPing: (LocationConfig) -> Boolean
     ): Long? {
-        val config = location.config?.takeIf { it.isPingable() } ?: return null
+        val config = location.config?.takeIf(canPing) ?: return null
 
         return withTimeoutOrNull(LOCATION_PING_TIMEOUT_MS) {
             repeat(LOCATION_PING_ATTEMPTS) { attempt ->

@@ -20,6 +20,8 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import io.ktor.client.request.get
+import org.olcbox.app.data.datasource.createProxyHttpClient
 import org.olcbox.app.data.model.LocationConfig
 import org.olcbox.app.data.repository.LocationsRepository
 import org.olcbox.app.ios.IosBridgeCallback
@@ -83,6 +85,13 @@ class IosVpnManager(
     private var lastStopMark: TimeSource.Monotonic.ValueTimeMark? = null
     private var systemSyncJob: Job? = null
 
+    /**
+     * The location the running tunnel was built from, which is not always the
+     * one the list has selected — a tunnel outlives the app, and the one adopted
+     * on launch was started by a process that is gone.
+     */
+    private var activeConfig: LocationConfig? = null
+
     init {
         startSystemStateSync()
         olcRtcBridge.setLogWriter(object : IosLogWriter {
@@ -128,6 +137,7 @@ class IosVpnManager(
 
     override fun stopVpn() {
         desiredConnected = false
+        activeConfig = null
         lastStopMark = timeSource.markNow()
         watchdogJob?.cancel()
         reconnectJob?.cancel()
@@ -147,8 +157,69 @@ class IosVpnManager(
         }
     }
 
+    /**
+     * Whether a latency figure can honestly be produced for this location.
+     *
+     * Two cases, and nothing else:
+     *
+     *  * **The live one.** While the tunnel is up, every request this app makes
+     *    already goes through it, so timing one measures the real path — for
+     *    Reality, Hysteria2, XHTTP and olcRTC alike. That is the number a user
+     *    actually wants, and the only one that is about the connection they
+     *    have rather than one they might have.
+     *  * **An olcRTC room while nothing is connected.** The prober can join it
+     *    and time a request. Expensive — a whole second session — but real.
+     *
+     * Everything else is unmeasurable from here: the cores for Reality,
+     * Hysteria2 and XHTTP live in the tunnel extension, which runs one location
+     * at a time. Probing them anyway produced a null, which the list drew as
+     * **Offline** — working exits, marked dead, by a check that never had a way
+     * to succeed.
+     */
+    override fun canPing(locationConfig: LocationConfig): Boolean {
+        val config = locationConfig.normalized()
+        if (!config.isComplete()) return false
+        if (_status.value is VpnStatus.Connected) return config == activeConfig
+        return config.kind == LocationKind.Olcrtc
+    }
+
     override suspend fun ping(locationConfig: LocationConfig): Long? {
-        return runCheck(locationConfig) { request -> olcRtcBridge.ping(request) }
+        val config = locationConfig.normalized()
+        if (_status.value is VpnStatus.Connected) {
+            // Never the olcRTC prober while connected: it would open a second
+            // session to the same room from the same device, which costs the
+            // operator and has confused this before.
+            return if (config == activeConfig) measureThroughTunnel() else null
+        }
+        if (config.kind != LocationKind.Olcrtc) return null
+        return runCheck(config) { request -> olcRtcBridge.ping(request) }
+    }
+
+    /**
+     * Times one request through whatever is carrying traffic right now.
+     *
+     * A 204 is chosen so nothing is downloaded and no proxy is tempted to cache
+     * it. A failure here means the tunnel is up and not carrying — which is
+     * worth showing as such, and is exactly the state a user calls "connected
+     * but nothing loads".
+     */
+    private suspend fun measureThroughTunnel(): Long? = withContext(Dispatchers.Default) {
+        val client = createProxyHttpClient(
+            subscriptionProxy = null,
+            connectTimeoutMs = TUNNEL_PROBE_TIMEOUT_MS,
+            requestTimeoutMs = TUNNEL_PROBE_TIMEOUT_MS,
+            socketTimeoutMs = TUNNEL_PROBE_TIMEOUT_MS
+        )
+        try {
+            val started = timeSource.markNow()
+            val status = client.get(HTTP_PING_URL).status.value
+            if (status !in 200..399) return@withContext null
+            started.elapsedNow().inWholeMilliseconds
+        } catch (_: Exception) {
+            null
+        } finally {
+            runCatching { client.close() }
+        }
     }
 
     override suspend fun checkConnection(locationConfig: LocationConfig): Long? {
@@ -222,6 +293,7 @@ class IosVpnManager(
         if (requestedGeneration != generation) return
 
         if (result.success) {
+            activeConfig = location
             setStatus(VpnStatus.Connected)
             addLog("Packet tunnel up")
             reconnectAttempt = 0
@@ -450,6 +522,11 @@ class IosVpnManager(
             desiredConnected = true
             reconnectAttempt = 0
             lastReadyMark = timeSource.markNow()
+            // Started by a process that no longer exists, so the best available
+            // answer to "what is this tunnel carrying" is what the app would
+            // start today. Wrong only if the selection changed while the app was
+            // dead, and then the next connect corrects it.
+            activeConfig = locationsRepository.getActiveLocation()?.location?.normalized()
             setStatus(VpnStatus.Connected)
             addLog("Adopted a packet tunnel that was already running")
             startWatchdog()
@@ -624,7 +701,13 @@ class IosVpnManager(
         const val PASSWORD_LENGTH = 24
         const val MAX_CREDENTIAL_LENGTH = 64
         const val MAX_LOG_LINES = 500
-        const val CHECK_TIMEOUT_MS = 8_000L
+        // Twenty, not eight: joining an olcRTC room and timing a request through
+        // it is the same negotiation the tunnel makes, and eight seconds was
+        // measured to be short for it. At eight this probe could not succeed,
+        // and every olcRTC row it touched was drawn Offline.
+        const val CHECK_TIMEOUT_MS = 20_000L
+        /** One request through a tunnel that is already up; nothing to negotiate. */
+        const val TUNNEL_PROBE_TIMEOUT_MS = 6_000L
         const val HTTP_PING_URL = "https://www.google.com/generate_204"
         const val WATCHDOG_INTERVAL_MS = 10_000L
         const val SYSTEM_SYNC_INTERVAL_MS = 3_000L

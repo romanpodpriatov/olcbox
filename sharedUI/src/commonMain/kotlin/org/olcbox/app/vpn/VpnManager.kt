@@ -40,6 +40,15 @@ interface VpnManager {
     val traffic: StateFlow<TrafficCounters?>
 
     fun needsPermission(): Boolean
+
+    /**
+     * Whether [ping] can produce a real figure for this location right now.
+     *
+     * Asked before probing, because a probe with no way of succeeding does not
+     * return "unknown" — it returns null, and the list drew null as **Offline**.
+     * A working exit marked dead is worse than no figure at all.
+     */
+    fun canPing(locationConfig: LocationConfig): Boolean = locationConfig.isPingable()
     fun startVpn()
     fun stopVpn()
     suspend fun ping(locationConfig: LocationConfig): Long?

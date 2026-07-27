@@ -41,15 +41,13 @@ enum OlcrtcEngine {
     /// is the whole of what a user, or whoever is debugging for them, ever gets,
     /// and it cost most of a day.
     ///
-    /// Tied to the build configuration rather than left as a constant somebody
-    /// has to remember to flip: ICE tracing writes hundreds of lines a second,
-    /// and this extension has a ~50 MB ceiling to stay under. A diagnostic
-    /// switch that ships is a diagnostic switch nobody turned off.
-    #if DEBUG
-    private static let verbose = true
-    #else
+    /// Off. ICE tracing writes hundreds of lines a second — it answered the
+    /// eight-second timeout and then made the log unreadable for everything
+    /// else, including in development, where it is on all the time by
+    /// definition. Flip to true while chasing a connect that fails; the engine
+    /// still logs its ordinary markers here either way, and `olcrtc.log` in the
+    /// App Group keeps them whether this is on or not.
     private static let verbose = false
-    #endif
 
     /// Held for the lifetime of the process: olcRTC keeps whatever is handed to
     /// `SetProtector`/`SetLogWriter`, and Go's reference does not keep a Swift

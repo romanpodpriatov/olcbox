@@ -152,6 +152,9 @@ class HomeScreenViewModel(
         return vpnManager.ping(config)
     }
 
+    /** See [VpnManager.canPing]: never probe what cannot answer. */
+    fun canPing(config: LocationConfig): Boolean = vpnManager.canPing(config)
+
     suspend fun checkConnectionFor(config: LocationConfig): Long? {
         return vpnManager.checkConnection(config)
     }

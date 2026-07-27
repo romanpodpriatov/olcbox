@@ -31,6 +31,22 @@ object AdminState {
      */
     val configuratorVisible: Boolean get() = !gate.enabled || unlocked
 
+    /**
+     * Affordances that are plumbing rather than product: the per-location
+     * configurator and "create custom location".
+     *
+     * Stricter than [configuratorVisible] on purpose. That one fails *open* so a
+     * build shipped without the secret cannot trap anyone in a hidden-settings
+     * state — reasonable for settings and logs, wrong for these two. They expose
+     * a room key, a provider, an operator's edge address, its SNI and its
+     * certificate pin, and they offer to hand-build a location out of them.
+     * Nobody's customer needs that on the screen where they pick an exit, and
+     * forgetting to bake the hash should not be what puts it there.
+     *
+     * So: only in a build that has a gate, and only once it is open.
+     */
+    val plumbingVisible: Boolean get() = gate.enabled && unlocked
+
     /** Show the Lock affordance only in a gated build that is currently unlocked. */
     val showLock: Boolean get() = gate.enabled && unlocked
 

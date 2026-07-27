@@ -24,10 +24,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -160,20 +158,13 @@ fun LocationRow(
 
         Spacer(modifier = Modifier.width(12.dp))
 
-        if (settingsEnabled) {
-            IconButton(
-                onClick = onSettingsClick,
-                modifier = Modifier.size(40.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.MoreVert,
-                    contentDescription = "Settings",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.width(8.dp))
+        // No per-location settings button.
+        //
+        // It led to the configurator — room, key, provider, transport, and on a
+        // subscription row the operator's edge address, SNI and certificate pin.
+        // That is plumbing for whoever runs the network, not a control to offer
+        // every customer next to the exit they are about to tap. The long press
+        // below still opens it, and only where `settingsEnabled` allows.
 
         LocationSelectionIndicator(isSelected = isSelected)
     }

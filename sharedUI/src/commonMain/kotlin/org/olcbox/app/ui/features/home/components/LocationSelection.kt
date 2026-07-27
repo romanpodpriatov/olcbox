@@ -18,8 +18,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -51,6 +53,9 @@ fun LocationSelectorScreen(
     onGetSubscriptionClick: () -> Unit = {},
     modifier: Modifier = Modifier,
     onRefreshClick: (targetLocationIds: List<String>) -> Unit,
+    /** Re-fetch this subscription from its URL. Nothing to do with latency. */
+    onRefreshSubscriptionClick: (subscriptionUrl: String) -> Unit = {},
+    refreshingSubscriptionUrl: String? = null,
     onAddSubscriptionClick: () -> Unit,
     onAddLocationClick: () -> Unit,
     locations: List<LocationItem>,
@@ -153,16 +158,32 @@ fun LocationSelectorScreen(
                         val groupIds = group.map { it.storageId }
                         val isGroupRefreshing = pingsState is PingsState.Loading &&
                                 pingsState.pendingLocationIds.any { it in groupIds }
+                        val groupUrl = group.firstOrNull()?.subscriptionUrl?.trim()
 
-                        // Only where a measurement is possible. A subscription
-                        // of Reality exits has nothing this button could do,
-                        // and one that visibly does nothing reads as broken.
-                        if (group.any { it.config?.isPingable() == true }) {
-                            RefreshButton(
-                                isRefreshing = isGroupRefreshing,
-                                onClick = { onRefreshClick(groupIds) },
-                                tint = MaterialTheme.colorScheme.primary
-                            )
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // Latency, where a measurement is possible at all.
+                            // A control that visibly does nothing reads as broken.
+                            if (group.any { it.config?.isPingable() == true }) {
+                                LatencyButton(
+                                    isRunning = isGroupRefreshing,
+                                    onClick = { onRefreshClick(groupIds) }
+                                )
+                            }
+
+                            // Re-fetch the subscription. This is the one every
+                            // group has, and it lived only behind the "+" sheet
+                            // — the last place anyone looks for it on a list of
+                            // servers they were just handed.
+                            if (!groupUrl.isNullOrBlank()) {
+                                RefreshButton(
+                                    isRefreshing = groupUrl == refreshingSubscriptionUrl,
+                                    onClick = { onRefreshSubscriptionClick(groupUrl) },
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            }
                         }
                     }
 
@@ -205,10 +226,9 @@ fun LocationSelectorScreen(
                                 pingsState.pendingLocationIds.any { it in customIds }
 
                         if (customLocations.any { it.config?.isPingable() == true }) {
-                            RefreshButton(
-                                isRefreshing = isCustomRefreshing,
-                                onClick = { onRefreshClick(customIds) },
-                                tint = MaterialTheme.colorScheme.primary
+                            LatencyButton(
+                                isRunning = isCustomRefreshing,
+                                onClick = { onRefreshClick(customIds) }
                             )
                         }
                     }
@@ -265,6 +285,39 @@ fun LocationSelectorScreen(
                     )
                 }
             }
+        }
+    }
+}
+
+/**
+ * Measure latency for what can be measured.
+ *
+ * Its own control, next to but distinct from the subscription refresh: one asks
+ * the provider for the current server list, the other times a request. They were
+ * the same button once, which meant the only affordance a subscription had did
+ * the thing it needed least.
+ */
+@Composable
+private fun LatencyButton(isRunning: Boolean, onClick: () -> Unit) {
+    val tint = MaterialTheme.colorScheme.primary
+    IconButton(
+        onClick = onClick,
+        enabled = !isRunning,
+        modifier = Modifier.size(40.dp)
+    ) {
+        if (isRunning) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(18.dp),
+                strokeWidth = 2.dp,
+                color = tint
+            )
+        } else {
+            Icon(
+                imageVector = PkIcons.Bolt,
+                contentDescription = "Test latency",
+                tint = tint,
+                modifier = Modifier.size(20.dp)
+            )
         }
     }
 }
