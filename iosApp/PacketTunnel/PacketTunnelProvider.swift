@@ -92,11 +92,15 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
             return
         }
 
-        // Present only for xhttp. The app deletes it for every other transport,
-        // so a stale file cannot start a second core behind a tunnel that does
-        // not use one.
+        // Each is present only for the one transport that needs it, and the app
+        // deletes the other, so a stale file cannot start a second core behind a
+        // tunnel that does not use one.
         let xrayURL = container.appendingPathComponent("xray.json")
         let xrayConfig = try? String(contentsOf: xrayURL, encoding: .utf8)
+
+        let olcrtcURL = container.appendingPathComponent("olcrtc.json")
+        let olcrtc = (try? Data(contentsOf: olcrtcURL))
+            .flatMap { try? JSONDecoder().decode(OlcrtcEngine.Parameters.self, from: $0) }
 
         // Applied before the engine starts: libbox asks for the descriptor
         // synchronously and complains if answering takes long.
@@ -114,6 +118,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
             self?.startEngine(
                 config: config,
                 xrayConfig: xrayConfig?.isEmpty == false ? xrayConfig : nil,
+                olcrtc: olcrtc,
                 container: container,
                 completionHandler: completionHandler
             )
@@ -123,16 +128,22 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     private func startEngine(
         config: String,
         xrayConfig: String?,
+        olcrtc: OlcrtcEngine.Parameters?,
         container: URL,
         completionHandler: @escaping (Error?) -> Void
     ) {
         do {
-            // Xray first: sing-box's outbound points at its SOCKS port, and a
-            // sing-box that starts against a port nobody is listening on fails
-            // every connection rather than waiting.
+            // The borrowed core first, whichever it is: sing-box's outbound
+            // points at its SOCKS port, and a sing-box that starts against a
+            // port nobody is listening on fails every connection rather than
+            // waiting. Never both — a location is one transport.
             if let xrayConfig {
                 mark("xray")
                 try XrayEngine.start(configJSON: xrayConfig)
+            }
+            if let olcrtc {
+                mark("olcrtc")
+                try OlcrtcEngine.start(olcrtc)
             }
             mark("setup")
             // libbox keeps its state on disk; inside the group so the app can
@@ -193,6 +204,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         } catch {
             mark("failed: \(error.localizedDescription)")
             XrayEngine.stop()
+            OlcrtcEngine.stop()
             completionHandler(error)
         }
     }
@@ -224,6 +236,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         commandServer = nil
         commandHandler = nil
         XrayEngine.stop()
+        OlcrtcEngine.stop()
         completionHandler()
     }
 

@@ -2,8 +2,8 @@ name: iOS Frameworks
 
 # The Go cores the NetworkExtension needs, in one framework.
 #
-# They cannot be two frameworks: each gomobile bind carries its own copy of the
-# cgo bootstrap and the gomobile seq layer, so linking two of them into one
+# They cannot be separate frameworks: each gomobile bind carries its own copy of
+# the cgo bootstrap and the gomobile seq layer, so linking two of them into one
 # extension fails with dozens of duplicate symbols. See build-cores-ios.sh.
 #
 # It changes only when the pinned versions change, and macOS runners bill at
@@ -33,10 +33,13 @@ env:
   # Pinned, not `latest`: this is what the combined module was verified to
   # resolve and compile against, alongside sing-box 1.13.14.
   LIBXRAY_VERSION: v1.260711.0
+  # A published revision, not the OLCRTC_REPO working copy the app's own
+  # OlcRtcMobile is built from — this runner has no such checkout.
+  OLCRTC_VERSION: v0.0.0-20260713124136-42ae4e0c6a1a
 
 jobs:
   build:
-    name: gomobile bind (sing-box + Xray)
+    name: gomobile bind (sing-box + Xray + olcRTC)
     runs-on: macos-latest
     timeout-minutes: 120
 
@@ -54,7 +57,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: dist/frameworks
-          key: ios-cores-sb${{ env.SINGBOX_VERSION }}-lx${{ env.LIBXRAY_VERSION }}-${{ hashFiles('scripts/build-cores-ios.sh') }}
+          key: ios-cores-sb${{ env.SINGBOX_VERSION }}-lx${{ env.LIBXRAY_VERSION }}-rtc${{ env.OLCRTC_VERSION }}-${{ hashFiles('scripts/build-cores-ios.sh') }}
 
       - name: Build Cores
         if: steps.cache.outputs.cache-hit != 'true'
@@ -87,7 +90,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          tag="ios-cores-sb${SINGBOX_VERSION}-lx${LIBXRAY_VERSION}"
+          # The revision, not the whole pseudo-version: the tag stays readable
+          # and still changes whenever olcrtc does.
+          tag="ios-cores-sb${SINGBOX_VERSION}-lx${LIBXRAY_VERSION}-rtc${OLCRTC_VERSION##*-}"
           gh release view "$tag" >/dev/null 2>&1 || \
-            gh release create "$tag" --prerelease --notes "sing-box ${SINGBOX_VERSION} + libXray ${LIBXRAY_VERSION} bound into one framework for the iOS NetworkExtension."
+            gh release create "$tag" --prerelease --notes "sing-box ${SINGBOX_VERSION} + libXray ${LIBXRAY_VERSION} + olcrtc ${OLCRTC_VERSION} bound into one framework for the iOS NetworkExtension."
           gh release upload "$tag" dist/*.zip --clobber

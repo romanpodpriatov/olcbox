@@ -59,23 +59,43 @@ interface IosOlcRtcBridge {
     fun check(request: IosOlcRtcCheckRequest): IosLongResult
 }
 
+/** Delivers the answer to an asynchronous bridge call, exactly once. */
+interface IosBridgeCallback {
+    fun onResult(result: IosBridgeResult)
+}
+
 /**
- * Starting and stopping the packet tunnel extension.
+ * Everything the extension needs to bring one location up.
  *
- * olcRTC has its own bridge because it runs a SOCKS provider inside the app.
- * Everything else runs inside the Network Extension, which only the app can ask
- * the system to launch — hence a second, deliberately small interface.
+ * [config] is a complete sing-box config with a tun inbound. At most one of the
+ * other two is ever set, and for reality and hysteria2 neither is: sing-box
+ * borrows a second core only for the transports it does not implement itself.
+ *
+ * [xrayConfig] is an Xray config for xhttp, and [olcrtc] the parameters for our
+ * own engine. In both cases the borrowed core listens on a loopback SOCKS port
+ * and sing-box, which owns the tun, reaches it there.
+ */
+data class IosPacketTunnelStartRequest(
+    val config: String,
+    val xrayConfig: String?,
+    val olcrtc: IosOlcRtcStartRequest?
+)
+
+/**
+ * Starting and stopping the packet tunnel extension, which only the app can ask
+ * the system to launch. Every transport goes through it, olcRTC included.
  */
 interface IosPacketTunnelBridge {
     /**
-     * [config] is a complete sing-box config with a tun inbound.
+     * Answers through [callback] once the tunnel is up or has failed.
      *
-     * [xrayConfig], when present, is an Xray config the extension must start
-     * first: sing-box then reaches it through a local SOCKS port instead of
-     * dialling out itself. Only xhttp locations need it, because that is the
-     * one transport sing-box does not implement.
+     * Asynchronous because it cannot honestly be otherwise: the extension takes
+     * seconds to settle, and the synchronous shape this replaces held a
+     * coroutine thread on a semaphore for all of them — which the Swift runtime
+     * reports as `unsafeForcedSync called from Swift Concurrent context`, and
+     * which can deadlock the cooperative pool outright.
      */
-    fun start(config: String, xrayConfig: String?): IosBridgeResult
+    fun start(request: IosPacketTunnelStartRequest, callback: IosBridgeCallback)
     fun stop()
     fun isRunning(): Boolean
 }

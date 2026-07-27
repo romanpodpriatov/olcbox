@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Puts Cores.xcframework where the Xcode extension target expects it.
 #
-# One framework holding both sing-box and Xray — they cannot be linked as two,
+# One framework holding sing-box, Xray and olcRTC — they cannot be linked apart,
 # see build-cores-ios.sh. Building it needs Go, gomobile and a macOS machine, so
 # this looks for one already built, in the order that costs least:
 #
@@ -21,7 +21,7 @@
 set -euo pipefail
 
 DEST="${1:?usage: fetch-cores-ios.sh <destination-dir>}"
-TAG="${CORES_RELEASE_TAG:-ios-cores-sb1.13.14-lxv1.260711.0}"
+TAG="${CORES_RELEASE_TAG:-ios-cores-sb1.13.14-lxv1.260711.0-rtc42ae4e0c6a1a}"
 ASSET="Cores-ios.zip"
 URL="https://github.com/romanpodpriatov/olcbox/releases/download/${TAG}/${ASSET}"
 # Same default as build-cores-ios.sh writes to. Keyed by tag: two version pairs

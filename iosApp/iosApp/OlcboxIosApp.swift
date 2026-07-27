@@ -197,7 +197,7 @@ final class PacketTunnelController: ObservableObject {
 /// can ask the system to launch the extension, so that part lives here. The
 /// config goes through the App Group because a tunnel provider is a separate
 /// process — there is no argument to pass it.
-final class SwiftPacketTunnelBridge: NSObject, IosPacketTunnelBridge {
+final class SwiftPacketTunnelBridge: NSObject, @unchecked Sendable, IosPacketTunnelBridge {
 
     /// Main-actor bound, so it cannot be a stored property of this class — the
     /// bridge is called from Kotlin's background dispatcher and is deliberately
@@ -210,39 +210,45 @@ final class SwiftPacketTunnelBridge: NSObject, IosPacketTunnelBridge {
     /// from here would mean assuming an isolation this class does not have.
     private nonisolated(unsafe) var running = false
 
-    func start(config: String, xrayConfig: String?) -> IosBridgeResult {
+    func start(request: IosPacketTunnelStartRequest, callback: IosBridgeCallback) {
+        let answer = SendableCallback(callback: callback)
+
         guard let container = FileManager.default.containerURL(
             forSecurityApplicationGroupIdentifier: Self.appGroupId
         ) else {
-            return IosBridgeResult(success: false, message: "app group unavailable")
+            answer.callback.onResult(
+                result: IosBridgeResult(success: false, message: "app group unavailable")
+            )
+            return
         }
-        let xrayURL = container.appendingPathComponent("xray.json")
+
         do {
-            try Data(config.utf8).write(to: container.appendingPathComponent("config.json"))
-            // Removed rather than left behind: a stale file from a previous
-            // xhttp connection would start a second core behind a tunnel that
-            // does not use one.
-            if let xrayConfig {
-                try Data(xrayConfig.utf8).write(to: xrayURL)
-            } else if FileManager.default.fileExists(atPath: xrayURL.path) {
-                try FileManager.default.removeItem(at: xrayURL)
-            }
+            try Data(request.config.utf8)
+                .write(to: container.appendingPathComponent("config.json"))
+            // Written or removed, never left behind: a stale file from a previous
+            // connection would start a core behind a tunnel that does not use one.
+            try Self.handOver(
+                request.xrayConfig,
+                to: container.appendingPathComponent("xray.json")
+            )
+            try Self.handOver(
+                Self.olcrtcParameters(request.olcrtc),
+                to: container.appendingPathComponent("olcrtc.json")
+            )
         } catch {
-            return IosBridgeResult(
+            answer.callback.onResult(result: IosBridgeResult(
                 success: false,
                 message: "could not hand over the config: \(error.localizedDescription)"
-            )
+            ))
+            return
         }
 
-        // Kotlin waits for an answer on a background dispatcher, and the
-        // controller lives on the main actor, so the hop is explicit.
-        // Read before the hop: capturing self in a main-actor task would mean
-        // sending a non-Sendable object across isolation for one boolean.
+        // Read before the hop, as before — but nothing waits here now. The
+        // tunnel takes seconds to settle and the answer goes back through the
+        // callback once the system has actually decided, instead of holding a
+        // coroutine thread on a semaphore for the duration.
         let wasRunning = running
-        let failure = FailureSlot()
-
-        let done = DispatchSemaphore(value: 0)
-        Task { @MainActor in
+        Task { @MainActor [weak self] in
             // Starting an already-running tunnel does nothing at all, and the
             // extension keeps the config it was launched with — which looked
             // exactly like a working VPN that does not change your IP.
@@ -251,17 +257,42 @@ final class SwiftPacketTunnelBridge: NSObject, IosPacketTunnelBridge {
                 try? await Task.sleep(nanoseconds: 700_000_000)
             }
             await Self.controller.start()
-            failure.value = await Self.controller.waitUntilUp()
-            done.signal()
+            let reason = await Self.controller.waitUntilUp()
+            self?.running = reason == nil
+            answer.callback.onResult(
+                result: IosBridgeResult(success: reason == nil, message: reason)
+            )
         }
-        done.wait()
+    }
 
-        if let reason = failure.value {
-            running = false
-            return IosBridgeResult(success: false, message: reason)
+    /// Writes the file, or removes it when there is nothing to write.
+    private static func handOver(_ contents: String?, to url: URL) throws {
+        if let contents, !contents.isEmpty {
+            try Data(contents.utf8).write(to: url)
+        } else if FileManager.default.fileExists(atPath: url.path) {
+            try FileManager.default.removeItem(at: url)
         }
-        running = true
-        return IosBridgeResult(success: true, message: nil)
+    }
+
+    /// olcRTC is addressed by parameters rather than by a config document, so it
+    /// crosses to the extension as JSON — the shape `OlcrtcEngine.Parameters`
+    /// decodes on the other side.
+    private static func olcrtcParameters(_ request: IosOlcRtcStartRequest?) -> String? {
+        guard let request else { return nil }
+        let fields: [String: Any] = [
+            "carrierName": request.carrierName,
+            "transportName": request.transportName,
+            "roomId": request.roomId,
+            "clientId": request.clientId,
+            "keyHex": request.keyHex,
+            "socksPort": Int(request.socksPort),
+            "socksUser": request.socksUser,
+            "socksPass": request.socksPass,
+            "vp8Fps": Int(request.vp8Fps),
+            "vp8BatchSize": Int(request.vp8BatchSize)
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: fields) else { return nil }
+        return String(data: data, encoding: .utf8)
     }
 
     func stop() {
@@ -272,21 +303,12 @@ final class SwiftPacketTunnelBridge: NSObject, IosPacketTunnelBridge {
     func isRunning() -> Bool { running }
 }
 
-/// Carries one value out of a main-actor task to the synchronous caller waiting
-/// on a semaphore for it.
+/// Kotlin's callback, in terms Swift's concurrency checking accepts.
 ///
-/// An `UnsafeMutablePointer` used to do this, which Swift 6 refuses: a pointer
-/// is not Sendable, so handing one to a `@MainActor` closure is a data race as
-/// far as the compiler can see — and what it cannot see is that the semaphore
-/// already orders the write before the read. The lock states that ordering in
-/// terms the compiler accepts, and keeps it true if the ordering ever changes.
-private final class FailureSlot: @unchecked Sendable {
-
-    private let lock = NSLock()
-    private var stored: String?
-
-    var value: String? {
-        get { lock.lock(); defer { lock.unlock() }; return stored }
-        set { lock.lock(); stored = newValue; lock.unlock() }
-    }
+/// Objects crossing from Kotlin/Native carry no Sendable annotation, but they
+/// are safe to call from any thread under its memory model. Saying so once here
+/// is better than an `@unchecked` at every use.
+private struct SendableCallback: @unchecked Sendable {
+    let callback: IosBridgeCallback
 }
+

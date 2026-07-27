@@ -1,5 +1,6 @@
 package org.olcbox.app.vpn
 
+import kotlin.coroutines.resume
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.random.Random
@@ -16,13 +17,16 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.olcbox.app.data.model.LocationConfig
 import org.olcbox.app.data.repository.LocationsRepository
+import org.olcbox.app.ios.IosBridgeCallback
 import org.olcbox.app.ios.IosBridgeResult
 import org.olcbox.app.ios.IosLogWriter
 import org.olcbox.app.ios.IosPacketTunnelBridge
+import org.olcbox.app.ios.IosPacketTunnelStartRequest
 import org.olcbox.app.net.LinkParser
 import org.olcbox.app.net.LocationKind
 import org.olcbox.app.net.OutboundSpec
@@ -98,12 +102,12 @@ class IosVpnManager(
                 val shouldRestart = _status.value is VpnStatus.Connected ||
                     _status.value is VpnStatus.Connecting ||
                     _status.value is VpnStatus.Reconnecting ||
-                    olcRtcBridge.isRunning()
+                    packetTunnelBridge.isRunning()
 
                 if (shouldRestart) {
                     setStatus(VpnStatus.Reconnecting)
-                    addLog("Restarting iOS SOCKS connection")
-                    stopOlcRtc()
+                    addLog("Restarting the packet tunnel")
+                    packetTunnelBridge.stop()
                     if (requestedGeneration != generation) return@withLock
                 }
 
@@ -120,9 +124,10 @@ class IosVpnManager(
         operationJob = scope.launch {
             mutex.withLock {
                 setStatus(VpnStatus.Stopping)
-                // Both, unconditionally: the user may have switched location
-                // between transports, and stopping the one that is not running
-                // costs nothing while leaving it running strands a tunnel.
+                // The in-app SOCKS provider is no longer part of connecting —
+                // olcRTC runs in the extension like everything else — but a build
+                // installed over one that did start it would otherwise leave it
+                // running, and stopping something already stopped costs nothing.
                 stopOlcRtc()
                 packetTunnelBridge.stop()
                 setStatus(VpnStatus.Disconnected)
@@ -169,19 +174,21 @@ class IosVpnManager(
     }
 
     /**
-     * olcRTC runs inside the app as a SOCKS provider; everything else runs inside
-     * the packet tunnel extension, which owns the device's traffic outright.
+     * One path for every transport.
      *
-     * The two paths are genuinely different mechanisms, not two flavours of one,
-     * so the split is here rather than hidden behind a common start().
+     * olcRTC used to run inside the app as a SOCKS provider that other apps had
+     * to be pointed at by hand, kept alive in the background by playing silent
+     * audio. It runs in the extension now, like the other three, so there is one
+     * mechanism to reason about and the device's traffic goes through it.
      */
     private suspend fun startActiveLocation(requestedGeneration: Long, isRestart: Boolean) {
         val location = locationsRepository.getActiveLocation()?.location?.normalized()
-        if (location != null && location.kind != LocationKind.Olcrtc) {
-            startPacketTunnel(location, requestedGeneration, isRestart)
+        if (location == null) {
+            setStatus(VpnStatus.Error("No active location"))
+            addLog("Add a location before connecting")
             return
         }
-        startOlcRtc(requestedGeneration, isRestart)
+        startPacketTunnel(location, requestedGeneration, isRestart)
     }
 
     private suspend fun startPacketTunnel(
@@ -191,37 +198,15 @@ class IosVpnManager(
     ) {
         setStatus(if (isRestart) VpnStatus.Reconnecting else VpnStatus.Connecting)
 
-        val link = location.rawLink
-        val spec = link?.let { LinkParser.parse(it) }
-        if (spec == null) {
-            setStatus(VpnStatus.Error("Location cannot be parsed"))
-            addLog("No usable link on the active location")
-            return
+        val request = packetTunnelRequest(location) ?: return
+        val engine = when {
+            request.olcrtc != null -> "olcrtc+sing-box"
+            request.xrayConfig != null -> "xray+sing-box"
+            else -> "sing-box"
         }
-
-        // Same builders Android and desktop use, so a transport gaining a field
-        // reaches iOS without anyone remembering to update a second copy.
-        //
-        // xhttp is the one transport sing-box does not implement, so it runs on
-        // Xray and sing-box becomes the tun front-end for it. Every other
-        // transport is a native sing-box outbound with no second core involved.
-        val vless = spec as? OutboundSpec.Vless
-        val xrayConfig = if (vless != null && vless.transport is TransportSpec.Xhttp) {
-            XrayConfig.buildXhttp(vless)
-        } else {
-            null
-        }
-        val config = if (xrayConfig != null) {
-            SingBoxConfig.buildTunSocks(XrayConfig.XRAY_SOCKS_PORT)
-        } else {
-            SingBoxConfig.buildTun(spec)
-        }
-        val engine = if (xrayConfig != null) "xray+sing-box" else "sing-box"
         addLog("Starting packet tunnel, transport=${location.kind}, engine=$engine")
 
-        val result = withContext(Dispatchers.Default) {
-            packetTunnelBridge.start(config, xrayConfig)
-        }
+        val result = startTunnel(request)
         if (requestedGeneration != generation) return
 
         if (result.success) {
@@ -229,6 +214,7 @@ class IosVpnManager(
             addLog("Packet tunnel up")
             reconnectAttempt = 0
             lastReadyMark = timeSource.markNow()
+            startWatchdog()
         } else {
             val message = result.message ?: "packet tunnel start failed"
             setStatus(VpnStatus.Error(message))
@@ -237,46 +223,82 @@ class IosVpnManager(
         }
     }
 
-    private suspend fun startOlcRtc(requestedGeneration: Long, isRestart: Boolean) {
-        setStatus(if (isRestart) VpnStatus.Reconnecting else VpnStatus.Connecting)
-
-        val active = locationsRepository.getActiveLocation()
-        val location = active?.location?.normalized()
-
-        if (location == null || !location.isComplete()) {
-            setStatus(VpnStatus.Error("No active location"))
-            addLog("Add a valid location before starting iOS SOCKS")
-            return
+    /**
+     * What the extension needs for this location, or null once the reason it
+     * cannot be built has been reported.
+     */
+    private suspend fun packetTunnelRequest(
+        location: LocationConfig
+    ): IosPacketTunnelStartRequest? {
+        // olcRTC has no link to parse — a room and a key address it — so it is
+        // read off the location rather than through LinkParser.
+        if (location.kind == LocationKind.Olcrtc) {
+            if (!location.isComplete()) {
+                setStatus(VpnStatus.Error("No active location"))
+                addLog("Add a valid location before connecting")
+                return null
+            }
+            // The port the user can set belongs to the in-app proxy, which no
+            // longer carries the connection. Inside the extension this is
+            // loopback between two of our own cores, so it is fixed, like Xray's.
+            val settings = _socksProxySettings.value
+                .copy(port = SingBoxConfig.SINGBOX_SOCKS_PORT)
+            return IosPacketTunnelStartRequest(
+                config = SingBoxConfig.buildTunSocks(SingBoxConfig.SINGBOX_SOCKS_PORT),
+                xrayConfig = null,
+                olcrtc = location.startRequest(locationsRepository.getDeviceIdentity(), settings)
+            )
         }
 
-        val deviceId = locationsRepository.getDeviceIdentity()
-        val socksSettings = _socksProxySettings.value
-        val request = location.startRequest(deviceId, socksSettings)
-
-        addLog(
-            "Starting iOS SOCKS provider=${location.bypassProvider}, " +
-                "transport=${location.transport}, room=${location.id}, port=${socksSettings.port}"
-        )
-
-        val result = withContext(Dispatchers.Default) {
-            olcRtcBridge.start(request)
+        val spec = location.rawLink?.let { LinkParser.parse(it) }
+        if (spec == null) {
+            setStatus(VpnStatus.Error("Location cannot be parsed"))
+            addLog("No usable link on the active location")
+            return null
         }
 
-        if (requestedGeneration != generation) return
-
-        if (result.success) {
-            setStatus(VpnStatus.Connected)
-            addLog("iOS SOCKS ready on 127.0.0.1:${socksSettings.port}")
-            reconnectAttempt = 0
-            lastReadyMark = timeSource.markNow()
-            startWatchdog()
+        // Same builders Android and desktop use, so a transport gaining a field
+        // reaches iOS without anyone remembering to update a second copy.
+        //
+        // xhttp is the one transport sing-box does not implement, so it runs on
+        // Xray and sing-box becomes the tun front-end for it. Reality and
+        // hysteria2 are native sing-box outbounds with no second core involved.
+        val vless = spec as? OutboundSpec.Vless
+        val xrayConfig = if (vless != null && vless.transport is TransportSpec.Xhttp) {
+            XrayConfig.buildXhttp(vless)
         } else {
-            val message = result.message ?: "olcRTC start failed"
-            setStatus(VpnStatus.Error(message))
-            addLog("iOS SOCKS start failed: $message")
-            stopOlcRtc()
+            null
         }
+        return IosPacketTunnelStartRequest(
+            config = if (xrayConfig != null) {
+                SingBoxConfig.buildTunSocks(XrayConfig.XRAY_SOCKS_PORT)
+            } else {
+                SingBoxConfig.buildTun(spec)
+            },
+            xrayConfig = xrayConfig,
+            olcrtc = null
+        )
     }
+
+    /**
+     * Turns the extension's callback back into a suspending call.
+     *
+     * Nothing blocks while the tunnel settles, which is the whole point: the
+     * shape this replaces held a thread on a semaphore for those seconds. The
+     * resume is guarded because a second one is a crash, and the caller of this
+     * callback is Swift.
+     */
+    private suspend fun startTunnel(request: IosPacketTunnelStartRequest): IosBridgeResult =
+        suspendCancellableCoroutine { continuation ->
+            packetTunnelBridge.start(
+                request,
+                object : IosBridgeCallback {
+                    override fun onResult(result: IosBridgeResult) {
+                        if (continuation.isActive) continuation.resume(result)
+                    }
+                }
+            )
+        }
 
     private suspend fun runCheck(
         locationConfig: LocationConfig,
@@ -347,8 +369,8 @@ class IosVpnManager(
     }
 
     /**
-     * Periodically verifies the SOCKS transport is still up while the user wants to
-     * stay connected, catching silent deaths that produce no log marker.
+     * Periodically verifies the tunnel is still up while the user wants to stay
+     * connected, catching silent deaths that produce no log marker.
      */
     private fun startWatchdog() {
         watchdogJob?.cancel()
@@ -358,9 +380,9 @@ class IosVpnManager(
                 if (!desiredConnected) break
                 val stalled = _status.value is VpnStatus.Connected &&
                     reconnectJob?.isActive != true &&
-                    !olcRtcBridge.isRunning()
+                    !packetTunnelBridge.isRunning()
                 if (stalled) {
-                    addLog("Watchdog: iOS SOCKS transport is down")
+                    addLog("Watchdog: the packet tunnel is down")
                     scheduleReconnect("transport stopped")
                 }
             }
@@ -382,21 +404,21 @@ class IosVpnManager(
             // must not give up — that is what left the transport dead before.
             while (desiredConnected && isActive) {
                 val delayMs = nextReconnectDelay()
-                addLog("Reconnecting iOS SOCKS in ${delayMs / 1000}s")
+                addLog("Reconnecting in ${delayMs / 1000}s")
                 delay(delayMs)
                 if (!desiredConnected) return@launch
 
                 val requestedGeneration = ++generation
                 val reconnected = mutex.withLock {
                     if (requestedGeneration != generation || !desiredConnected) return@withLock false
-                    stopOlcRtc()
-                    startOlcRtc(requestedGeneration, isRestart = true)
+                    packetTunnelBridge.stop()
+                    startActiveLocation(requestedGeneration, isRestart = true)
                     _status.value is VpnStatus.Connected
                 }
 
                 if (reconnected || !desiredConnected) return@launch
-                // startOlcRtc reports failure via Error status; keep the user-facing
-                // state as Reconnecting so the retry loop stays coherent.
+                // startActiveLocation reports failure via Error status; keep the
+                // user-facing state as Reconnecting so the retry loop stays coherent.
                 if (_status.value !is VpnStatus.Reconnecting) setStatus(VpnStatus.Reconnecting)
             }
         }

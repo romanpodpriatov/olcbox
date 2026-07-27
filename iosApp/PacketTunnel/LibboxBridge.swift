@@ -142,17 +142,28 @@ final class LibboxPlatform: NSObject, LibboxPlatformInterfaceProtocol {
     // MARK: - Android-only, and unsupported capabilities
 
     func autoDetectControl(_ fd: Int32) throws {
-        guard let index = Self.physicalInterfaceIndex() else {
-            // Better to let it try than to fail the connection outright: without
-            // a physical interface there is nothing to bind to anyway.
-            return
-        }
+        _ = Self.pinToPhysicalInterface(fd)
+    }
+
+    /// Binds one socket to the interface that actually reaches the internet.
+    ///
+    /// Shared with olcRTC, which needs exactly this and for exactly the same
+    /// reason: any core running beside sing-box dials out from inside the
+    /// extension, where the default route now points at our own tun. A second
+    /// copy of this would be a second thing to get wrong.
+    ///
+    /// Returns false only when there is no physical interface to bind to — in
+    /// which case there is nothing to dial out of either, so callers that must
+    /// answer a boolean can report it and callers that cannot simply proceed.
+    static func pinToPhysicalInterface(_ fd: Int32) -> Bool {
+        guard let index = physicalInterfaceIndex() else { return false }
         var scope = index
         let size = socklen_t(MemoryLayout<UInt32>.size)
         // IP_BOUND_IF / IPV6_BOUND_IF. Both are set because the socket family is
         // not known here and the wrong one simply fails harmlessly.
         setsockopt(fd, IPPROTO_IP, 25, &scope, size)
         setsockopt(fd, IPPROTO_IPV6, 125, &scope, size)
+        return true
     }
 
     /// The interface the device actually reaches the internet through.
