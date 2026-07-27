@@ -239,9 +239,7 @@ final class SwiftPacketTunnelBridge: NSObject, IosPacketTunnelBridge {
         // Read before the hop: capturing self in a main-actor task would mean
         // sending a non-Sendable object across isolation for one boolean.
         let wasRunning = running
-        let failure = UnsafeMutablePointer<String?>.allocate(capacity: 1)
-        failure.initialize(to: nil)
-        defer { failure.deinitialize(count: 1); failure.deallocate() }
+        let failure = FailureSlot()
 
         let done = DispatchSemaphore(value: 0)
         Task { @MainActor in
@@ -253,12 +251,12 @@ final class SwiftPacketTunnelBridge: NSObject, IosPacketTunnelBridge {
                 try? await Task.sleep(nanoseconds: 700_000_000)
             }
             await Self.controller.start()
-            failure.pointee = await Self.controller.waitUntilUp()
+            failure.value = await Self.controller.waitUntilUp()
             done.signal()
         }
         done.wait()
 
-        if let reason = failure.pointee {
+        if let reason = failure.value {
             running = false
             return IosBridgeResult(success: false, message: reason)
         }
@@ -272,4 +270,23 @@ final class SwiftPacketTunnelBridge: NSObject, IosPacketTunnelBridge {
     }
 
     func isRunning() -> Bool { running }
+}
+
+/// Carries one value out of a main-actor task to the synchronous caller waiting
+/// on a semaphore for it.
+///
+/// An `UnsafeMutablePointer` used to do this, which Swift 6 refuses: a pointer
+/// is not Sendable, so handing one to a `@MainActor` closure is a data race as
+/// far as the compiler can see — and what it cannot see is that the semaphore
+/// already orders the write before the read. The lock states that ordering in
+/// terms the compiler accepts, and keeps it true if the ordering ever changes.
+private final class FailureSlot: @unchecked Sendable {
+
+    private let lock = NSLock()
+    private var stored: String?
+
+    var value: String? {
+        get { lock.lock(); defer { lock.unlock() }; return stored }
+        set { lock.lock(); stored = newValue; lock.unlock() }
+    }
 }
