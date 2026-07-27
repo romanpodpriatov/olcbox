@@ -60,6 +60,7 @@ fun HomeScreen(
     var isAddSheetOpen by remember { mutableStateOf(false) }
 
     val state by viewModel.state.collectAsState()
+    val connectedSince by viewModel.connectedSince.collectAsState()
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
     val pingsState = locationViewModel.pingsState
@@ -117,75 +118,98 @@ fun HomeScreen(
             )
         }
     ) { innerPadding ->
+        // Status and the button are pinned; only the list below them scrolls.
+        //
+        // One `verticalScroll` over the whole column meant that reaching a
+        // location further down the list carried the START button off the top of
+        // the screen with it — so selecting an exit and then connecting to it
+        // took a scroll back up, and on a long subscription the button was
+        // simply not visible while choosing.
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .then(pkScreenBackground())
-                .padding(innerPadding)
-                .verticalScroll(scrollState)
-                .padding(horizontal = 32.dp, vertical = 16.dp),
+                .padding(innerPadding),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            RelayStatus(
-                isActive = state.isVpnConnected,
-                requiresSetup = requiresSetup,
-                transportLabel = state.selectedLocation?.config?.transportKind()?.label(),
-                // strip the " · XHTTP" suffix: the pill already names the transport
-                exitName = state.selectedLocation?.config?.displayName()
-                    ?.let { TransportGroup.baseName(it) }
-            )
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 32.dp)
+                    .padding(top = 16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                RelayStatus(
+                    isActive = state.isVpnConnected,
+                    requiresSetup = requiresSetup,
+                    transportLabel = state.selectedLocation?.config?.transportKind()?.label(),
+                    // strip the " · XHTTP" suffix: the pill already names the transport
+                    exitName = state.selectedLocation?.config?.displayName()
+                        ?.let { TransportGroup.baseName(it) },
+                    connectedSince = connectedSince
+                )
 
-            Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(16.dp))
 
-            StartButton(
-                isActive = state.isVpnConnected,
-                isLoading = state.isVpnLoading,
-                requiresSetup = requiresSetup,
-                label = primaryActionLabel,
-                enabled = true,
-                onClick = {
-                    if (requiresSetup) {
+                StartButton(
+                    isActive = state.isVpnConnected,
+                    isLoading = state.isVpnLoading,
+                    requiresSetup = requiresSetup,
+                    label = primaryActionLabel,
+                    enabled = true,
+                    onClick = {
+                        if (requiresSetup) {
+                            isAddSheetOpen = true
+                        } else {
+                            onToggleClick()
+                        }
+                    }
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .verticalScroll(scrollState)
+                    .padding(horizontal = 32.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                LocationSelectorScreen(
+                    onGetSubscriptionClick = onGetSubscriptionClick,
+                    onRefreshClick = { targetIds ->
+                        refreshHttpPings(targetIds)
+                    },
+                    onAddSubscriptionClick = {
                         isAddSheetOpen = true
-                    } else {
-                        onToggleClick()
-                    }
-                }
-            )
+                    },
+                    locations = locations,
+                    selectedLocationId = locationViewModel.selectedLocationId,
+                    pingsState = pingsState,
+                    onLocationSelected = { id ->
+                        locationViewModel.selectLocation(id) {
+                            viewModel.loadCurrentConfig()
+                            viewModel.restartVpnIfRunning()
+                        }
+                    },
+                    onLocationSettingsClick = { id ->
+                        onOpenLocationSettings(id)
+                    },
+                    onAddLocationClick = {
+                        onAddLocation()
+                    },
+                    showSettings = admin,
+                    showCustomLocation = admin
+                )
 
-            Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(24.dp))
 
-            LocationSelectorScreen(
-                onGetSubscriptionClick = onGetSubscriptionClick,
-                onRefreshClick = { targetIds ->
-                    refreshHttpPings(targetIds)
-                },
-                onAddSubscriptionClick = {
-                    isAddSheetOpen = true
-                },
-                locations = locations,
-                selectedLocationId = locationViewModel.selectedLocationId,
-                pingsState = pingsState,
-                onLocationSelected = { id ->
-                    locationViewModel.selectLocation(id) {
-                        viewModel.loadCurrentConfig()
-                        viewModel.restartVpnIfRunning()
-                    }
-                },
-                onLocationSettingsClick = { id ->
-                    onOpenLocationSettings(id)
-                },
-                onAddLocationClick = {
-                    onAddLocation()
-                },
-                showSettings = admin,
-                showCustomLocation = admin
-            )
+                PkVersionFooter()
 
-            Spacer(modifier = Modifier.height(24.dp))
-
-            PkVersionFooter()
-
-            Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(16.dp))
+            }
         }
 
         if (isLogsSheetOpen) {
