@@ -105,6 +105,20 @@ go list -m github.com/sagernet/sing-box github.com/xtls/libxray github.com/xtls/
   "${OLCRTC_MODULE}" github.com/sagernet/sing github.com/pion/transport/v4 \
   golang.org/x/net golang.org/x/crypto
 
+# Printed is not the same as checked, and olcrtc is the one that moves. A
+# replacement that resolves to anything other than the pin yields a framework
+# that looks entirely correct — three headers present, every API bound — and
+# then caches under the pinned tag, where nothing afterwards can tell it apart.
+# That is not hypothetical: a cache entry named for the revision carrying the
+# UDP relay turned out to hold a build without it, and cost a day of explaining
+# behaviour that belonged to code the binary did not contain.
+resolved="$(go list -m -f '{{if .Replace}}{{.Replace.Version}}{{else}}{{.Version}}{{end}}' "${OLCRTC_MODULE}")"
+if [ "${resolved}" != "${OLCRTC_VERSION}" ]; then
+  echo "olcrtc resolved to ${resolved}, but the pin says ${OLCRTC_VERSION}."
+  echo "Refusing to build: the result would be indistinguishable from the right one."
+  exit 1
+fi
+
 # Compile every core against that merged graph before binding them. The bind is
 # a 20+ minute step on a runner billed at 10x, and it starts by doing exactly
 # this — so a conflict caught here is caught twenty minutes earlier, and with a
