@@ -60,6 +60,15 @@ final class PacketTunnelController: ObservableObject {
 
     @Published private(set) var status: String = "not loaded"
 
+    /// The last status the system itself reported, readable without hopping to
+    /// the main actor.
+    ///
+    /// The watchdog asks "is the tunnel up?" from Kotlin's own thread, and a flag
+    /// the app sets when it *requests* a tunnel cannot answer that: an extension
+    /// killed for exceeding its memory cap never tells anyone, and the app went
+    /// on showing "connected" over a tunnel the system had already written off.
+    nonisolated(unsafe) private(set) static var systemConnected = false
+
     private var manager: NETunnelProviderManager?
     // Touched from deinit, which is not actor-isolated, so it cannot be either.
     private nonisolated(unsafe) var observer: NSObjectProtocol?
@@ -76,6 +85,7 @@ final class PacketTunnelController: ObservableObject {
             // NEVPNConnection is not Sendable; its status is a plain enum. Read
             // it here rather than carrying the connection into the task.
             let text = Self.describe(connection.status)
+            Self.systemConnected = connection.status == .connected
             Task { @MainActor in self?.status = text }
         }
     }
@@ -300,7 +310,8 @@ final class SwiftPacketTunnelBridge: NSObject, @unchecked Sendable, IosPacketTun
         Task { @MainActor in Self.controller.stop() }
     }
 
-    func isRunning() -> Bool { running }
+    /// What the system says, not what we asked for. See `systemConnected`.
+    func isRunning() -> Bool { PacketTunnelController.systemConnected }
 }
 
 /// Kotlin's callback, in terms Swift's concurrency checking accepts.
