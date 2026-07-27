@@ -1,6 +1,9 @@
 package org.olcbox.app.ui.features.home.components
 
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
@@ -26,10 +29,15 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.toMutableStateList
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -41,6 +49,7 @@ import org.olcbox.app.net.transportKind
 import org.olcbox.app.ui.components.kit.PkBrand
 import org.olcbox.app.ui.components.kit.PkFilterChip
 import org.olcbox.app.ui.components.kit.PkSectionLabel
+import org.olcbox.app.ui.theme.LocalPkPalette
 import org.olcbox.app.ui.features.locations.LocationItem
 import org.olcbox.app.ui.features.locations.PingsState
 import org.olcbox.app.ui.features.locations.components.LocationRow
@@ -139,8 +148,24 @@ fun LocationSelectorScreen(
             return@Column
         }
 
+        // Which groups are folded away. Two subscriptions of a dozen exits each
+        // is most of a phone screen before a user has scrolled at all, and the
+        // one they are not using is pure noise.
+        //
+        // Saveable, not merely remembered: opening a location's settings and
+        // coming back would otherwise unfold everything again.
+        val collapsed = rememberSaveable(
+            saver = listSaver(save = { it.toList() }, restore = { it.toMutableStateList() })
+        ) { mutableStateListOf<String>() }
+
+        fun toggle(key: String) {
+            if (!collapsed.remove(key)) collapsed.add(key)
+        }
+
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             subscriptionGroups.forEachIndexed { index, group ->
+                val groupKey = group.firstOrNull()?.subscriptionGroupKey() ?: "group-$index"
+                val isCollapsed = groupKey in collapsed
                 Column(
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -151,6 +176,11 @@ fun LocationSelectorScreen(
                     ) {
                         SubscriptionGroupHeader(
                             locations = group,
+                            collapsed = isCollapsed,
+                            // Folding one away must not hide the fact that the
+                            // exit in use is inside it.
+                            holdsSelection = group.any { it.storageId == selectedLocationId },
+                            onToggle = { toggle(groupKey) },
                             modifier = Modifier.weight(1f)
                         )
 
@@ -182,11 +212,14 @@ fun LocationSelectorScreen(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(2.dp))
+                    if (!isCollapsed) {
+                        Spacer(modifier = Modifier.height(2.dp))
+                    }
 
                     Column(
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
+                        if (isCollapsed) return@Column
                         group.forEach { location ->
                             LocationSelectorRow(
                                 location = location,
@@ -418,27 +451,81 @@ private fun LocationGroupHeader(
 @Composable
 private fun SubscriptionGroupHeader(
     locations: List<LocationItem>,
+    collapsed: Boolean,
+    holdsSelection: Boolean,
+    onToggle: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val pk = LocalPkPalette.current
     val first = locations.firstOrNull()
     val title = first?.subscriptionTitle().orEmpty().ifBlank { "Subscriptions" }
     val details = first?.subscriptionDetails()
+    // A quarter turn rather than two icons: the same arrow points at the rows
+    // when they are there and at the title when they are not.
+    val turn by animateFloatAsState(if (collapsed) -90f else 0f, label = "groupChevron")
 
-    Column(modifier = modifier.padding(start = 4.dp, top = 2.dp)) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.colorScheme.onSurface,
-            fontWeight = FontWeight.SemiBold
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(10.dp))
+            .clickable(onClick = onToggle)
+            .padding(start = 4.dp, top = 2.dp, bottom = 2.dp, end = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = PkIcons.ChevronRight,
+            contentDescription = if (collapsed) "Expand" else "Collapse",
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier
+                .size(18.dp)
+                .rotate(turn + 90f)
         )
 
-        if (!details.isNullOrBlank()) {
-            Text(
-                text = details,
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1
-            )
+        Spacer(modifier = Modifier.width(6.dp))
+
+        Column(modifier = Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false)
+                )
+
+                // Folded away, the group still has to admit it holds the exit
+                // currently in use — otherwise the screen shows no selection at
+                // all and the user goes looking for one.
+                if (collapsed && holdsSelection) {
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Box(
+                        modifier = Modifier
+                            .size(7.dp)
+                            .clip(CircleShape)
+                            .background(pk.accent)
+                    )
+                }
+            }
+
+            val subtitle = if (collapsed) {
+                listOfNotNull(
+                    "${locations.size} " + if (locations.size == 1) "location" else "locations",
+                    details
+                ).joinToString(" · ")
+            } else {
+                details
+            }
+
+            if (!subtitle.isNullOrBlank()) {
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
         }
     }
 }
