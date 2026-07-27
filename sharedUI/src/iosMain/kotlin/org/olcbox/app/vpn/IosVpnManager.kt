@@ -180,8 +180,20 @@ class IosVpnManager(
         val config = locationConfig.normalized()
         if (!config.isComplete()) return false
         if (_status.value is VpnStatus.Connected) return config == activeConfig
-        return config.kind == LocationKind.Olcrtc
+        return config.kind == LocationKind.Olcrtc || serverHost(config) != null
     }
+
+    /**
+     * The address a location's traffic is actually sent to, when it has one.
+     *
+     * olcRTC does not: it is addressed by a room on somebody else's SFU, so
+     * there is no host to reach and its own prober is the only measurement.
+     */
+    private fun serverHost(config: LocationConfig): String? =
+        config.rawLink
+            ?.let { LinkParser.parse(it) }
+            ?.host
+            ?.takeIf { it.isNotBlank() }
 
     override suspend fun ping(locationConfig: LocationConfig): Long? {
         val config = locationConfig.normalized()
@@ -191,8 +203,17 @@ class IosVpnManager(
             // operator and has confused this before.
             return if (config == activeConfig) measureThroughTunnel() else null
         }
-        if (config.kind != LocationKind.Olcrtc) return null
-        return runCheck(config) { request -> olcRtcBridge.ping(request) }
+        if (config.kind == LocationKind.Olcrtc) {
+            return runCheck(config) { request -> olcRtcBridge.ping(request) }
+        }
+        // Reality, Hysteria2 and XHTTP: no core here to negotiate with, so the
+        // measurement is of the path. Hysteria2 in particular refuses every
+        // other probe going — it answers no TCP, and its UDP is obfuscated —
+        // which is why a subscription full of it had nothing to show at all.
+        val host = serverHost(config) ?: return null
+        return withContext(Dispatchers.Default) {
+            packetTunnelBridge.icmpLatencyMs(host, ICMP_TIMEOUT_MS).takeIf { it >= 0 }
+        }
     }
 
     /**
@@ -708,6 +729,8 @@ class IosVpnManager(
         const val CHECK_TIMEOUT_MS = 20_000L
         /** One request through a tunnel that is already up; nothing to negotiate. */
         const val TUNNEL_PROBE_TIMEOUT_MS = 6_000L
+        /** One echo and back. Anything slower than this is not a usable exit. */
+        const val ICMP_TIMEOUT_MS = 3_000L
         const val HTTP_PING_URL = "https://www.google.com/generate_204"
         const val WATCHDOG_INTERVAL_MS = 10_000L
         const val SYSTEM_SYNC_INTERVAL_MS = 3_000L

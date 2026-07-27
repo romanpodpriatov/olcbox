@@ -128,6 +128,16 @@ interface IosPacketTunnelBridge {
      * where the answer is.
      */
     fun engineLog(): String
+
+    /**
+     * Round trip to [host] by ICMP echo, in milliseconds, or -1.
+     *
+     * The only latency figure obtainable for a location the app is not
+     * connected to: its core lives in the extension, which runs one location at
+     * a time. This measures the path rather than the protocol, which is what
+     * "ping" has always meant.
+     */
+    fun icmpLatencyMs(host: String, timeoutMillis: Long): Long
 }
 
 interface IosPlatformBridge {

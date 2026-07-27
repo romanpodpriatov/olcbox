@@ -495,6 +495,13 @@ final class SwiftPacketTunnelBridge: NSObject, @unchecked Sendable, IosPacketTun
 
     func tunnelBytesOut() -> Int64 { TunnelCounters.read().bytesOut }
 
+    func icmpLatencyMs(host: String, timeoutMillis: Int64) -> Int64 {
+        IcmpProbe.measure(
+            host: host,
+            timeout: TimeInterval(timeoutMillis) / 1000
+        ) ?? -1
+    }
+
     func engineLog() -> String {
         guard let container = FileManager.default.containerURL(
             forSecurityApplicationGroupIdentifier: Self.appGroupId
@@ -569,6 +576,159 @@ enum TunnelCounters {
             return Snapshot(bytesIn: Int64(data.ifi_ibytes), bytesOut: Int64(data.ifi_obytes))
         }
         return Snapshot(bytesIn: 0, bytesOut: 0)
+    }
+}
+
+/// One ICMP echo, timed.
+///
+/// The reason this exists at all: a latency figure for a location the app is
+/// not connected to. The cores that speak Reality, Hysteria2 and XHTTP live in
+/// the tunnel extension, which runs one location at a time, and they cannot be
+/// linked into the app beside olcRTC's framework — two gomobile binds in one
+/// binary is fifty duplicate symbols. So there is no way to negotiate with an
+/// exit from here in order to time it.
+///
+/// ICMP measures the path instead of the protocol, which is both less and
+/// exactly what a user means by "ping": how far away is that server. Every node
+/// checked answered it.
+///
+/// `SOCK_DGRAM` with `IPPROTO_ICMP` needs no privileges and no entitlement on
+/// Darwin — it is what Apple's own SimplePing uses. Two details it also
+/// documents: the sender computes the checksum, and a reply read from this
+/// socket arrives with its IP header still attached, so the ICMP message starts
+/// after it. Replies are matched on sequence and payload rather than on the
+/// identifier, which the kernel is free to rewrite.
+enum IcmpProbe {
+
+    private static let echoRequest: UInt8 = 8
+    private static let echoReply: UInt8 = 0
+    private static let payload = Array("proofkit-latency".utf8)
+
+    nonisolated(unsafe) private static var sequence: UInt16 = 0
+    private static let lock = NSLock()
+
+    private static func nextSequence() -> UInt16 {
+        lock.lock()
+        defer { lock.unlock() }
+        sequence &+= 1
+        return sequence
+    }
+
+    /// Round trip in milliseconds, or nil if it did not come back in time.
+    static func measure(host: String, timeout: TimeInterval) -> Int64? {
+        guard let target = resolve(host) else { return nil }
+
+        let fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_ICMP)
+        guard fd >= 0 else { return nil }
+        defer { close(fd) }
+
+        var tv = timeval(
+            tv_sec: Int(timeout),
+            tv_usec: Int32((timeout - Double(Int(timeout))) * 1_000_000)
+        )
+        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
+
+        let seq = nextSequence()
+        let request = echoPacket(sequence: seq)
+
+        let started = Date()
+        let sent = request.withUnsafeBufferPointer { buffer -> Int in
+            var addr = target
+            return withUnsafePointer(to: &addr) {
+                $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { sa in
+                    sendto(
+                        fd, buffer.baseAddress, buffer.count, 0,
+                        sa, socklen_t(MemoryLayout<sockaddr_in>.size)
+                    )
+                }
+            }
+        }
+        guard sent == request.count else { return nil }
+
+        // Somebody else's reply can arrive on this socket, so read until ours
+        // does or the clock runs out. SO_RCVTIMEO bounds each read; the deadline
+        // bounds the whole thing.
+        var reply = [UInt8](repeating: 0, count: 1024)
+        while Date().timeIntervalSince(started) < timeout {
+            let read = reply.withUnsafeMutableBufferPointer { buffer in
+                recv(fd, buffer.baseAddress, buffer.count, 0)
+            }
+            if read <= 0 { return nil }
+            if matches(reply, count: read, sequence: seq) {
+                return Int64(Date().timeIntervalSince(started) * 1000)
+            }
+        }
+        return nil
+    }
+
+    private static func echoPacket(sequence: UInt16) -> [UInt8] {
+        var packet = [UInt8](repeating: 0, count: 8 + payload.count)
+        packet[0] = echoRequest
+        packet[1] = 0
+        // 2..3 is the checksum, left zero while it is computed.
+        packet[4] = 0
+        packet[5] = 0
+        packet[6] = UInt8(sequence >> 8)
+        packet[7] = UInt8(sequence & 0xFF)
+        for (i, byte) in payload.enumerated() { packet[8 + i] = byte }
+
+        let sum = checksum(packet)
+        packet[2] = UInt8(sum >> 8)
+        packet[3] = UInt8(sum & 0xFF)
+        return packet
+    }
+
+    /// The internet checksum: one's complement of the one's complement sum of
+    /// the message read as 16-bit big-endian words.
+    private static func checksum(_ bytes: [UInt8]) -> UInt16 {
+        var total: UInt32 = 0
+        var index = 0
+        while index + 1 < bytes.count {
+            total += UInt32(bytes[index]) << 8 | UInt32(bytes[index + 1])
+            index += 2
+        }
+        if index < bytes.count { total += UInt32(bytes[index]) << 8 }
+        while total >> 16 != 0 { total = (total & 0xFFFF) + (total >> 16) }
+        return UInt16(truncatingIfNeeded: ~total)
+    }
+
+    private static func matches(_ reply: [UInt8], count: Int, sequence: UInt16) -> Bool {
+        guard count > 0 else { return false }
+        // Darwin hands this socket the IP header along with the reply, which is
+        // what SimplePing documents and skips. Both offsets are tried anyway:
+        // the alternative is a probe that silently never matches on a platform
+        // detail, and trying twice costs a comparison.
+        var offsets = [0]
+        if reply[0] >> 4 == 4 { offsets.insert(Int(reply[0] & 0x0F) * 4, at: 0) }
+        return offsets.contains { icmpEcho(reply, count: count, at: $0, sequence: sequence) }
+    }
+
+    private static func icmpEcho(
+        _ reply: [UInt8], count: Int, at offset: Int, sequence: UInt16
+    ) -> Bool {
+        guard count >= offset + 8 + payload.count else { return false }
+        guard reply[offset] == echoReply else { return false }
+        let seq = UInt16(reply[offset + 6]) << 8 | UInt16(reply[offset + 7])
+        guard seq == sequence else { return false }
+        return Array(reply[(offset + 8)..<(offset + 8 + payload.count)]) == payload
+    }
+
+    private static func resolve(_ host: String) -> sockaddr_in? {
+        var hints = addrinfo(
+            ai_flags: 0,
+            ai_family: AF_INET,
+            ai_socktype: SOCK_DGRAM,
+            ai_protocol: 0,
+            ai_addrlen: 0,
+            ai_canonname: nil,
+            ai_addr: nil,
+            ai_next: nil
+        )
+        var result: UnsafeMutablePointer<addrinfo>?
+        guard getaddrinfo(host, nil, &hints, &result) == 0, let first = result else { return nil }
+        defer { freeaddrinfo(result) }
+        guard let addr = first.pointee.ai_addr else { return nil }
+        return addr.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { $0.pointee }
     }
 }
 
