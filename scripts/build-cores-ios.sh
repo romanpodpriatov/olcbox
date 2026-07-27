@@ -50,6 +50,13 @@ GOMOBILE_VERSION="${GOMOBILE_VERSION:-v0.1.13}"
 OUT="${1:?usage: build-cores-ios.sh <output-dir>}"
 
 mkdir -p "$OUT"
+# Absolute from here on. The build runs from the temporary directory created
+# below, and a destination given as a relative path — which is how anyone would
+# type it — resolves against *that* from the `cd` onwards. The framework then
+# lands in a tree the exit trap deletes, while the cache copy succeeds because
+# its path is absolute, so the run ends with "cached in ..." and looks entirely
+# successful with nothing at the destination.
+OUT="$(cd "$OUT" && pwd)"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
