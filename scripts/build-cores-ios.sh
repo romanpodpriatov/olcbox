@@ -89,12 +89,23 @@ echo "== pre-flight: do both cores still compile together? =="
 go build -tags "with_gvisor,with_quic,with_utls,with_clash_api" ./...
 
 echo "== gomobile ${GOMOBILE_VERSION} (sagernet fork) =="
+# Into this build's own bin, never the shared ~/go/bin.
+#
+# sing-box needs the sagernet fork, but our olcrtc framework builds with
+# UPSTREAM gomobile and resolves it from PATH (:sharedUI:buildOlcrtcIosXcframework
+# runs plain `gomobile bind`). Installing the fork to GOPATH/bin overwrites that
+# shared binary and breaks the olcrtc build for every later Xcode run — which is
+# exactly what happened the first time this script ran on a real machine. A
+# private GOBIN keeps the fork to the twenty minutes it is needed for.
+export GOBIN="$work/bin"
 # If this step fails to build, it is the fork's x/tools pin against a newer Go
 # toolchain — the pairing hazard the separate libbox script warned about. The
 # fix is a Go version this fork builds on, not a change to anything below.
 go install "github.com/sagernet/gomobile/cmd/gomobile@${GOMOBILE_VERSION}"
 go install "github.com/sagernet/gomobile/cmd/gobind@${GOMOBILE_VERSION}"
-export PATH="$(go env GOPATH)/bin:$PATH"
+# First on PATH so `gomobile bind` finds the matching gobind, and so nothing
+# outside this script sees either of them.
+export PATH="$GOBIN:$PATH"
 gomobile init
 
 echo "== bind, both packages in one framework =="
