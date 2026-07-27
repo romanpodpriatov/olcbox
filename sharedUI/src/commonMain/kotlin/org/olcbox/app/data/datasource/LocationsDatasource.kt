@@ -27,6 +27,7 @@ import org.olcbox.app.data.identity.PersistentDeviceIdentityProvider
 import org.olcbox.app.data.model.LocationBundleV4
 import org.olcbox.app.data.model.LocationConfig
 import org.olcbox.app.data.model.LocationEntry
+import org.olcbox.app.data.model.SubscriptionSettings
 import org.olcbox.app.data.model.LocationMetadata
 import org.olcbox.app.data.model.SubscriptionMetadata
 import org.olcbox.app.data.repository.LocationsRepository
@@ -459,6 +460,16 @@ class LocationsRepositoryImpl(
         return deviceIdentityProvider.hwid()
     }
 
+    override suspend fun getSubscriptionSettings(): SubscriptionSettings =
+        getBundle().settings.normalized()
+
+    override suspend fun saveSubscriptionSettings(settings: SubscriptionSettings) {
+        mutationMutex.withLock {
+            val bundle = getBundleUnlocked()
+            saveBundleUnlocked(bundle.copy(settings = settings.normalized()))
+        }
+    }
+
     private suspend fun resolveParsedImport(
         text: String,
         fallbackSubscriptionInterval: Int? = null,
@@ -791,11 +802,27 @@ class LocationsRepositoryImpl(
     ): LocationBundleV4 {
         val currentBundle = current?.normalized()
         if (currentBundle == null || currentBundle.locations.isEmpty()) {
-            return imported
+            // The imported bundle carries default settings; the user's are on the
+            // one being replaced. Returning `imported` unchanged silently reset
+            // every preference the moment someone imported into an empty app.
+            return imported.copy(settings = currentBundle?.settings ?: imported.settings)
         }
 
-        val currentStorageIds = currentBundle.locations.mapTo(mutableSetOf()) { it.storageId }
-        val existingStorageIds = currentBundle.locations.mapTo(mutableSetOf()) { it.storageId }
+        // Importing a subscription URL that is already here is nearly always
+        // someone pasting a link they already have. Two copies of one provider's
+        // servers is a list nobody can read, and refreshing the one that exists
+        // is what they meant. Off, the old behaviour returns: both are kept.
+        val importedUrls = imported.locations
+            .mapNotNull { it.subscriptionUrl?.trim()?.takeIf { url -> url.isNotBlank() } }
+            .toSet()
+        val keptLocations = if (currentBundle.settings.preventDuplicates && importedUrls.isNotEmpty()) {
+            currentBundle.locations.filterNot { it.subscriptionUrl?.trim() in importedUrls }
+        } else {
+            currentBundle.locations
+        }
+
+        val currentStorageIds = keptLocations.mapTo(mutableSetOf()) { it.storageId }
+        val existingStorageIds = keptLocations.mapTo(mutableSetOf()) { it.storageId }
 
         val importedByStorageId = if (replaceMatchingStorageIds) {
             imported.locations.associateBy { it.storageId }
@@ -804,7 +831,7 @@ class LocationsRepositoryImpl(
         }
         val replacedStorageIds = importedByStorageId.keys.intersect(currentStorageIds)
 
-        val mergedLocations = currentBundle.locations
+        val mergedLocations = keptLocations
             .map { existing ->
                 importedByStorageId[existing.storageId]?.also {
                     existingStorageIds.add(it.storageId)

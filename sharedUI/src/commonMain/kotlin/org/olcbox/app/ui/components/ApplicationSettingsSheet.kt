@@ -49,6 +49,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -70,6 +71,8 @@ import androidx.compose.ui.unit.sp
 import org.olcbox.app.ui.icons.PkIcons
 import org.olcbox.app.CurrentAppInfo
 import org.olcbox.app.admin.AdminState
+import org.olcbox.app.data.model.SubscriptionSettings
+import org.olcbox.app.data.model.SubscriptionSort
 import org.olcbox.app.data.share.SubscriptionShareItem
 import org.olcbox.app.ui.components.kit.pkMaskSubscriptionUrl
 import org.olcbox.app.ui.components.kit.PkBrand
@@ -118,6 +121,9 @@ fun ApplicationSettingsSheet(
      */
     connectionModeTitle: String = "Proxy",
     connectionModeSummary: String = "Local SOCKS5 proxy",
+    /** How subscriptions behave. See [SubscriptionSettings]. */
+    subscriptionSettings: SubscriptionSettings = SubscriptionSettings(),
+    onSubscriptionSettingsChanged: (SubscriptionSettings) -> Unit = {},
     /**
      * False where the store owns updates.
      *
@@ -182,6 +188,8 @@ fun ApplicationSettingsSheet(
             when (currentRoute) {
                 SharedSettingsRoute.Hub -> SharedSettingsHubContent(
                     updateSettings = updateSettings,
+                    subscriptionSettings = subscriptionSettings,
+                    onSubscriptionOptionsClick = { route = SharedSettingsRoute.SubscriptionOptions },
                     showUpdates = showUpdates,
                     connectionSummary = connectionModeSummary,
                     subscriptionsCount = subscriptions.size,
@@ -226,6 +234,12 @@ fun ApplicationSettingsSheet(
                     onDeleteClick = onSubscriptionDeleteClick
                 )
 
+                SharedSettingsRoute.SubscriptionOptions -> SharedSubscriptionOptionsContent(
+                    settings = subscriptionSettings,
+                    onChanged = onSubscriptionSettingsChanged,
+                    onBack = { route = SharedSettingsRoute.Hub }
+                )
+
                 SharedSettingsRoute.Updates -> SharedUpdatesSettingsContent(
                     settings = updateSettings,
                     statusText = updateStatusText,
@@ -249,6 +263,8 @@ fun ApplicationSettingsSheet(
 @Composable
 private fun SharedSettingsHubContent(
     updateSettings: AppUpdateSettings,
+    subscriptionSettings: SubscriptionSettings,
+    onSubscriptionOptionsClick: () -> Unit,
     showUpdates: Boolean,
     connectionSummary: String,
     subscriptionsCount: Int,
@@ -277,6 +293,13 @@ private fun SharedSettingsHubContent(
             value = connectionSummary,
             icon = PkIcons.Public,
             onClick = onConnectionClick
+        )
+
+        SharedNavigationRow(
+            title = "Subscription Settings",
+            value = subscriptionSettings.hubSummary(),
+            icon = Icons.Outlined.Refresh,
+            onClick = onSubscriptionOptionsClick
         )
 
         SharedNavigationRow(
@@ -577,6 +600,225 @@ private fun SharedSocksProxyTextField(
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SharedSubscriptionOptionsContent(
+    settings: SubscriptionSettings,
+    onChanged: (SubscriptionSettings) -> Unit,
+    onBack: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 24.dp)
+            .padding(top = 16.dp, bottom = 32.dp)
+    ) {
+        SharedDetailHeader(
+            title = "Subscriptions",
+            subtitle = settings.hubSummary(),
+            onBack = onBack
+        )
+
+        Spacer(Modifier.height(20.dp))
+        PkSectionLabel("Updating")
+        Spacer(Modifier.height(10.dp))
+
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            SharedToggleRow(
+                title = "Auto update",
+                checked = settings.autoUpdate,
+                onCheckedChange = { onChanged(settings.copy(autoUpdate = it)) }
+            )
+
+            // Tapping cycles rather than opening a dialog: seven choices do not
+            // earn a screen of their own, and the current one is on the row.
+            SharedNavigationRow(
+                title = "Update interval (h)",
+                value = settings.updateIntervalHours.toString(),
+                icon = Icons.Outlined.Refresh,
+                enabled = settings.autoUpdate,
+                onClick = {
+                    val choices = SubscriptionSettings.INTERVAL_CHOICES
+                    val next = choices[
+                        (choices.indexOf(settings.updateIntervalHours) + 1) % choices.size
+                    ]
+                    onChanged(settings.copy(updateIntervalHours = next))
+                }
+            )
+
+            SharedToggleRow(
+                title = "Notify about updates",
+                checked = settings.notifyOnUpdate,
+                onCheckedChange = { onChanged(settings.copy(notifyOnUpdate = it)) }
+            )
+        }
+
+        SharedSettingsNote(
+            "Sets how often subscriptions refresh themselves while the app is running."
+        )
+
+        Spacer(Modifier.height(18.dp))
+
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            SharedToggleRow(
+                title = "Update on open",
+                checked = settings.refreshOnOpen,
+                onCheckedChange = { onChanged(settings.copy(refreshOnOpen = it)) }
+            )
+            SharedToggleRow(
+                title = "Ping on launch",
+                checked = settings.pingOnLaunch,
+                onCheckedChange = { onChanged(settings.copy(pingOnLaunch = it)) }
+            )
+            SharedToggleRow(
+                title = "Connect on launch",
+                checked = settings.connectOnLaunch,
+                onCheckedChange = { onChanged(settings.copy(connectOnLaunch = it)) }
+            )
+        }
+
+        SharedSettingsNote(
+            "Refreshing, connecting and measuring latency happen every time the app starts."
+        )
+
+        Spacer(Modifier.height(18.dp))
+        PkSectionLabel("Server list")
+        Spacer(Modifier.height(10.dp))
+
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            SubscriptionSort.entries.forEach { option ->
+                SharedChoiceRow(
+                    title = option.label(),
+                    selected = settings.sort == option,
+                    onClick = { onChanged(settings.copy(sort = option)) }
+                )
+            }
+
+            SharedToggleRow(
+                title = "Prevent duplicates",
+                checked = settings.preventDuplicates,
+                onCheckedChange = { onChanged(settings.copy(preventDuplicates = it)) }
+            )
+        }
+
+        SharedSettingsNote(
+            "Importing a subscription URL that is already here refreshes the one " +
+                "you have instead of adding a second copy of it."
+        )
+
+        Spacer(Modifier.height(18.dp))
+
+        SharedToggleRow(
+            title = "Collapsible subscriptions",
+            checked = settings.collapsible,
+            onCheckedChange = { onChanged(settings.copy(collapsible = it)) }
+        )
+
+        SharedSettingsNote(
+            "Lets a subscription's servers be folded away. Off, every subscription " +
+                "always shows all of them."
+        )
+    }
+}
+
+/** The explanatory line Happ puts under a block of switches. */
+@Composable
+private fun SharedSettingsNote(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(start = 4.dp, top = 8.dp, end = 4.dp)
+    )
+}
+
+@Composable
+private fun SharedToggleRow(
+    title: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Surface(
+        onClick = { onCheckedChange(!checked) },
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 56.dp)
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f)
+            )
+            Switch(checked = checked, onCheckedChange = onCheckedChange)
+        }
+    }
+}
+
+/** One of a set. A tick rather than a radio, to match the rest of this sheet. */
+@Composable
+private fun SharedChoiceRow(
+    title: String,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    Surface(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        color = if (selected) {
+            MaterialTheme.colorScheme.secondaryContainer
+        } else {
+            MaterialTheme.colorScheme.surfaceContainer
+        },
+        border = BorderStroke(
+            1.dp,
+            if (selected) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.outlineVariant
+            }
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 52.dp)
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f)
+            )
+            if (selected) {
+                Icon(
+                    imageVector = Icons.Rounded.Check,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
+    }
+}
+
+/** What the hub row says without opening anything. */
+private fun SubscriptionSettings.hubSummary(): String = listOfNotNull(
+    if (autoUpdate) "Every ${updateIntervalHours}h" else "Manual",
+    sort.takeIf { it != SubscriptionSort.None }?.label()
+).joinToString(" · ")
+
 @Composable
 private fun SharedUpdatesSettingsContent(
     settings: AppUpdateSettings,
@@ -1207,6 +1449,7 @@ private enum class SharedSettingsRoute {
     Connection,
     ConnectionMode,
     Subscriptions,
+    SubscriptionOptions,
     Updates,
     Logs,
     SocksProxy

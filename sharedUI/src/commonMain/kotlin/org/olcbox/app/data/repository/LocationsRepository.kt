@@ -4,6 +4,7 @@ import kotlinx.coroutines.flow.StateFlow
 import org.olcbox.app.data.model.LocationBundleV4
 import org.olcbox.app.data.model.LocationConfig
 import org.olcbox.app.data.model.LocationEntry
+import org.olcbox.app.data.model.SubscriptionSettings
 
 interface LocationsRepository {
     val changes: StateFlow<Long>
@@ -37,6 +38,10 @@ interface LocationsRepository {
     suspend fun setActiveLocationId(storageId: String?)
     suspend fun getActiveLocation(): LocationEntry?
     suspend fun getDeviceIdentity(): String
+
+    /** How subscriptions behave. Persisted with the bundle, so one copy per device. */
+    suspend fun getSubscriptionSettings(): SubscriptionSettings
+    suspend fun saveSubscriptionSettings(settings: SubscriptionSettings)
 }
 
 data class SubscriptionFetchProxy(

@@ -14,10 +14,12 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -67,6 +69,8 @@ fun HomeScreen(
     val state by viewModel.state.collectAsState()
     val connectedSince by viewModel.connectedSince.collectAsState()
     val traffic by viewModel.traffic.collectAsState()
+    val subscriptionSettings by viewModel.subscriptionSettings.collectAsState()
+    val subscriptionSettingsLoaded by viewModel.subscriptionSettingsLoaded.collectAsState()
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
     val pingsState = locationViewModel.pingsState
@@ -145,6 +149,28 @@ fun HomeScreen(
             },
             canPing = { config -> viewModel.canPing(config) },
         )
+    }
+
+    // What the app does on its own when it opens. Each is off unless asked for:
+    // connecting without being told to is not a default anyone should inherit.
+    var launchActionsDone by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(subscriptionSettingsLoaded, launchActionsDone) {
+        // Only once the stored settings have actually arrived: the first value is
+        // a default object, and acting on it would ignore what the user chose.
+        if (launchActionsDone || !subscriptionSettingsLoaded) return@LaunchedEffect
+        val settings = subscriptionSettings
+        launchActionsDone = true
+        if (settings.refreshOnOpen && hasSubscriptions) refreshSubscriptions()
+        if (settings.pingOnLaunch) refreshHttpPings()
+        if (settings.connectOnLaunch && state.canStartVpn && !state.isVpnConnected) {
+            onToggleClick()
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        viewModel.autoRefreshNotice.collect { message ->
+            snackbarHostState.showSnackbar(message)
+        }
     }
 
     Scaffold(
@@ -278,6 +304,8 @@ fun HomeScreen(
                         onAddLocationClick = {
                             onAddLocation()
                         },
+                        sort = subscriptionSettings.sort,
+                        collapsible = subscriptionSettings.collapsible,
                         showSettings = admin,
                         showCustomLocation = admin
                     )

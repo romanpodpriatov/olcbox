@@ -517,7 +517,13 @@ data class LocationBundleV4(
     val version: Int = 5,
     @SerialName("active_location_id")
     val activeLocationId: String? = null,
-    val locations: List<LocationEntry> = emptyList()
+    val locations: List<LocationEntry> = emptyList(),
+    /**
+     * How subscriptions behave. Kept here because this bundle is the one thing
+     * already persisted identically on every platform — a settings store of its
+     * own would be three implementations and three chances to disagree.
+     */
+    val settings: SubscriptionSettings = SubscriptionSettings()
 ) {
     fun normalized(): LocationBundleV4 {
         val normalizedLocations = locations
@@ -532,7 +538,8 @@ data class LocationBundleV4(
         return copy(
             version = CURRENT_VERSION,
             activeLocationId = active,
-            locations = normalizedLocations
+            locations = normalizedLocations,
+            settings = settings.normalized()
         )
     }
 

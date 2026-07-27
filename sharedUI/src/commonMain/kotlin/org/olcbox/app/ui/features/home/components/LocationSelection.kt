@@ -50,6 +50,7 @@ import org.olcbox.app.ui.components.kit.PkBrand
 import org.olcbox.app.ui.components.kit.PkFilterChip
 import org.olcbox.app.ui.components.kit.PkSectionLabel
 import org.olcbox.app.ui.theme.LocalPkPalette
+import org.olcbox.app.data.model.SubscriptionSort
 import org.olcbox.app.ui.features.locations.LocationItem
 import org.olcbox.app.ui.features.locations.PingsState
 import org.olcbox.app.ui.features.locations.components.LocationRow
@@ -71,6 +72,8 @@ fun LocationSelectorScreen(
     pingsState: PingsState,
     onLocationSelected: (String) -> Unit,
     onLocationSettingsClick: (String) -> Unit,
+    sort: SubscriptionSort = SubscriptionSort.None,
+    collapsible: Boolean = true,
     showSettings: Boolean = true,
     showCustomLocation: Boolean = true
 ) {
@@ -131,12 +134,28 @@ fun LocationSelectorScreen(
             }
             ?: locations
 
+        // Sorted within a group, never across: the grouping is what tells a user
+        // which provider a row came from, and ordering the whole list by ping
+        // would shuffle two subscriptions into each other.
+        fun List<LocationItem>.sorted(): List<LocationItem> = when (sort) {
+            SubscriptionSort.None -> this
+            SubscriptionSort.Alphabetical -> sortedBy { item ->
+                (item.metadata?.name?.takeIf { it.isNotBlank() } ?: item.fullName).lowercase()
+            }
+            // Unmeasured sinks rather than sorting as zero, which would put every
+            // row nobody has probed yet at the top as if it were the fastest.
+            SubscriptionSort.Ping -> sortedBy { item ->
+                pingsState.pingFor(item.storageId) ?: Int.MAX_VALUE
+            }
+        }
+
         val subscriptionLocations = visibleLocations.filter { !it.subscriptionUrl.isNullOrBlank() }
         val subscriptionGroups = subscriptionLocations
             .groupBy { it.subscriptionGroupKey() }
             .values
+            .map { it.sorted() }
             .toList()
-        val customLocations = visibleLocations.filter { it.subscriptionUrl.isNullOrBlank() }
+        val customLocations = visibleLocations.filter { it.subscriptionUrl.isNullOrBlank() }.sorted()
 
         if (locations.isEmpty()) {
             RelaySetupCard(
@@ -165,7 +184,7 @@ fun LocationSelectorScreen(
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             subscriptionGroups.forEachIndexed { index, group ->
                 val groupKey = group.firstOrNull()?.subscriptionGroupKey() ?: "group-$index"
-                val isCollapsed = groupKey in collapsed
+                val isCollapsed = collapsible && groupKey in collapsed
                 Column(
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -180,6 +199,7 @@ fun LocationSelectorScreen(
                             // Folding one away must not hide the fact that the
                             // exit in use is inside it.
                             holdsSelection = group.any { it.storageId == selectedLocationId },
+                            collapsible = collapsible,
                             onToggle = { toggle(groupKey) },
                             modifier = Modifier.weight(1f)
                         )
@@ -452,6 +472,7 @@ private fun LocationGroupHeader(
 private fun SubscriptionGroupHeader(
     locations: List<LocationItem>,
     collapsed: Boolean,
+    collapsible: Boolean,
     holdsSelection: Boolean,
     onToggle: () -> Unit,
     modifier: Modifier = Modifier
@@ -467,20 +488,24 @@ private fun SubscriptionGroupHeader(
     Row(
         modifier = modifier
             .clip(RoundedCornerShape(10.dp))
-            .clickable(onClick = onToggle)
+            .then(if (collapsible) Modifier.clickable(onClick = onToggle) else Modifier)
             .padding(start = 4.dp, top = 2.dp, bottom = 2.dp, end = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(
-            imageVector = PkIcons.ChevronRight,
-            contentDescription = if (collapsed) "Expand" else "Collapse",
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier
-                .size(18.dp)
-                .rotate(turn + 90f)
-        )
+        // No chevron where folding is switched off: an arrow that does not fold
+        // anything is a promise the screen does not keep.
+        if (collapsible) {
+            Icon(
+                imageVector = PkIcons.ChevronRight,
+                contentDescription = if (collapsed) "Expand" else "Collapse",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .size(18.dp)
+                    .rotate(turn + 90f)
+            )
 
-        Spacer(modifier = Modifier.width(6.dp))
+            Spacer(modifier = Modifier.width(6.dp))
+        }
 
         Column(modifier = Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {

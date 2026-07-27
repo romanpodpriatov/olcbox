@@ -6,6 +6,8 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.update
@@ -15,6 +17,7 @@ import kotlinx.coroutines.withContext
 import org.olcbox.app.data.exporter.LogExporter
 import org.olcbox.app.data.importer.ConfigImporter
 import org.olcbox.app.data.model.LocationConfig
+import org.olcbox.app.data.model.SubscriptionSettings
 import org.olcbox.app.data.repository.LocationsRepository
 import org.olcbox.app.data.repository.SubscriptionRefreshReport
 import org.olcbox.app.ui.features.locations.LocationItem
@@ -53,8 +56,40 @@ class HomeScreenViewModel(
     /** Same reasoning as [connectedSince]: the platform's own counter. */
     val traffic get() = vpnManager.traffic
 
+    /**
+     * What a background refresh found, when the user asked to be told. A shared
+     * flow rather than state: it is an event, and replaying the last one on every
+     * recomposition would show the same message twice.
+     */
+    private val _autoRefreshNotice = MutableSharedFlow<String>(extraBufferCapacity = 4)
+    val autoRefreshNotice = _autoRefreshNotice.asSharedFlow()
+
+    private val _subscriptionSettings = MutableStateFlow(SubscriptionSettings())
+    val subscriptionSettings = _subscriptionSettings.asStateFlow()
+
+    /**
+     * Whether [subscriptionSettings] is what was stored or merely the defaults.
+     *
+     * The load is asynchronous, so the first value every screen sees is a fresh
+     * object. Acting on it — connecting on launch, refreshing on open — would be
+     * acting on settings the user never chose, and doing so once is enough to
+     * make the real ones look ignored.
+     */
+    private val _subscriptionSettingsLoaded = MutableStateFlow(false)
+    val subscriptionSettingsLoaded = _subscriptionSettingsLoaded.asStateFlow()
+
+    fun updateSubscriptionSettings(settings: SubscriptionSettings) {
+        val normalized = settings.normalized()
+        _subscriptionSettings.value = normalized
+        viewModelScope.launch { locationsRepository.saveSubscriptionSettings(normalized) }
+    }
+
     init {
         loadCurrentConfig()
+        viewModelScope.launch {
+            _subscriptionSettings.value = locationsRepository.getSubscriptionSettings()
+            _subscriptionSettingsLoaded.value = true
+        }
         startSubscriptionAutoRefresh()
 
         viewModelScope.launch {
@@ -382,12 +417,16 @@ class HomeScreenViewModel(
         }
     }
 
+    /**
+     * Polls every few minutes and refreshes whatever is due, rather than sleeping
+     * for the whole interval: the interval is a user setting that can change
+     * under us, and a coroutine parked for a week would not notice.
+     */
     private fun startSubscriptionAutoRefresh() {
         viewModelScope.launch {
-            refreshDueSubscriptionsIfNeeded()
             while (true) {
+                if (_subscriptionSettings.value.autoUpdate) refreshDueSubscriptionsIfNeeded()
                 delay(SUBSCRIPTION_AUTO_REFRESH_POLL_MS)
-                refreshDueSubscriptionsIfNeeded()
             }
         }
     }
@@ -402,6 +441,9 @@ class HomeScreenViewModel(
         }
         if (report.updatedCount > 0) {
             loadCurrentConfigNow()
+            if (_subscriptionSettings.value.notifyOnUpdate) {
+                _autoRefreshNotice.emit(report.bulkMessage())
+            }
         }
     }
 
@@ -440,4 +482,9 @@ data class HomeScreenState(
         ?: startBlockedReason?.takeIf { selectedLocation != null && !canStartVpn }
 }
 
-private const val SUBSCRIPTION_AUTO_REFRESH_POLL_MS = 60L * 60L * 1_000L
+/**
+ * How often the due check runs, not how often a subscription refreshes — that
+ * is [SubscriptionSettings.updateIntervalHours], and a shorter poll is what lets
+ * a one-hour setting mean one hour.
+ */
+private const val SUBSCRIPTION_AUTO_REFRESH_POLL_MS = 5L * 60L * 1_000L
