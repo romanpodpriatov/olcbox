@@ -100,18 +100,18 @@ class SingBoxConfigTest {
         )
     }
 
-    // --- an upstream whose UDP is lossy still has to answer DNS ----------
+    // --- a TCP-only upstream still has to answer DNS --------------------
 
-    private fun lossyUdp() = Json.parseToJsonElement(
-        SingBoxConfig.buildTunSocks(10810, upstreamUdpIsLossy = true)
-    ).jsonObject
-
-    @Test fun lossyUdpUpstreamResolvesOverTcpThroughTheSameOutbound() {
-        // Lose DNS and nothing resolves, so no app opens a socket and the
-        // tunnel looks connected behind a blank browser. Measured, back when
-        // olcRTC had no UDP relay at all: its server logged real traffic to
-        // Telegram and Meta, which dial hardcoded IPs, and none from Safari.
-        val server = lossyUdp()["dns"]!!.jsonObject["servers"]!!.jsonArray[0].jsonObject
+    @Test fun tcpOnlyUpstreamResolvesOverTcpThroughTheSameOutbound() {
+        // olcRTC relays TCP streams and nothing else. Left alone, the device
+        // sends DNS as UDP into a hole: nothing resolves, no app opens a
+        // socket, and the tunnel looks connected while the browser stays
+        // blank. Measured — its server logged real traffic to Telegram and
+        // Meta, which dial hardcoded IPs, and none at all from Safari.
+        val json = Json.parseToJsonElement(
+            SingBoxConfig.buildTunSocks(10810, upstreamCarriesUdp = false)
+        ).jsonObject
+        val server = json["dns"]!!.jsonObject["servers"]!!.jsonArray[0].jsonObject
         assertEquals("tcp", server["type"]!!.jsonPrimitive.content)
         // Pointless unless it travels the tunnel: a detour naming anything but
         // the one outbound would resolve outside it, or not at all.
@@ -121,25 +121,25 @@ class SingBoxConfigTest {
         )
     }
 
-    @Test fun lossyUdpUpstreamClaimsDnsButLetsEverythingElseThrough() {
-        // The hijack is what sends queries to the server above instead of
-        // forwarding them as the datagrams they arrived as. Everything else
-        // must be left alone: olcRTC's UDP relay is the whole reason calls and
-        // games work, and a blanket reject here — which this config did carry
-        // while the relay was missing — silently kills them.
-        val rules = lossyUdp()["route"]!!.jsonObject["rules"]!!.jsonArray
+    @Test fun tcpOnlyUpstreamClaimsDnsBeforeItRejectsUdp() {
+        // Both rules are needed and the order is the whole point: the blanket
+        // UDP rule would otherwise swallow port 53 and undo the fix above.
+        val rules = Json.parseToJsonElement(
+            SingBoxConfig.buildTunSocks(10810, upstreamCarriesUdp = false)
+        ).jsonObject["route"]!!.jsonObject["rules"]!!.jsonArray
         assertEquals("hijack-dns", rules[0].jsonObject["action"]!!.jsonPrimitive.content)
         assertEquals(53, rules[0].jsonObject["port"]!!.jsonPrimitive.content.toInt())
-        assertEquals(1, rules.size, "nothing may reject UDP: calls and games ride it")
+        assertEquals("reject", rules[1].jsonObject["action"]!!.jsonPrimitive.content)
+        assertEquals("udp", rules[1].jsonObject["network"]!!.jsonPrimitive.content)
     }
 
-    @Test fun upstreamsWithSoundUdpAreLeftExactlyAsTheyWere() {
+    @Test fun upstreamsThatCarryUdpAreLeftExactlyAsTheyWere() {
         // xhttp reaches Xray through this same builder and works today; every
         // native outbound carries UDP itself. Rewriting their DNS would be a
         // regression dressed as a fix, so the sections appear for no one else.
         for (json in listOf(SingBoxConfig.buildTunSocks(10810), SingBoxConfig.buildTun(vless()))) {
             val obj = Json.parseToJsonElement(json).jsonObject
-            assertTrue(obj["dns"] == null, "an upstream with sound UDP must resolve as before")
+            assertTrue(obj["dns"] == null, "an upstream that carries UDP must resolve as before")
             assertTrue(obj["route"] == null, "no rules belong on a transport that already works")
         }
     }
