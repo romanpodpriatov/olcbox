@@ -271,6 +271,13 @@ kotlin {
                 framework {
                     baseName = "SharedUI"
                     isStatic = true
+                    // Said outright rather than inferred. Kotlin/Native derives a
+                    // bundle ID from the common package prefix of what it exports,
+                    // cannot always find one, and then warns on every single build
+                    // that it fell back to the bundle *name*. A framework going
+                    // into an App Store submission should carry an identifier
+                    // someone chose.
+                    binaryOption("bundleId", "org.proofkit.app.SharedUI")
                 }
             }
         }

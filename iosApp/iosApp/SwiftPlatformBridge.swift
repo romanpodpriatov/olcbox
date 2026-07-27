@@ -230,7 +230,14 @@ private struct SendableTextCallback: @unchecked Sendable {
 /// name in project.pbxproj — only the PacketTunnel folder is a synchronized
 /// group — so a new .swift here would not be compiled until someone added it in
 /// Xcode, and would fail as a mysteriously missing symbol.
-final class QrScannerViewController: UIViewController, AVCaptureMetadataOutputObjectsDelegate {
+/// `@preconcurrency` on the delegate conformance, the same way this file already
+/// conforms to `IosPlatformBridge`: `UIViewController` is `@MainActor`, the
+/// capture delegate protocol is not isolated at all, and Swift 6 calls that
+/// crossing a data race. It is not one here — the output is given `.main` as its
+/// callback queue below — but the compiler cannot see that, and the annotation
+/// is how you say so.
+final class QrScannerViewController: UIViewController,
+                                     @preconcurrency AVCaptureMetadataOutputObjectsDelegate {
 
     enum Outcome {
         case success(String)
@@ -238,7 +245,12 @@ final class QrScannerViewController: UIViewController, AVCaptureMetadataOutputOb
     }
 
     private let finished: (Outcome) -> Void
-    private let session = AVCaptureSession()
+    /// Handed to a background queue in `viewWillAppear`, because `startRunning`
+    /// blocks until the camera is configured and would freeze the presentation
+    /// animation on the main thread. `AVCaptureSession` is not Sendable, and
+    /// start/stop are the two calls Apple documents as safe off the main thread —
+    /// so the opt-out is narrow and true rather than a way to quiet the compiler.
+    nonisolated(unsafe) private let session = AVCaptureSession()
     private var preview: AVCaptureVideoPreviewLayer?
     /// A capture session keeps delivering after the first match; without this
     /// the callback fires once per frame and Kotlin sees a burst of imports.
