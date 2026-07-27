@@ -17,12 +17,49 @@ plugins {
 
 val olcboxVersion = providers.gradleProperty("olcbox.version").orElse("1.0.0")
 val olcboxVersionValue = olcboxVersion.get()
-// crypt1 client key + admin unlock hash: baked from CI env (absent locally ⇒ features off).
-val olcboxCryptKeyV1 = providers.environmentVariable("OLCBOX_CRYPT_KEY_V1").orElse("")
-val olcboxAdminPassSha256 = providers.environmentVariable("OLCBOX_ADMIN_PASS_SHA256").orElse("")
+// Machine-local build inputs, read from local.properties.
+//
+// Deliberately NOT a gradle property: this repository is public and its own
+// gradle.properties is tracked, so the file a person is most likely to reach for
+// is the one that would publish the value. local.properties is gitignored.
+//
+// It exists because the environment variable is not a local route at all —
+// Xcode's build phases do not inherit the shell's environment, so exporting one
+// in a terminal never reaches the gradle that Xcode runs.
+val localBuildProperties = providers.fileContents(
+    rootProject.layout.projectDirectory.file("local.properties")
+).asText.map { text ->
+    java.util.Properties().apply { load(text.reader()) }
+}.orElse(java.util.Properties())
+
+// Returns an absent provider when unset, not an empty one: an empty string is a
+// value, and it would win over the defaults chained after it.
+fun localBuildProperty(name: String) =
+    localBuildProperties.map { it.getProperty(name)?.takeIf(String::isNotBlank) }
+
+// The same value in gradle.properties would be committed and published. Say so
+// loudly rather than let it happen quietly. Only the tracked file is checked,
+// so this cannot misfire on a location that would have been safe.
+require(
+    !providers.fileContents(rootProject.layout.projectDirectory.file("gradle.properties"))
+        .asText.orElse("").get().contains("olcbox.cryptKeyV1")
+) {
+    "olcbox.cryptKeyV1 belongs in local.properties (gitignored), not gradle.properties " +
+        "(tracked, and this repository is public)."
+}
+
+// crypt1 client key + admin unlock hash: baked at build time (absent ⇒ features
+// off, so a crypt1 link imports as "No valid ProofKit config found").
+val olcboxCryptKeyV1 = providers.environmentVariable("OLCBOX_CRYPT_KEY_V1")
+    .orElse(localBuildProperty("olcbox.cryptKeyV1"))
+    .orElse("")
+val olcboxAdminPassSha256 = providers.environmentVariable("OLCBOX_ADMIN_PASS_SHA256")
+    .orElse(localBuildProperty("olcbox.adminPassSha256"))
+    .orElse("")
 // Where the app asks what a partner's opaque link points at. Not a secret —
 // overridable only so a test build can aim at something other than production.
 val olcboxResolverBase = providers.environmentVariable("OLCBOX_RESOLVER_BASE")
+    .orElse(localBuildProperty("olcbox.resolverBase"))
     .orElse("https://proofkit.org/api/v1")
 val generatedAppInfoDir = layout.buildDirectory.dir("generated/source/olcboxAppInfo/commonMain")
 
