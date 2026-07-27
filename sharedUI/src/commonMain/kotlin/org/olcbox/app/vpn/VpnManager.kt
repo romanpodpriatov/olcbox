@@ -17,6 +17,17 @@ interface VpnManager {
     val logs: StateFlow<List<String>>
     val status: StateFlow<VpnStatus>
     val isConnected: StateFlow<Boolean>
+
+    /**
+     * When the current session came up, in epoch milliseconds, or null when
+     * there is no session.
+     *
+     * A reconnect carries the value over rather than restarting it: rebuilding
+     * the tunnel after a network handover is not a new session, and a timer
+     * that resets every time the phone changes network says nothing useful.
+     */
+    val connectedSince: StateFlow<Long?>
+
     fun needsPermission(): Boolean
     fun startVpn()
     fun stopVpn()

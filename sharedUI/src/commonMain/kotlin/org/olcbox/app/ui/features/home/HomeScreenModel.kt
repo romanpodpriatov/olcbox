@@ -42,6 +42,14 @@ class HomeScreenViewModel(
     val state get() = _state.asStateFlow()
     val logs get() = vpnManager.logs
 
+    /**
+     * Passed straight through rather than copied into [HomeScreenState]: it is
+     * the platform's answer, and on iOS it can name a moment from before this
+     * process existed — a tunnel outlives the app there. Mirroring it into our
+     * own state would only give it a chance to disagree.
+     */
+    val connectedSince get() = vpnManager.connectedSince
+
     init {
         loadCurrentConfig()
         startSubscriptionAutoRefresh()

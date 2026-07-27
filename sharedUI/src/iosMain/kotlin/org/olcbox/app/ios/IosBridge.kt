@@ -98,6 +98,16 @@ interface IosPacketTunnelBridge {
     fun start(request: IosPacketTunnelStartRequest, callback: IosBridgeCallback)
     fun stop()
     fun isRunning(): Boolean
+
+    /**
+     * Epoch milliseconds at which the system says the running tunnel was
+     * established, or 0 when nothing is up.
+     *
+     * Read from the system rather than stamped when this process noticed, so it
+     * survives the app being killed and relaunched over a live tunnel — which
+     * on iOS is the ordinary case, not the exception.
+     */
+    fun connectedSinceEpochMs(): Long
 }
 
 interface IosPlatformBridge {

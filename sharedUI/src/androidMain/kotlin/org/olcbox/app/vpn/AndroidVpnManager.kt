@@ -56,6 +56,7 @@ class AndroidVpnManager(private val context: Context) : VpnManager {
     override val logs: StateFlow<List<String>> = OlcboxVpnState.logs
     override val status: StateFlow<VpnStatus> = OlcboxVpnState.status
     override val isConnected: StateFlow<Boolean> = OlcboxVpnState.isConnected
+    override val connectedSince: StateFlow<Long?> = OlcboxVpnState.connectedSince
     val connectionMode: StateFlow<AndroidConnectionMode> = _connectionMode.asStateFlow()
     val proxySettings: StateFlow<AndroidSocksProxySettings> = _proxySettings.asStateFlow()
     val splitTunnelSettings: StateFlow<AndroidSplitTunnelSettings> = _splitTunnelSettings.asStateFlow()

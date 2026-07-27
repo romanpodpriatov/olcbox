@@ -2,6 +2,7 @@ import Combine
 import NetworkExtension
 import SwiftUI
 import SharedUI
+import UIKit
 import os
 
 @main
@@ -69,9 +70,14 @@ final class PacketTunnelController: ObservableObject {
     /// on showing "connected" over a tunnel the system had already written off.
     nonisolated(unsafe) private(set) static var systemConnected = false
 
+    /// When the system says the running tunnel was established, in epoch
+    /// milliseconds, or 0 when nothing is up.
+    nonisolated(unsafe) private(set) static var systemConnectedSinceMs: Int64 = 0
+
     private var manager: NETunnelProviderManager?
     // Touched from deinit, which is not actor-isolated, so it cannot be either.
     private nonisolated(unsafe) var observer: NSObjectProtocol?
+    private nonisolated(unsafe) var foregroundObserver: NSObjectProtocol?
 
     private let log = Logger(subsystem: "org.proofkit.app", category: "tunnel-controller")
 
@@ -85,13 +91,62 @@ final class PacketTunnelController: ObservableObject {
             // NEVPNConnection is not Sendable; its status is a plain enum. Read
             // it here rather than carrying the connection into the task.
             let text = Self.describe(connection.status)
-            Self.systemConnected = connection.status == .connected
+            Self.adopt(connection.status, connectedDate: connection.connectedDate)
             Task { @MainActor in self?.status = text }
         }
+
+        // A notification is only ever a *change*, and the changes that matter
+        // most happen while this process is not running to hear them. See
+        // `syncFromSystem`.
+        foregroundObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in await self?.syncFromSystem() }
+        }
+
+        Task { @MainActor [weak self] in await self?.syncFromSystem() }
     }
 
     deinit {
         if let observer { NotificationCenter.default.removeObserver(observer) }
+        if let foregroundObserver { NotificationCenter.default.removeObserver(foregroundObserver) }
+    }
+
+    /// Records what the system is doing, for readers that cannot hop to the
+    /// main actor.
+    private nonisolated static func adopt(_ status: NEVPNStatus, connectedDate: Date?) {
+        // `.reasserting` is the system rebuilding the tunnel underneath us after
+        // a network change — the tunnel is still ours and still up. Counting it
+        // as down is how the watchdog came to tear down a perfectly healthy
+        // tunnel on an ordinary Wi-Fi↔cellular handover.
+        let up = status == .connected || status == .reasserting
+        systemConnected = up
+        systemConnectedSinceMs = up
+            ? Int64(((connectedDate ?? Date()).timeIntervalSince1970 * 1000).rounded())
+            : 0
+    }
+
+    /// Adopts whatever the system is doing right now, rather than waiting to be
+    /// told about the next change.
+    ///
+    /// Two things make this necessary rather than merely tidy. A tunnel outlives
+    /// the app: iOS suspends and then terminates a backgrounded app while the
+    /// extension keeps carrying traffic, so a launch begins with no idea that a
+    /// VPN is up. And `NEVPNStatusDidChange` is only delivered for a manager
+    /// this process has loaded — before the first `loadAllFromPreferences()`
+    /// the app is deaf to it entirely, so "connected" was never missed so much
+    /// as never observable. Between them, the app reported itself disconnected
+    /// over a working VPN, and the Kotlin watchdog read that as a dead tunnel.
+    func syncFromSystem() async {
+        if manager == nil {
+            manager = try? await NETunnelProviderManager.loadAllFromPreferences().first
+        }
+        guard let manager else { return }
+        let connection = manager.connection
+        Self.adopt(connection.status, connectedDate: connection.connectedDate)
+        status = Self.describe(connection.status)
     }
 
     /// Creates the VPN configuration if it is missing. The first save is what
@@ -117,6 +172,7 @@ final class PacketTunnelController: ObservableObject {
             try await manager.loadFromPreferences()
 
             self.manager = manager
+            Self.adopt(manager.connection.status, connectedDate: manager.connection.connectedDate)
             status = Self.describe(manager.connection.status)
             log.info("configuration ready")
         } catch {
@@ -126,7 +182,11 @@ final class PacketTunnelController: ObservableObject {
     }
 
     func start() async {
-        if manager == nil { await prepare() }
+        // Also when it is present but disabled: `syncFromSystem` loads whatever
+        // is in preferences so the app can see a running tunnel, and what it
+        // loads may be a configuration the user switched off in Settings.
+        // Starting that throws, where `prepare` re-enables and saves it.
+        if manager == nil || manager?.isEnabled != true { await prepare() }
         guard let manager else { return }
         do {
             try manager.connection.startVPNTunnel()
@@ -246,6 +306,19 @@ final class SwiftPacketTunnelBridge: NSObject, @unchecked Sendable, IosPacketTun
     /// from here would mean assuming an isolation this class does not have.
     private nonisolated(unsafe) var running = false
 
+    override init() {
+        super.init()
+        // Force the controller into existence at launch.
+        //
+        // A static `let` is lazy, and the two things that read it from Kotlin —
+        // `isRunning` and `connectedSinceEpochMs` — reach a static *variable*
+        // without ever touching the instance. Nothing else creates it until the
+        // first START, so the observers it registers, and the question it asks
+        // the system about what is already running, would not happen until the
+        // tap this exists to make unnecessary.
+        Task { @MainActor in _ = Self.controller }
+    }
+
     func start(request: IosPacketTunnelStartRequest, callback: IosBridgeCallback) {
         let answer = SendableCallback(callback: callback)
 
@@ -338,6 +411,10 @@ final class SwiftPacketTunnelBridge: NSObject, @unchecked Sendable, IosPacketTun
 
     /// What the system says, not what we asked for. See `systemConnected`.
     func isRunning() -> Bool { PacketTunnelController.systemConnected }
+
+    /// See `systemConnectedSinceMs`. Zero when nothing is up, which Kotlin
+    /// reads as "no session".
+    func connectedSinceEpochMs() -> Int64 { PacketTunnelController.systemConnectedSinceMs }
 }
 
 /// Kotlin's callback, in terms Swift's concurrency checking accepts.

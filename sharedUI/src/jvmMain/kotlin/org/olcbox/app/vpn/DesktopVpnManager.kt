@@ -22,6 +22,7 @@ import org.olcbox.app.data.repository.LocationsRepository
 import org.olcbox.app.data.repository.SubscriptionFetchProxy
 import org.olcbox.app.desktop.DesktopOs
 import org.olcbox.app.desktop.DesktopPaths
+import org.olcbox.app.util.nowMillis
 import org.olcbox.app.vpn.desktop.DesktopNativeAssets
 import org.olcbox.app.vpn.desktop.DesktopDnsResolver
 import org.olcbox.app.vpn.desktop.DesktopProxyController
@@ -61,6 +62,9 @@ class DesktopVpnManager private constructor(
 
     private val _isConnected = MutableStateFlow(false)
     override val isConnected: StateFlow<Boolean> = _isConnected.asStateFlow()
+
+    private val _connectedSince = MutableStateFlow<Long?>(null)
+    override val connectedSince: StateFlow<Long?> = _connectedSince.asStateFlow()
 
     private val _socksProxySettings = MutableStateFlow(DesktopSocksProxySettings())
     val socksProxySettings: StateFlow<DesktopSocksProxySettings> = _socksProxySettings.asStateFlow()
@@ -881,6 +885,14 @@ class DesktopVpnManager private constructor(
     private fun setStatus(status: VpnStatus) {
         _status.value = status
         _isConnected.value = status is VpnStatus.Connected
+        _connectedSince.value = when (status) {
+            // Only the first Connected of a session stamps the clock; a
+            // reconnect passes through Reconnecting and back, and must not
+            // restart it.
+            VpnStatus.Connected -> _connectedSince.value ?: nowMillis()
+            VpnStatus.Reconnecting -> _connectedSince.value
+            else -> null
+        }
     }
 
     private fun addLog(message: String) {

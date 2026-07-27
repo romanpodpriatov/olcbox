@@ -37,6 +37,7 @@ import org.olcbox.app.ios.IosOlcRtcBridge
 import org.olcbox.app.ios.IosOlcRtcCheckRequest
 import org.olcbox.app.ios.IosOlcRtcStartRequest
 import org.olcbox.app.ui.components.ApplicationSocksProxySettings
+import org.olcbox.app.util.nowMillis
 import platform.Foundation.NSUserDefaults
 
 class IosVpnManager(
@@ -57,6 +58,9 @@ class IosVpnManager(
     private val _isConnected = MutableStateFlow(false)
     override val isConnected: StateFlow<Boolean> = _isConnected.asStateFlow()
 
+    private val _connectedSince = MutableStateFlow<Long?>(null)
+    override val connectedSince: StateFlow<Long?> = _connectedSince.asStateFlow()
+
     private val _socksProxySettings = MutableStateFlow(loadSocksProxySettings())
     val socksProxySettings: StateFlow<ApplicationSocksProxySettings> = _socksProxySettings.asStateFlow()
 
@@ -73,8 +77,11 @@ class IosVpnManager(
     private var reconnectAttempt = 0
     private val timeSource = TimeSource.Monotonic
     private var lastReadyMark: TimeSource.Monotonic.ValueTimeMark? = null
+    private var lastStopMark: TimeSource.Monotonic.ValueTimeMark? = null
+    private var systemSyncJob: Job? = null
 
     init {
+        startSystemStateSync()
         olcRtcBridge.setLogWriter(object : IosLogWriter {
             override fun writeLog(message: String) {
                 message
@@ -118,6 +125,7 @@ class IosVpnManager(
 
     override fun stopVpn() {
         desiredConnected = false
+        lastStopMark = timeSource.markNow()
         watchdogJob?.cancel()
         reconnectJob?.cancel()
         generation++
@@ -165,6 +173,7 @@ class IosVpnManager(
 
     fun close() {
         desiredConnected = false
+        systemSyncJob?.cancel()
         watchdogJob?.cancel()
         reconnectJob?.cancel()
         generation++
@@ -380,6 +389,62 @@ class IosVpnManager(
     }
 
     /**
+     * Adopts a tunnel that is already running.
+     *
+     * The extension is a separate process with a life of its own. iOS suspends
+     * and then terminates a backgrounded app routinely, while the tunnel keeps
+     * carrying traffic — so the next launch starts from `Disconnected` with a
+     * VPN plainly working on the device. Nothing here ever asked the system
+     * otherwise, and the app showed "relay idle" over a live tunnel until the
+     * user tapped START, which then restarted a tunnel that was fine.
+     *
+     * This runs whether or not the app believes it is connected, because the
+     * case it exists for is precisely the one where it believes nothing.
+     */
+    private fun startSystemStateSync() {
+        systemSyncJob?.cancel()
+        systemSyncJob = scope.launch {
+            while (isActive) {
+                adoptRunningTunnelIfAny()
+                delay(SYSTEM_SYNC_INTERVAL_MS)
+            }
+        }
+    }
+
+    private suspend fun adoptRunningTunnelIfAny() {
+        if (!canAdopt()) return
+        // Under the same lock as start and stop, so a tick that coincides with a
+        // tap cannot interleave with it. Re-checked inside, because the tap may
+        // have been what was holding the lock.
+        mutex.withLock {
+            if (!canAdopt()) return@withLock
+
+            desiredConnected = true
+            reconnectAttempt = 0
+            lastReadyMark = timeSource.markNow()
+            setStatus(VpnStatus.Connected)
+            addLog("Adopted a packet tunnel that was already running")
+            startWatchdog()
+        }
+    }
+
+    private fun canAdopt(): Boolean {
+        // While the user wants a connection, the watchdog owns the state.
+        if (desiredConnected) return false
+        if (_status.value !is VpnStatus.Disconnected) return false
+        // A stop takes a moment to reach the extension, and the system reports
+        // the tunnel as up throughout it. Adopting in that window would undo the
+        // tap that asked for the stop.
+        val stoppedRecently = lastStopMark
+            ?.elapsedNow()
+            ?.inWholeMilliseconds
+            ?.let { it < ADOPT_AFTER_STOP_GRACE_MS }
+            ?: false
+        if (stoppedRecently) return false
+        return packetTunnelBridge.isRunning()
+    }
+
+    /**
      * Periodically verifies the tunnel is still up while the user wants to stay
      * connected, catching silent deaths that produce no log marker.
      */
@@ -444,6 +509,20 @@ class IosVpnManager(
     private fun setStatus(status: VpnStatus) {
         _status.value = status
         _isConnected.value = status is VpnStatus.Connected
+        _connectedSince.value = when (status) {
+            // The system's own establishment date first: after the app has been
+            // killed and relaunched over a live tunnel, a clock started when
+            // *this process* noticed would read minutes for a session hours old.
+            // Only the first Connected of a session stamps it — a reconnect
+            // passes through Reconnecting and back, and must not restart it.
+            VpnStatus.Connected ->
+                packetTunnelBridge.connectedSinceEpochMs().takeIf { it > 0L }
+                    ?: _connectedSince.value
+                    ?: nowMillis()
+
+            VpnStatus.Reconnecting -> _connectedSince.value
+            else -> null
+        }
     }
 
     private fun addLog(message: String) {
@@ -520,6 +599,8 @@ class IosVpnManager(
         const val CHECK_TIMEOUT_MS = 8_000L
         const val HTTP_PING_URL = "https://www.google.com/generate_204"
         const val WATCHDOG_INTERVAL_MS = 10_000L
+        const val SYSTEM_SYNC_INTERVAL_MS = 3_000L
+        const val ADOPT_AFTER_STOP_GRACE_MS = 10_000L
         const val RECONNECT_BASE_DELAY_MS = 2_000L
         const val RECONNECT_MAX_DELAY_MS = 30_000L
         const val MAX_RECONNECT_BACKOFF_POWER = 3
