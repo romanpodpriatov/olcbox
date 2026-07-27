@@ -250,10 +250,11 @@ class IosVpnManager(
                     SingBoxConfig.SINGBOX_SOCKS_PORT,
                     username = settings.username,
                     password = settings.password,
-                    // olcRTC relays TCP streams and nothing else, so sing-box
-                    // has to resolve names over the tunnel itself rather than
-                    // letting the device send DNS datagrams into a hole.
-                    upstreamCarriesUdp = false
+                    // olcRTC does relay UDP, but over a lossy video carrier.
+                    // Calls and games want that path; name resolution does
+                    // not, so sing-box answers DNS itself and asks upstream
+                    // over TCP.
+                    upstreamUdpIsLossy = true
                 ),
                 xrayConfig = null,
                 olcrtc = location.startRequest(locationsRepository.getDeviceIdentity(), settings)

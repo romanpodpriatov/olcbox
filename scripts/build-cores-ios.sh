@@ -41,7 +41,13 @@ LIBXRAY_VERSION="${LIBXRAY_VERSION:-v1.260711.0}"
 # with the fork. It works precisely *because* the fork kept the upstream path.
 OLCRTC_MODULE="github.com/openlibrecommunity/olcrtc"
 OLCRTC_FORK="${OLCRTC_FORK:-github.com/romanpodpriatov/olcrtc}"
-OLCRTC_VERSION="${OLCRTC_VERSION:-v0.0.0-20260713124136-42ae4e0c6a1a}"
+# Branch `proofkit-udp-spike`, which is the only lineage carrying a UDP relay.
+# The previous pin was upstream `42ae4e0c`, where internal/client/udp.go simply
+# does not exist: the SOCKS5 server there cannot answer UDP ASSOCIATE at all, so
+# every datagram — DNS first among them — died in the extension. The origin has
+# been running this same branch all along (its binary reproduces byte-for-byte
+# from this commit), so only the client half was behind.
+OLCRTC_VERSION="${OLCRTC_VERSION:-v0.0.0-20260717184831-c83717e7e900}"
 # Pinned rather than @latest: gobind generates code against the seq package of
 # its own version, so the tool and the module dependency below must be the same
 # version or the generated bindings compile against the wrong API.
