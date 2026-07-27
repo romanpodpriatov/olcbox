@@ -168,6 +168,17 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
             LibboxSetup(setup, &setupError)
             if let setupError { throw setupError }
 
+            // Before the command server is built: it reads this to decide whether
+            // to run its own OOM killer.
+            //
+            // A packet tunnel provider gets about 50 MB and is killed without
+            // ceremony for exceeding it — the app is told nothing, the system
+            // simply reports the VPN as inactive. This puts the Go runtime under
+            // a 45 MB ceiling and makes its collector aggressive, which matters
+            // more now than it did with one core: sing-box, Xray and olcRTC share
+            // that one runtime, and WebRTC is not the cheap one.
+            LibboxSetMemoryLimit(true)
+
             // Where the engine's own account of itself goes now. 1.13 dropped
             // the platform's WriteLog in favour of serving logs over the command
             // channel, which nothing here connects to; stderr reaches the shared
