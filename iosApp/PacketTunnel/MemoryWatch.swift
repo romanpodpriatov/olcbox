@@ -26,7 +26,14 @@ import os
 /// debugging facility: set `enabled` to false once it has answered.
 enum MemoryWatch {
 
-    static let enabled = true
+    /// Off.
+    ///
+    /// It answered its question — the extension was not dying of memory, and the
+    /// eight-second olcRTC timeout was — and what it costs is a file rewritten
+    /// four times a second inside a process with a ~50 MB ceiling. Flip to true
+    /// while chasing a kill nobody can explain; leave it false in anything that
+    /// ships.
+    static let enabled = false
 
     /// 250 ms, because the window being explained is about two seconds long —
     /// a slower tick could miss the whole climb.
