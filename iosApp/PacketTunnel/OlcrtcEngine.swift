@@ -33,14 +33,23 @@ enum OlcrtcEngine {
 
     private static let appGroup = "group.org.proofkit.app"
 
-    /// Verbose engine logging.
+    /// Verbose engine logging: on for development builds, never for a release.
     ///
     /// olcRTC keeps almost everything worth reading behind `logger.Debugf`, so
     /// with this off a failed start says "olcRTC start timed out" and not one
     /// word about what it tried — no ICE state, no carrier, no signalling. That
-    /// is the whole of what a user, or whoever is debugging for them, ever gets.
-    /// Diagnostic switch: set false once it has stopped earning its place.
+    /// is the whole of what a user, or whoever is debugging for them, ever gets,
+    /// and it cost most of a day.
+    ///
+    /// Tied to the build configuration rather than left as a constant somebody
+    /// has to remember to flip: ICE tracing writes hundreds of lines a second,
+    /// and this extension has a ~50 MB ceiling to stay under. A diagnostic
+    /// switch that ships is a diagnostic switch nobody turned off.
+    #if DEBUG
     private static let verbose = true
+    #else
+    private static let verbose = false
+    #endif
 
     /// Held for the lifetime of the process: olcRTC keeps whatever is handed to
     /// `SetProtector`/`SetLogWriter`, and Go's reference does not keep a Swift

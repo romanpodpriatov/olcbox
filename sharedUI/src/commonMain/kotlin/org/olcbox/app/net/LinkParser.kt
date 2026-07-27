@@ -93,8 +93,28 @@ object LinkParser {
             }
         }.toMap()
 
+    /**
+     * Percent-decoding that survives anything outside ASCII.
+     *
+     * `%XX` is a *byte*, and a character above U+007F is several of them. Turning
+     * each escape straight into a Char with that code point is Latin-1 decoding,
+     * which is why a subscription named `🇷🇺 EKB · Hy2 → 🌐` — on the wire
+     * `%F0%9F%87%B7%F0%9F%87%BA%20EKB%20%C2%B7…` — arrived on screen as
+     * `ð‡· EKB Â· Hy2 â' ð`. Consecutive escapes are
+     * gathered and decoded as UTF-8 together; a run that is not valid UTF-8
+     * yields replacement characters rather than throwing, because a mangled name
+     * must not cost the user the whole subscription.
+     */
     private fun urlDecode(s: String): String {
-        val sb = StringBuilder()
+        val out = StringBuilder()
+        val pending = mutableListOf<Byte>()
+
+        fun flushPending() {
+            if (pending.isEmpty()) return
+            out.append(pending.toByteArray().decodeToString())
+            pending.clear()
+        }
+
         var i = 0
         while (i < s.length) {
             val c = s[i]
@@ -102,15 +122,16 @@ object LinkParser {
                 c == '%' && i + 2 < s.length -> {
                     val hex = s.substring(i + 1, i + 3).toIntOrNull(16)
                     if (hex != null) {
-                        sb.append(hex.toChar()); i += 3
+                        pending.add(hex.toByte()); i += 3
                     } else {
-                        sb.append(c); i++
+                        flushPending(); out.append(c); i++
                     }
                 }
-                c == '+' -> { sb.append(' '); i++ }
-                else -> { sb.append(c); i++ }
+                c == '+' -> { flushPending(); out.append(' '); i++ }
+                else -> { flushPending(); out.append(c); i++ }
             }
         }
-        return sb.toString()
+        flushPending()
+        return out.toString()
     }
 }

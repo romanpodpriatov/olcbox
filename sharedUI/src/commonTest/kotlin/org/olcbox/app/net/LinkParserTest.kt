@@ -56,4 +56,28 @@ class LinkParserTest {
         assertNull(LinkParser.parse("not a link"))
         assertNull(LinkParser.parse("vless://missing-host"))
     }
+
+    /**
+     * The exact name a partner subscription serves. Every character above
+     * U+007F here is more than one byte, and decoding each `%XX` into its own
+     * Char turned this into `ð\u009F‡· EKB Â· Hy2 â\u0086\u2019 ð\u009F\u008C`
+     * on a real device — a whole subscription's worth of unreadable rows.
+     */
+    @Test fun decodesMultiByteTagsAsUtf8() {
+        val link = "hysteria2://11111111-1111-1111-1111-111111111111@1.2.3.4:38445" +
+            "?sni=example.org&obfs=salamander&obfs-password=pw" +
+            "#%F0%9F%87%B7%F0%9F%87%BA%20EKB%20%C2%B7%20Hy2%20%E2%86%92%20%F0%9F%8C%90"
+        val s = LinkParser.parse(link)
+        assertIs<OutboundSpec.Hysteria2>(s)
+        assertEquals("\uD83C\uDDF7\uD83C\uDDFA EKB \u00B7 Hy2 \u2192 \uD83C\uDF10", s.tag)
+    }
+
+    /** A run of escapes that is not valid UTF-8 must not lose the rest of the name. */
+    @Test fun survivesInvalidPercentSequences() {
+        val link = "hysteria2://11111111-1111-1111-1111-111111111111@1.2.3.4:38445" +
+            "?sni=example.org#%FF%FE%20ok"
+        val s = LinkParser.parse(link)
+        assertIs<OutboundSpec.Hysteria2>(s)
+        assertEquals(" ok", s.tag.takeLast(3))
+    }
 }
