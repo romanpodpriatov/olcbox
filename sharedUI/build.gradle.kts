@@ -79,33 +79,24 @@ val generateAppInfo by tasks.registering(GenerateAppInfoTask::class) {
     outputDir.set(generatedAppInfoDir)
 }
 
-// libbox comes prebuilt from the iOS Frameworks workflow rather than being
-// compiled here: it needs Go and the sagernet gomobile fork, and twenty minutes
-// of a macOS runner that has already been spent once.
-val libboxIosDir = layout.buildDirectory.dir("generated/libbox/ios")
-val libXrayIosDir = layout.buildDirectory.dir("generated/libxray/ios")
+// sing-box and Xray come prebuilt from the iOS Frameworks workflow rather than
+// being compiled here: they need Go and the sagernet gomobile fork, and twenty
+// minutes of a macOS runner that has already been spent once.
+//
+// One framework, not two. Each `gomobile bind` carries its own cgo bootstrap
+// and seq glue, so linking two of them into the extension fails with 49
+// duplicate symbols — see scripts/build-cores-ios.sh.
+val coresIosDir = layout.buildDirectory.dir("generated/cores/ios")
 
-val fetchLibboxIosXcframework by tasks.registering(Exec::class) {
+val fetchCoresIosXcframework by tasks.registering(Exec::class) {
     group = "build"
-    description = "Downloads the prebuilt Libbox.xcframework for the packet tunnel extension."
+    description = "Downloads the prebuilt Cores.xcframework (sing-box + Xray) for the packet tunnel extension."
 
-    outputs.dir(libboxIosDir)
+    outputs.dir(coresIosDir)
     commandLine(
         "bash",
-        rootProject.file("scripts/fetch-libbox-ios.sh").absolutePath,
-        libboxIosDir.get().asFile.absolutePath
-    )
-}
-
-val fetchLibXrayIosXcframework by tasks.registering(Exec::class) {
-    group = "build"
-    description = "Downloads the prebuilt LibXray.xcframework — xhttp locations only."
-
-    outputs.dir(libXrayIosDir)
-    commandLine(
-        "bash",
-        rootProject.file("scripts/fetch-libxray-ios.sh").absolutePath,
-        libXrayIosDir.get().asFile.absolutePath
+        rootProject.file("scripts/fetch-cores-ios.sh").absolutePath,
+        coresIosDir.get().asFile.absolutePath
     )
 }
 

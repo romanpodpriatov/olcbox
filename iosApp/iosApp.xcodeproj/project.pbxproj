@@ -239,7 +239,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -e\nexport PATH=\"$HOME/go/bin:/usr/local/go/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\"\nif [ -z \"$ARCHS\" ] || [ \"$ARCHS\" = \"undefined_arch\" ]; then\n  export ARCHS=arm64\nfi\nGRADLE_VERSION_ARGS=\"\"\nif [ -n \"$OLCBOX_VERSION\" ]; then\n  GRADLE_VERSION_ARGS=\"-Polcbox.version=$OLCBOX_VERSION\"\nfi\ncd \"$SRCROOT/..\"\n./gradlew $GRADLE_VERSION_ARGS :sharedUI:fetchLibboxIosXcframework :sharedUI:fetchLibXrayIosXcframework :sharedUI:buildOlcrtcIosXcframework :sharedUI:embedAndSignAppleFrameworkForXcode --no-configuration-cache\n";
+			shellScript = "set -e\nexport PATH=\"$HOME/go/bin:/usr/local/go/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\"\nif [ -z \"$ARCHS\" ] || [ \"$ARCHS\" = \"undefined_arch\" ]; then\n  export ARCHS=arm64\nfi\nGRADLE_VERSION_ARGS=\"\"\nif [ -n \"$OLCBOX_VERSION\" ]; then\n  GRADLE_VERSION_ARGS=\"-Polcbox.version=$OLCBOX_VERSION\"\nfi\ncd \"$SRCROOT/..\"\n./gradlew $GRADLE_VERSION_ARGS :sharedUI:fetchCoresIosXcframework :sharedUI:buildOlcrtcIosXcframework :sharedUI:embedAndSignAppleFrameworkForXcode --no-configuration-cache\n";
 		};
 		B31340F1301599E5009B5598 /* Fetch Core Frameworks */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -254,7 +254,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -e\n# The extension links Libbox and LibXray, so it fetches them itself.\n# It cannot inherit them from the app target: iosApp *depends on* this\n# target, so this one builds first and the app's gradle phase has not run\n# yet. Both fetch scripts return immediately once the framework is there,\n# so this costs nothing on every build after the first.\ncd \"$SRCROOT/..\"\nbash scripts/fetch-libbox-ios.sh \"$PWD/sharedUI/build/generated/libbox/ios\"\nbash scripts/fetch-libxray-ios.sh \"$PWD/sharedUI/build/generated/libxray/ios\"\n";
+			shellScript = "set -e\n# The extension links Cores — sing-box and Xray in one framework, because two\n# separate gomobile binds cannot be linked into one binary — so it fetches it\n# itself. It cannot inherit it from the app target: iosApp *depends on* this\n# target, so this one builds first and the app's gradle phase has not run yet.\n# The fetch returns immediately once the framework is there, so this costs\n# nothing on every build after the first.\ncd \"$SRCROOT/..\"\nbash scripts/fetch-cores-ios.sh \"$PWD/sharedUI/build/generated/cores/ios\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -465,21 +465,17 @@
 				FRAMEWORK_SEARCH_PATHS = "$(inherited)";
 				"FRAMEWORK_SEARCH_PATHS[sdk=iphoneos*]" = (
 					"$(inherited)",
-					"$(SRCROOT)/../sharedUI/build/generated/libbox/ios/Libbox.xcframework/ios-arm64",
-					"$(SRCROOT)/../sharedUI/build/generated/libxray/ios/LibXray.xcframework/ios-arm64",
+					"$(SRCROOT)/../sharedUI/build/generated/cores/ios/Cores.xcframework/ios-arm64",
 				);
 				"FRAMEWORK_SEARCH_PATHS[sdk=iphonesimulator*]" = (
 					"$(inherited)",
-					"$(SRCROOT)/../sharedUI/build/generated/libbox/ios/Libbox.xcframework/ios-arm64_x86_64-simulator",
-					"$(SRCROOT)/../sharedUI/build/generated/libxray/ios/LibXray.xcframework/ios-arm64_x86_64-simulator",
+					"$(SRCROOT)/../sharedUI/build/generated/cores/ios/Cores.xcframework/ios-arm64_x86_64-simulator",
 				);
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-ObjC",
 					"-framework",
-					Libbox,
-					"-framework",
-					LibXray,
+					Cores,
 					"-lresolv",
 				);
 				CURRENT_PROJECT_VERSION = 1;
@@ -549,21 +545,17 @@
 				FRAMEWORK_SEARCH_PATHS = "$(inherited)";
 				"FRAMEWORK_SEARCH_PATHS[sdk=iphoneos*]" = (
 					"$(inherited)",
-					"$(SRCROOT)/../sharedUI/build/generated/libbox/ios/Libbox.xcframework/ios-arm64",
-					"$(SRCROOT)/../sharedUI/build/generated/libxray/ios/LibXray.xcframework/ios-arm64",
+					"$(SRCROOT)/../sharedUI/build/generated/cores/ios/Cores.xcframework/ios-arm64",
 				);
 				"FRAMEWORK_SEARCH_PATHS[sdk=iphonesimulator*]" = (
 					"$(inherited)",
-					"$(SRCROOT)/../sharedUI/build/generated/libbox/ios/Libbox.xcframework/ios-arm64_x86_64-simulator",
-					"$(SRCROOT)/../sharedUI/build/generated/libxray/ios/LibXray.xcframework/ios-arm64_x86_64-simulator",
+					"$(SRCROOT)/../sharedUI/build/generated/cores/ios/Cores.xcframework/ios-arm64_x86_64-simulator",
 				);
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-ObjC",
 					"-framework",
-					Libbox,
-					"-framework",
-					LibXray,
+					Cores,
 					"-lresolv",
 				);
 				COPY_PHASE_STRIP = NO;

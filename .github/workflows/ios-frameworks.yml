@@ -1,19 +1,19 @@
 name: iOS Frameworks
 
-# The two Go frameworks the NetworkExtension needs. They change only when their
-# pinned versions change, and macOS runners bill at 10x — so this never runs on
-# push. Build once per version, publish, and let every other job download the
-# result instead of paying for it again.
+# The Go cores the NetworkExtension needs, in one framework.
+#
+# They cannot be two frameworks: each gomobile bind carries its own copy of the
+# cgo bootstrap and the gomobile seq layer, so linking two of them into one
+# extension fails with dozens of duplicate symbols. See build-cores-ios.sh.
+#
+# It changes only when the pinned versions change, and macOS runners bill at
+# 10x — so this never runs on push. Build once per version, publish, and let
+# every other build download the result instead of paying for it again.
 on:
   workflow_dispatch:
     inputs:
-      framework:
-        description: Which framework to build
-        type: choice
-        options: [both, libbox, libxray]
-        default: both
       publish:
-        description: Attach the result to the ios-frameworks release tag
+        description: Attach the result to the ios-cores release tag
         type: boolean
         default: true
 
@@ -26,86 +26,64 @@ concurrency:
 
 env:
   SINGBOX_VERSION: 1.11.15
-  XRAY_VERSION: 25.3.6
+  # Pinned, not `latest`: this is what the combined module was verified to
+  # resolve and compile against, alongside sing-box 1.11.15.
+  LIBXRAY_VERSION: v1.260711.0
 
 jobs:
   build:
-    name: gomobile bind (${{ matrix.framework }})
+    name: gomobile bind (sing-box + Xray)
     runs-on: macos-latest
-    timeout-minutes: 90
-
-    strategy:
-      # One failing framework must not throw away the other's twenty minutes of
-      # a 10x runner.
-      fail-fast: false
-      matrix:
-        include:
-          # The sagernet gomobile fork does not build on 1.24, and libXray's
-          # go.mod uses the `tool` directive, which does not exist before it.
-          # The two cannot share a toolchain, so they no longer share a job.
-          - framework: libbox
-            go: '1.23'
-          - framework: libxray
-            go: 'stable'
+    timeout-minutes: 120
 
     steps:
       - uses: actions/checkout@v5
-        if: inputs.framework == 'both' || inputs.framework == matrix.framework
 
       - uses: actions/setup-go@v7
-        if: inputs.framework == 'both' || inputs.framework == matrix.framework
         with:
-          go-version: ${{ matrix.go }}
+          # libXray requires a modern toolchain, and the sagernet gomobile fork
+          # builds on one now — so unlike before, both fit in a single job.
+          go-version: stable
 
-      - name: Cache built frameworks
+      - name: Cache built framework
         id: cache
-        if: inputs.framework == 'both' || inputs.framework == matrix.framework
         uses: actions/cache@v4
         with:
           path: dist/frameworks
-          key: ios-${{ matrix.framework }}-sb${{ env.SINGBOX_VERSION }}-xray${{ env.XRAY_VERSION }}-${{ hashFiles('scripts/build-lib*-ios.sh') }}
+          key: ios-cores-sb${{ env.SINGBOX_VERSION }}-lx${{ env.LIBXRAY_VERSION }}-${{ hashFiles('scripts/build-cores-ios.sh') }}
 
-      - name: Build Libbox
-        if: matrix.framework == 'libbox' && steps.cache.outputs.cache-hit != 'true' && (inputs.framework == 'both' || inputs.framework == 'libbox')
-        run: bash scripts/build-libbox-ios.sh "$PWD/dist/frameworks"
-
-      - name: Build LibXray
-        if: matrix.framework == 'libxray' && steps.cache.outputs.cache-hit != 'true' && (inputs.framework == 'both' || inputs.framework == 'libxray')
-        run: bash scripts/build-libxray-ios.sh "$PWD/dist/frameworks"
+      - name: Build Cores
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: bash scripts/build-cores-ios.sh "$PWD/dist/frameworks"
 
       - name: Report what was produced
-        if: inputs.framework == 'both' || inputs.framework == matrix.framework
         run: |
-          echo "### iOS frameworks" >> "$GITHUB_STEP_SUMMARY"
+          echo "### iOS cores" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           du -sh dist/frameworks/* 2>/dev/null >> "$GITHUB_STEP_SUMMARY" || echo "nothing built" >> "$GITHUB_STEP_SUMMARY"
+          ls -1 dist/frameworks/Cores.xcframework/ios-arm64/Cores.framework/Headers >> "$GITHUB_STEP_SUMMARY" || true
           echo '```' >> "$GITHUB_STEP_SUMMARY"
 
       - name: Package
-        if: inputs.framework == 'both' || inputs.framework == matrix.framework
         run: |
           cd dist/frameworks
-          for fw in *.xcframework; do
-            [ -d "$fw" ] || continue
-            zip -qry "../${fw%.xcframework}-ios.zip" "$fw"
-          done
+          zip -qry ../Cores-ios.zip Cores.xcframework
           ls -la ../
 
       - uses: actions/upload-artifact@v4
-        if: inputs.framework == 'both' || inputs.framework == matrix.framework
         with:
-          name: ios-frameworks-${{ matrix.framework }}
+          name: ios-cores
           path: dist/*.zip
           if-no-files-found: error
 
       # A release asset outlives the 90-day artifact retention, so the extension
       # build can fetch a known framework months later without a macOS runner.
-      - name: Publish to the ios-frameworks tag
-        if: inputs.publish && (inputs.framework == 'both' || inputs.framework == matrix.framework)
+      - name: Publish to the ios-cores tag
+        if: inputs.publish
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          tag="ios-frameworks-sb${SINGBOX_VERSION}-xray${XRAY_VERSION}"
+          tag="ios-cores-sb${SINGBOX_VERSION}-lx${LIBXRAY_VERSION}"
           gh release view "$tag" >/dev/null 2>&1 || \
-            gh release create "$tag" --prerelease --notes "gomobile frameworks for the iOS NetworkExtension: sing-box ${SINGBOX_VERSION}, Xray ${XRAY_VERSION}."
+            gh release create "$tag" --prerelease --notes "sing-box ${SINGBOX_VERSION} + libXray ${LIBXRAY_VERSION} bound into one framework for the iOS NetworkExtension."
           gh release upload "$tag" dist/*.zip --clobber

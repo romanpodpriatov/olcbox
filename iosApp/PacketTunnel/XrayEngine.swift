@@ -1,5 +1,5 @@
+import Cores
 import Foundation
-import LibXray
 import os
 
 /// Xray-core, running inside the tunnel extension for one transport only.
