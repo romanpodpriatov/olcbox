@@ -573,11 +573,42 @@ class LocationsRepositoryImpl(
             ?: fallbackSubscriptionInterval
             ?: source.subscriptionUrl?.let { SubscriptionMetadata.DEFAULT_UPDATE_INTERVAL_HOURS }
 
-        return parseImport(
+        val parsed = parseImport(
             source.content.normalizedImportText(),
             source.subscriptionUrl,
             initialSubscriptionInterval
+        ) ?: return null
+
+        // Stamped here rather than only on refresh.
+        //
+        // The profile was applied in the refresh path alone, so a freshly pasted
+        // link showed its own hostname and nothing else until the user pressed
+        // the arrows — at which point the name, the quota and the expiry all
+        // appeared, which looks like the first fetch simply failed to ask.
+        // The first fetch *is* a refresh, and this is the one funnel both take.
+        if (source.profile == null) return parsed
+        val stampedAt = nowEpochMs()
+        return parsed.copy(
+            bundle = parsed.bundle.copy(
+                locations = parsed.bundle.locations.map { entry ->
+                    entry.copy(
+                        metadata = entry.metadata.withSubscriptionProfile(source.profile, stampedAt)
+                    )
+                }
+            )
         )
+    }
+
+    private fun LocationMetadata?.withSubscriptionProfile(
+        profile: SubscriptionProfile?,
+        refreshedAtEpochMs: Long
+    ): LocationMetadata? {
+        if (profile == null) return this
+        val base = this ?: LocationMetadata()
+        val subscription = (base.subscription.withProfile(profile) ?: SubscriptionMetadata())
+            .copy(lastRefreshAtEpochMs = refreshedAtEpochMs)
+            .normalized()
+        return base.copy(subscription = subscription)
     }
 
     private suspend fun resolveImportSource(

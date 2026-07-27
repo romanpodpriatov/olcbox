@@ -206,6 +206,7 @@ fun LocationSelectorScreen(
                             holdsSelection = group.any { it.storageId == selectedLocationId },
                             collapsible = collapsible,
                             onToggle = { toggle(groupKey) },
+                            onOpenUrl = onOpenUrl,
                             modifier = Modifier.weight(1f)
                         )
 
@@ -222,24 +223,17 @@ fun LocationSelectorScreen(
                             horizontalArrangement = Arrangement.spacedBy(2.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            // The provider's own ways of being reached, which it
-                            // publishes in `support-url` and
-                            // `profile-web-page-url`. Shown only when it did.
-                            val subscription = group.firstOrNull()?.metadata?.subscription
-                            subscription?.supportUrl?.takeIf { it.isNotBlank() }?.let { url ->
-                                LinkButton(
-                                    icon = PkIcons.Send,
-                                    description = "Contact support",
-                                    onClick = { onOpenUrl(url) }
-                                )
-                            }
-                            subscription?.webPageUrl?.takeIf { it.isNotBlank() }?.let { url ->
-                                LinkButton(
-                                    icon = PkIcons.Info,
-                                    description = "Open the provider's site",
-                                    onClick = { onOpenUrl(url) }
-                                )
-                            }
+                            // Support sits with the other actions on the right;
+                            // the provider's page is information about the
+                            // subscription and rides with its name, on the left.
+                            group.firstOrNull()?.metadata?.subscription
+                                ?.supportUrl?.takeIf { it.isNotBlank() }?.let { url ->
+                                    LinkButton(
+                                        icon = PkIcons.Send,
+                                        description = "Contact support",
+                                        onClick = { onOpenUrl(url) }
+                                    )
+                                }
 
                             LatencyButton(
                                 isRunning = isGroupRefreshing,
@@ -516,6 +510,7 @@ private fun SubscriptionGroupHeader(
     collapsible: Boolean,
     holdsSelection: Boolean,
     onToggle: () -> Unit,
+    onOpenUrl: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val pk = LocalPkPalette.current
@@ -546,8 +541,20 @@ private fun SubscriptionGroupHeader(
                     .rotate(turn + 90f)
             )
 
-            Spacer(modifier = Modifier.width(6.dp))
+            Spacer(modifier = Modifier.width(2.dp))
         }
+
+        // An i in a circle, first thing on the row: this is about the
+        // subscription rather than an action on it.
+        first?.metadata?.subscription?.webPageUrl?.takeIf { it.isNotBlank() }?.let { url ->
+            LinkButton(
+                icon = PkIcons.Info,
+                description = "Open the provider's site",
+                onClick = { onOpenUrl(url) }
+            )
+        }
+
+        Spacer(modifier = Modifier.width(4.dp))
 
         Column(modifier = Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
