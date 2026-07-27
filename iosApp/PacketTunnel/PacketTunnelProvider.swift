@@ -71,6 +71,12 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         completionHandler: @escaping (Error?) -> Void
     ) {
         log.info("startTunnel")
+        // First thing, so the sentinel the app leaves in stage.txt is replaced
+        // the moment this process runs a line of its own. Anything the app reads
+        // back after this belongs to this attempt; the sentinel surviving means
+        // the extension never got here at all, which is a different fault with a
+        // different fix.
+        mark("startTunnel")
 
         if let container = FileManager.default.containerURL(
             forSecurityApplicationGroupIdentifier: Self.appGroup
@@ -141,6 +147,25 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         completionHandler: @escaping (Error?) -> Void
     ) {
         do {
+            // Before any core runs, which is the whole point of moving it here.
+            //
+            // This used to sit below, after the cores had been started, so the
+            // one engine whose startup can fail on its own — olcRTC, which has
+            // to reach an SFU across the internet before it reports ready — was
+            // precisely the one whose output went to an stderr nobody was
+            // capturing. Its failures arrived as a bare "olcRTC start timed out"
+            // with no account of what it had tried, and the explanation was
+            // written to a file descriptor pointed at nothing.
+            //
+            // Go panics land here too, from any of the three.
+            var logError: NSError?
+            LibboxRedirectStderr(container.appendingPathComponent("engine.log").path, &logError)
+            if let logError {
+                // Not fatal: losing the log is worse for the next bug than for
+                // this connection.
+                log.error("engine log unavailable: \(logError.localizedDescription, privacy: .public)")
+            }
+
             // The borrowed core first, whichever it is: sing-box's outbound
             // points at its SOCKS port, and a sing-box that starts against a
             // port nobody is listening on fails every connection rather than
@@ -187,17 +212,6 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
             // that one runtime, and WebRTC is not the cheap one.
             LibboxSetMemoryLimit(true)
 
-            // Where the engine's own account of itself goes now. 1.13 dropped
-            // the platform's WriteLog in favour of serving logs over the command
-            // channel, which nothing here connects to; stderr reaches the shared
-            // container just as well and carries Go panics besides.
-            var logError: NSError?
-            LibboxRedirectStderr(container.appendingPathComponent("engine.log").path, &logError)
-            if let logError {
-                // Not fatal: losing the log is worse for the next bug than for
-                // this connection.
-                log.error("engine log unavailable: \(logError.localizedDescription, privacy: .public)")
-            }
             mark("service")
 
             // The platform object is what libbox calls back into; openTun is where

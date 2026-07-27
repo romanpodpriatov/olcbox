@@ -202,6 +202,28 @@ final class PacketTunnelController: ObservableObject {
         log.info("stopVPNTunnel requested")
     }
 
+    /// Waits for the system to let go of the previous tunnel.
+    ///
+    /// `stopVPNTunnel()` only queues the request, and a start issued while the
+    /// old tunnel is still tearing down races it: the extension is asked to
+    /// establish while the system is still dismantling the one before, and what
+    /// comes out is a tunnel that reaches the relay and then dies. Returns as
+    /// soon as the system reports it down, or after `timeout` — a start attempt
+    /// that is merely late beats one that never happens.
+    func waitUntilDown(timeout: TimeInterval = 5) async {
+        guard let manager else { return }
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            switch manager.connection.status {
+            case .disconnected, .invalid:
+                return
+            default:
+                try? await Task.sleep(nanoseconds: 150_000_000)
+            }
+        }
+        log.error("tunnel did not report itself down within \(timeout, privacy: .public)s")
+    }
+
     /// Waits for the system to say the tunnel is actually up.
     ///
     /// `startVPNTunnel()` only queues the request: it returns without error for
@@ -235,14 +257,34 @@ final class PacketTunnelController: ObservableObject {
         return Self.lastStage() ?? "timed out waiting for the tunnel"
     }
 
+    /// Written by the app just before it asks for a tunnel, so a stage read back
+    /// afterwards is known to belong to this attempt. See `start(request:)`.
+    ///
+    /// `nonisolated` because the bridge writes it from Kotlin's thread, and this
+    /// class is `@MainActor`.
+    nonisolated static let requestedStage = "requested by the app"
+
     /// The extension's own breadcrumb, which is the only thing that knows *why*
     /// a start failed — the system tells the app nothing but "disconnected".
     private static func lastStage() -> String? {
         let stage = shared("stage.txt")
 
-        // A stage that says `failed` explains itself: the extension caught an
-        // error and wrote it down.
-        if let stage, stage.hasPrefix("failed") { return stage }
+        // Our own sentinel, untouched: the extension never wrote a line, so it
+        // never ran. Nothing further can be said from here, and saying it plainly
+        // beats reporting a stage from some earlier run as if it were this one.
+        if stage == requestedStage {
+            return "the tunnel extension did not start — check the VPN profile in Settings"
+        }
+
+        // A stage that says `failed` explains itself — as far as it goes. What
+        // it never carries is the engine's own account: "olcRTC start timed out"
+        // says a WebRTC session did not come up in eight seconds and nothing
+        // whatever about why. The tail of the engine log does, and it is the
+        // difference between a bug report and a shrug.
+        if let stage, stage.hasPrefix("failed") {
+            guard let tail = engineLogTail() else { return stage }
+            return "\(stage)\n\(tail)"
+        }
 
         // The harder case, and until now the silent one: the extension reached
         // a perfectly good stage — `ready`, carrying traffic — and was then
@@ -255,6 +297,21 @@ final class PacketTunnelController: ObservableObject {
             return "died at stage '\(stage)' — \(memory)"
         }
         return nil
+    }
+
+    /// The last few lines the engines wrote to stderr, which the extension
+    /// redirects into the App Group before it starts any of them.
+    ///
+    /// Trimmed hard on purpose: this goes on a phone screen under a status pill,
+    /// not into a log viewer, and the lines that matter are always the last ones.
+    private static func engineLogTail(lines: Int = 4) -> String? {
+        guard let log = shared("engine.log") else { return nil }
+        let tail = log
+            .split(separator: "\n")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+            .suffix(lines)
+        return tail.isEmpty ? nil : tail.joined(separator: "\n")
     }
 
     /// Last line of the extension's memory trace. See MemoryWatch.
@@ -302,10 +359,6 @@ final class SwiftPacketTunnelBridge: NSObject, @unchecked Sendable, IosPacketTun
 
     private static let appGroupId = "group.org.proofkit.app"
 
-    /// Plain flag rather than a peek at the controller: reading main-actor state
-    /// from here would mean assuming an isolation this class does not have.
-    private nonisolated(unsafe) var running = false
-
     override init() {
         super.init()
         // Force the controller into existence at launch.
@@ -344,6 +397,16 @@ final class SwiftPacketTunnelBridge: NSObject, @unchecked Sendable, IosPacketTun
                 Self.olcrtcParameters(request.olcrtc),
                 to: container.appendingPathComponent("olcrtc.json")
             )
+            // Claim the breadcrumb before the extension is asked to run.
+            //
+            // `stage.txt` outlives the process that wrote it, and the app now
+            // *shows* it. Without this, an extension that never gets as far as
+            // its own first line leaves the previous attempt's stage on screen —
+            // a failure reported in detail, belonging to a run that is over. If
+            // this sentinel is still there afterwards, the extension wrote
+            // nothing at all, which is itself the most useful thing to say.
+            try Data(PacketTunnelController.requestedStage.utf8)
+                .write(to: container.appendingPathComponent("stage.txt"))
         } catch {
             answer.callback.onResult(result: IosBridgeResult(
                 success: false,
@@ -352,22 +415,26 @@ final class SwiftPacketTunnelBridge: NSObject, @unchecked Sendable, IosPacketTun
             return
         }
 
-        // Read before the hop, as before — but nothing waits here now. The
-        // tunnel takes seconds to settle and the answer goes back through the
-        // callback once the system has actually decided, instead of holding a
-        // coroutine thread on a semaphore for the duration.
-        let wasRunning = running
-        Task { @MainActor [weak self] in
+        // Nothing waits here: the tunnel takes seconds to settle and the answer
+        // goes back through the callback once the system has actually decided,
+        // instead of holding a coroutine thread on a semaphore for the duration.
+        Task { @MainActor in
             // Starting an already-running tunnel does nothing at all, and the
-            // extension keeps the config it was launched with — which looked
+            // extension keeps the config it was launched with — which looks
             // exactly like a working VPN that does not change your IP.
-            if wasRunning {
-                Self.controller.stop()
-                try? await Task.sleep(nanoseconds: 700_000_000)
-            }
+            //
+            // What "already running" means has to come from the system. It used
+            // to come from a flag this object set when it last started a tunnel
+            // itself, which is false on every fresh launch — including a launch
+            // over a tunnel that is very much running, now that the app adopts
+            // one. The old tunnel then survived the start, or, worse, the stop
+            // Kotlin had already sent landed midway through it.
+            Self.controller.stop()
+            // Waited for, not slept through. A fixed 700 ms was a guess about
+            // how long a teardown takes; this asks.
+            await Self.controller.waitUntilDown()
             await Self.controller.start()
             let reason = await Self.controller.waitUntilUp()
-            self?.running = reason == nil
             answer.callback.onResult(
                 result: IosBridgeResult(success: reason == nil, message: reason)
             )
@@ -405,7 +472,6 @@ final class SwiftPacketTunnelBridge: NSObject, @unchecked Sendable, IosPacketTun
     }
 
     func stop() {
-        running = false
         Task { @MainActor in Self.controller.stop() }
     }
 
