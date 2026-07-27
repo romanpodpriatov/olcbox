@@ -299,7 +299,16 @@ data class SubscriptionMetadata(
     @SerialName("update_interval_hours")
     val updateIntervalHours: Int? = null,
     @SerialName("last_refresh_at_epoch_ms")
-    val lastRefreshAtEpochMs: Long? = null
+    val lastRefreshAtEpochMs: Long? = null,
+    /** From `subscription-userinfo`; 0 or absent means it never expires. */
+    @SerialName("expires_at_epoch_ms")
+    val expiresAtEpochMs: Long? = null,
+    /** `support-url`. A provider's own way of being reached — usually a bot. */
+    @SerialName("support_url")
+    val supportUrl: String? = null,
+    /** `profile-web-page-url`. */
+    @SerialName("web_page_url")
+    val webPageUrl: String? = null
 ) {
     fun normalized(): SubscriptionMetadata {
         return copy(
@@ -311,7 +320,10 @@ data class SubscriptionMetadata(
             used = used.cleanMetadataValue(),
             available = available.cleanMetadataValue(),
             updateIntervalHours = updateIntervalHours?.coerceIn(MIN_UPDATE_INTERVAL_HOURS, MAX_UPDATE_INTERVAL_HOURS),
-            lastRefreshAtEpochMs = lastRefreshAtEpochMs?.takeIf { it > 0 }
+            lastRefreshAtEpochMs = lastRefreshAtEpochMs?.takeIf { it > 0 },
+            expiresAtEpochMs = expiresAtEpochMs?.takeIf { it > 0 },
+            supportUrl = supportUrl.cleanMetadataValue(),
+            webPageUrl = webPageUrl.cleanMetadataValue()
         )
     }
 
@@ -324,7 +336,10 @@ data class SubscriptionMetadata(
                 used.isNullOrBlank() &&
                 available.isNullOrBlank() &&
                 updateIntervalHours == null &&
-                lastRefreshAtEpochMs == null
+                lastRefreshAtEpochMs == null &&
+                expiresAtEpochMs == null &&
+                supportUrl.isNullOrBlank() &&
+                webPageUrl.isNullOrBlank()
     }
 
     companion object {

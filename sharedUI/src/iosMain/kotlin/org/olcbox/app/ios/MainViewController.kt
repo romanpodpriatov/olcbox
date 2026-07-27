@@ -204,6 +204,7 @@ private fun IosApp(
                 },
                 showAppSettingsButton = true,
                 onGetSubscriptionClick = { platformBridge.openUrl(PkBrand.siteUrl) },
+                onOpenExternalUrl = { url -> platformBridge.openUrl(url) },
                 showSplitTunnelingButton = false,
                 canScanQr = true,
                 onAppSettingsClick = { isAppSettingsOpen = true },

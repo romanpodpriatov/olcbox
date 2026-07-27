@@ -36,7 +36,8 @@ fun OlcboxAppContent(
     showSplitTunnelingButton: Boolean = false,
     canScanQr: Boolean = false,
     onAppSettingsClick: () -> Unit,
-    onSplitTunnelingClick: () -> Unit = {}
+    onSplitTunnelingClick: () -> Unit = {},
+    onOpenExternalUrl: (String) -> Unit = {}
 ) {
     val homeScrollState = rememberScrollState()
 
@@ -95,7 +96,8 @@ fun OlcboxAppContent(
                     onAddLocation = {
                         locationViewModel.startEditing(null)
                         onNavigate(AppScreen.LocationSettings(null))
-                    }
+                    },
+                    onOpenExternalUrl = onOpenExternalUrl
                 )
             }
 

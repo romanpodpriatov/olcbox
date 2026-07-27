@@ -153,6 +153,22 @@ object PkIcons {
         )
     }
 
+    /** A paper plane: the provider's support contact, usually a bot. */
+    val Send: ImageVector by lazy {
+        materialIcon(
+            "Send",
+            "M2.01 21L23 12 2.01 3 2 10l15 2-15 2z",
+        )
+    }
+
+    /** An i in a circle: the provider's own page. */
+    val Info: ImageVector by lazy {
+        materialIcon(
+            "Info",
+            "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-13h2v2h-2zm0 4h2v6h-2z",
+        )
+    }
+
     /** Material outlined, action. */
     val OpenInNew: ImageVector by lazy {
         materialIcon(

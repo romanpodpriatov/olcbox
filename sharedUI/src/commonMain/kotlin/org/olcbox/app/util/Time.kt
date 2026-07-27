@@ -10,3 +10,16 @@ package org.olcbox.app.util
  * agree with the user's own sense of elapsed time, and only the wall clock does.
  */
 expect fun nowMillis(): Long
+
+/**
+ * `27.07.2026 18:54` in the device's own zone.
+ *
+ * Platform formatters rather than date arithmetic here: turning an epoch into a
+ * civil date means a calendar and a timezone, and every platform already ships
+ * one that is right about both. kotlinx-datetime would be the other answer, and
+ * a dependency for two strings.
+ */
+expect fun formatDateTime(epochMs: Long): String
+
+/** `26.08.2034`, same reasoning. */
+expect fun formatDate(epochMs: Long): String

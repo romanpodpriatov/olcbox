@@ -13,6 +13,8 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
+import kotlin.io.encoding.Base64
+import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
@@ -36,6 +38,7 @@ import org.olcbox.app.net.LinkParser
 import org.olcbox.app.net.PartnerLinkResolver
 import org.olcbox.app.net.PartnerLinkResult
 import org.olcbox.app.net.isPartnerLink
+import org.olcbox.app.util.formatByteSize
 import org.olcbox.app.net.LocationKind
 import org.olcbox.app.net.OutboundSpec
 import org.olcbox.app.data.repository.SubscriptionFetchProxy
@@ -79,13 +82,36 @@ class LocationsRepositoryImpl(
         val content: String,
         val subscriptionUrl: String? = null,
         val updateIntervalHours: Int? = null,
+        val profile: SubscriptionProfile? = null,
         val requestMode: SubscriptionRequestMode = SubscriptionRequestMode.Identity
     )
 
     private data class DownloadedSubscription(
         val content: String,
-        val updateIntervalHours: Int?
+        val updateIntervalHours: Int?,
+        val profile: SubscriptionProfile?
     )
+
+    /**
+     * What a subscription says about itself in its response headers.
+     *
+     * Every provider that matters serves these, and until now only the update
+     * interval was read — so the list showed the subscription's *hostname*,
+     * which is both the least useful thing to call it and the one thing worth
+     * not printing on a shared screen.
+     */
+    private data class SubscriptionProfile(
+        val title: String? = null,
+        val usedBytes: Long? = null,
+        val totalBytes: Long? = null,
+        val expiresAtEpochMs: Long? = null,
+        val supportUrl: String? = null,
+        val webPageUrl: String? = null
+    ) {
+        fun isEmpty(): Boolean = title.isNullOrBlank() &&
+            usedBytes == null && totalBytes == null && expiresAtEpochMs == null &&
+            supportUrl.isNullOrBlank() && webPageUrl.isNullOrBlank()
+    }
 
     private data class ParsedImport(
         val bundle: LocationBundleV4,
@@ -283,7 +309,8 @@ class LocationsRepositoryImpl(
                     subscriptionUrl = url,
                     metadata = entry.metadata.withSubscriptionRefreshState(
                         updateIntervalHours = updateInterval,
-                        lastRefreshAtEpochMs = refreshTimestamp
+                        lastRefreshAtEpochMs = refreshTimestamp,
+                        profile = source.profile
                     )
                 ).normalized()
             }
@@ -587,6 +614,7 @@ class LocationsRepositoryImpl(
                     content = it,
                     subscriptionUrl = text.trim(),
                     updateIntervalHours = downloaded.updateIntervalHours,
+                    profile = downloaded.profile,
                     requestMode = requestMode
                 )
             }
@@ -655,7 +683,8 @@ class LocationsRepositoryImpl(
 
                 DownloadedSubscription(
                     content = content,
-                    updateIntervalHours = response.profileUpdateIntervalHours()
+                    updateIntervalHours = response.profileUpdateIntervalHours(),
+                    profile = response.subscriptionProfile()
                 )
             }
         } finally {
@@ -1275,6 +1304,52 @@ class LocationsRepositoryImpl(
         return parts.getOrNull(index + 1)?.toIntOrNull()
     }
 
+    /**
+     * `profile-title`, `subscription-userinfo`, `support-url` and
+     * `profile-web-page-url`, as every client that shows a subscription reads
+     * them. The title is often base64, which the prefix announces.
+     */
+    @OptIn(ExperimentalEncodingApi::class)
+    private fun HttpResponse.subscriptionProfile(): SubscriptionProfile? {
+        val title = headers["profile-title"]?.trim()?.let { raw ->
+            if (raw.startsWith("base64:", ignoreCase = true)) {
+                runCatching {
+                    Base64.Default.withPadding(Base64.PaddingOption.PRESENT_OPTIONAL)
+                        .decode(raw.substringAfter(':').trim())
+                        .decodeToString()
+                }.getOrNull()
+            } else {
+                raw
+            }
+        }?.takeIf { it.isNotBlank() }
+
+        // `upload=..; download=..; total=..; expire=..` — used is what the two
+        // directions add up to, and total 0 means unmetered rather than empty.
+        val info = headers["subscription-userinfo"]
+            ?.split(';')
+            ?.mapNotNull { part ->
+                val (k, v) = part.split('=', limit = 2).takeIf { it.size == 2 } ?: return@mapNotNull null
+                k.trim().lowercase() to (v.trim().toLongOrNull() ?: return@mapNotNull null)
+            }
+            ?.toMap()
+            .orEmpty()
+
+        val used = listOfNotNull(info["upload"], info["download"])
+            .takeIf { it.isNotEmpty() }
+            ?.sum()
+
+        val profile = SubscriptionProfile(
+            title = title,
+            usedBytes = used,
+            totalBytes = info["total"]?.takeIf { it > 0 },
+            // The header is in seconds, and 0 is the documented "never".
+            expiresAtEpochMs = info["expire"]?.takeIf { it > 0 }?.let { it * 1000 },
+            supportUrl = headers["support-url"]?.trim()?.takeIf { it.isNotBlank() },
+            webPageUrl = headers["profile-web-page-url"]?.trim()?.takeIf { it.isNotBlank() }
+        )
+        return profile.takeUnless { it.isEmpty() }
+    }
+
     private fun HttpResponse.profileUpdateIntervalHours(): Int? {
         return headers["profile-update-interval"]
             ?.trim()
@@ -1298,6 +1373,26 @@ class LocationsRepositoryImpl(
         ).normalized()
     }
 
+    /**
+     * Merges what the subscription said about itself. Absent fields leave what
+     * is stored alone: a provider that stops sending a header has not withdrawn
+     * the fact, and blanking the name would put the hostname back on screen.
+     */
+    private fun SubscriptionMetadata?.withProfile(
+        profile: SubscriptionProfile?
+    ): SubscriptionMetadata? {
+        if (profile == null) return this
+        val base = this ?: SubscriptionMetadata()
+        return base.copy(
+            name = profile.title ?: base.name,
+            used = profile.usedBytes?.let(::formatByteSize) ?: base.used,
+            available = profile.totalBytes?.let(::formatByteSize) ?: base.available,
+            expiresAtEpochMs = profile.expiresAtEpochMs ?: base.expiresAtEpochMs,
+            supportUrl = profile.supportUrl ?: base.supportUrl,
+            webPageUrl = profile.webPageUrl ?: base.webPageUrl
+        ).normalized()
+    }
+
     private fun LocationMetadata?.withSubscriptionInterval(hours: Int?): LocationMetadata? {
         if (hours == null) return this
         return withSubscriptionRefreshState(
@@ -1308,9 +1403,10 @@ class LocationsRepositoryImpl(
 
     private fun LocationMetadata?.withSubscriptionRefreshState(
         updateIntervalHours: Int,
-        lastRefreshAtEpochMs: Long?
+        lastRefreshAtEpochMs: Long?,
+        profile: SubscriptionProfile? = null
     ): LocationMetadata {
-        val subscription = this?.subscription ?: SubscriptionMetadata()
+        val subscription = (this?.subscription).withProfile(profile) ?: SubscriptionMetadata()
         return (this ?: LocationMetadata()).copy(
             subscription = subscription.copy(
                 updateIntervalHours = updateIntervalHours,

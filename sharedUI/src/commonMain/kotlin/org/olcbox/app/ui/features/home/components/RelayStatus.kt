@@ -29,6 +29,7 @@ import org.olcbox.app.ui.components.kit.PkStatus
 import org.olcbox.app.ui.components.kit.PkStatusPill
 import org.olcbox.app.ui.icons.PkIcons
 import org.olcbox.app.ui.theme.LocalPkPalette
+import org.olcbox.app.util.formatByteSize
 import org.olcbox.app.util.nowMillis
 import org.olcbox.app.vpn.TrafficCounters
 
@@ -73,7 +74,7 @@ fun RelayStatus(
         if (isActive && traffic != null) {
             Spacer(Modifier.height(6.dp))
             Text(
-                text = "↓ ${formatBytes(traffic.bytesIn)}   ↑ ${formatBytes(traffic.bytesOut)}",
+                text = "↓ ${formatByteSize(traffic.bytesIn)}   ↑ ${formatByteSize(traffic.bytesOut)}",
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -171,26 +172,3 @@ internal fun formatSessionDuration(millis: Long): String {
 
 private fun Long.padded(): String = if (this < 10) "0$this" else toString()
 
-/**
- * Bytes as a person reads them. Binary units, because that is what every other
- * VPN client on the device shows and a figure that disagrees with the system's
- * own reads as a bug.
- */
-internal fun formatBytes(bytes: Long): String {
-    if (bytes < 1024) return "$bytes B"
-    val units = listOf("KB", "MB", "GB", "TB")
-    var value = bytes.toDouble() / 1024
-    var unit = 0
-    while (value >= 1024 && unit < units.lastIndex) {
-        value /= 1024
-        unit++
-    }
-    // One decimal below 10, none above: "9.4 MB" is useful, "947.3 MB" is noise.
-    val rounded = if (value < 10) {
-        val tenths = (value * 10).toLong()
-        "${tenths / 10}.${tenths % 10}"
-    } else {
-        value.toLong().toString()
-    }
-    return "$rounded ${units[unit]}"
-}

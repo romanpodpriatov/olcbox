@@ -59,7 +59,9 @@ fun HomeScreen(
     onSplitTunnelingClick: () -> Unit = {},
     onOpenLocationSettings: (String?) -> Unit,
     onAddLocation: () -> Unit,
-    onGetSubscriptionClick: () -> Unit = {}
+    onGetSubscriptionClick: () -> Unit = {},
+    /** Opens a provider's support or web link. Platform-supplied. */
+    onOpenExternalUrl: (String) -> Unit = {}
 ) {
     var isLogsSheetOpen by remember { mutableStateOf(false) }
     var isAddSheetOpen by remember { mutableStateOf(false) }
@@ -275,6 +277,7 @@ fun HomeScreen(
                             refreshHttpPings(targetIds)
                         },
                         onRefreshSubscriptionClick = { url -> refreshSubscription(url) },
+                        onOpenUrl = onOpenExternalUrl,
                         refreshingSubscriptionUrl = refreshingSubscriptionUrl,
                         onAddSubscriptionClick = {
                             isAddSheetOpen = true

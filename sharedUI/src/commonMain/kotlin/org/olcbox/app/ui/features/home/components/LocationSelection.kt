@@ -23,6 +23,7 @@ import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -51,6 +52,8 @@ import org.olcbox.app.ui.components.kit.PkFilterChip
 import org.olcbox.app.ui.components.kit.PkSectionLabel
 import org.olcbox.app.ui.theme.LocalPkPalette
 import org.olcbox.app.data.model.SubscriptionSort
+import org.olcbox.app.util.formatDate
+import org.olcbox.app.util.formatDateTime
 import org.olcbox.app.ui.features.locations.LocationItem
 import org.olcbox.app.ui.features.locations.PingsState
 import org.olcbox.app.ui.features.locations.components.LocationRow
@@ -65,6 +68,8 @@ fun LocationSelectorScreen(
     /** Re-fetch this subscription from its URL. Nothing to do with latency. */
     onRefreshSubscriptionClick: (subscriptionUrl: String) -> Unit = {},
     refreshingSubscriptionUrl: String? = null,
+    /** Opens a provider's support or web link in the system browser. */
+    onOpenUrl: (String) -> Unit = {},
     onAddSubscriptionClick: () -> Unit,
     onAddLocationClick: () -> Unit,
     locations: List<LocationItem>,
@@ -217,6 +222,25 @@ fun LocationSelectorScreen(
                             horizontalArrangement = Arrangement.spacedBy(2.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
+                            // The provider's own ways of being reached, which it
+                            // publishes in `support-url` and
+                            // `profile-web-page-url`. Shown only when it did.
+                            val subscription = group.firstOrNull()?.metadata?.subscription
+                            subscription?.supportUrl?.takeIf { it.isNotBlank() }?.let { url ->
+                                LinkButton(
+                                    icon = PkIcons.Send,
+                                    description = "Contact support",
+                                    onClick = { onOpenUrl(url) }
+                                )
+                            }
+                            subscription?.webPageUrl?.takeIf { it.isNotBlank() }?.let { url ->
+                                LinkButton(
+                                    icon = PkIcons.Info,
+                                    description = "Open the provider's site",
+                                    onClick = { onOpenUrl(url) }
+                                )
+                            }
+
                             LatencyButton(
                                 isRunning = isGroupRefreshing,
                                 onClick = { onRefreshClick(groupIds) },
@@ -333,6 +357,23 @@ fun LocationSelectorScreen(
                 }
             }
         }
+    }
+}
+
+/** A provider's link, as an icon. Nothing to read, nothing to translate. */
+@Composable
+private fun LinkButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    description: String,
+    onClick: () -> Unit
+) {
+    IconButton(onClick = onClick, modifier = Modifier.size(38.dp)) {
+        Icon(
+            imageVector = icon,
+            contentDescription = description,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(18.dp)
+        )
     }
 }
 
@@ -480,7 +521,8 @@ private fun SubscriptionGroupHeader(
     val pk = LocalPkPalette.current
     val first = locations.firstOrNull()
     val title = first?.subscriptionTitle().orEmpty().ifBlank { "Subscriptions" }
-    val details = first?.subscriptionDetails()
+    val refreshLine = first?.subscriptionRefreshLine()
+    val quotaLine = first?.subscriptionQuotaLine()
     // A quarter turn rather than two icons: the same arrow points at the rows
     // when they are there and at the title when they are not.
     val turn by animateFloatAsState(if (collapsed) -90f else 0f, label = "groupChevron")
@@ -533,18 +575,22 @@ private fun SubscriptionGroupHeader(
                 }
             }
 
-            val subtitle = if (collapsed) {
+            // Folded, one line that says how much is hidden and what is left of
+            // the plan. Unfolded, both lines the provider gave us.
+            val lines = if (collapsed) {
                 listOfNotNull(
-                    "${locations.size} " + if (locations.size == 1) "location" else "locations",
-                    details
-                ).joinToString(" · ")
+                    listOfNotNull(
+                        "${locations.size} " + if (locations.size == 1) "location" else "locations",
+                        quotaLine
+                    ).joinToString(" · ")
+                )
             } else {
-                details
+                listOfNotNull(refreshLine, quotaLine)
             }
 
-            if (!subtitle.isNullOrBlank()) {
+            lines.forEach { line ->
                 Text(
-                    text = subtitle,
+                    text = line,
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
@@ -681,6 +727,32 @@ private fun subscriptionHost(url: String): String? {
         .takeIf { it.isNotBlank() }
 }
 
+/**
+ * The two lines Happ shows under a subscription's name: when it last refreshed
+ * and how often, then how much of it is left and until when.
+ *
+ * All of it comes from the provider's own response headers, which were being
+ * downloaded and thrown away — so the list called a subscription by its
+ * *hostname*, which is the least useful name it has and the one thing worth not
+ * printing on a screen someone might show to a friend.
+ */
+private fun LocationItem.subscriptionRefreshLine(): String? {
+    val subscription = metadata?.subscription ?: return null
+    return listOfNotNull(
+        subscription.lastRefreshAtEpochMs?.let { formatDateTime(it) },
+        subscription.updateIntervalHours?.let { "Auto-update ${it}h" }
+            ?: subscription.refresh?.takeIf { it.isNotBlank() }?.let { "Refresh $it" }
+    ).joinToString(" | ").takeIf { it.isNotBlank() }
+}
+
+private fun LocationItem.subscriptionQuotaLine(): String? {
+    val subscription = metadata?.subscription ?: return null
+    return listOfNotNull(
+        quotaText(subscription.used, subscription.available),
+        subscription.expiresAtEpochMs?.let { "Expires ${formatDate(it)}" }
+    ).joinToString(" · ").takeIf { it.isNotBlank() }
+}
+
 private fun LocationItem.subscriptionDetails(): String? {
     val subscription = metadata?.subscription ?: return null
 
@@ -692,7 +764,8 @@ private fun LocationItem.subscriptionDetails(): String? {
 
 private fun quotaText(used: String?, available: String?): String? {
     return when {
-        !used.isNullOrBlank() && !available.isNullOrBlank() -> "$used used · $available available"
+        // "9.4 MB / 300 GB", the way a provider states a plan.
+        !used.isNullOrBlank() && !available.isNullOrBlank() -> "$used / $available"
         !used.isNullOrBlank() -> "$used used"
         !available.isNullOrBlank() -> "$available available"
         else -> null
