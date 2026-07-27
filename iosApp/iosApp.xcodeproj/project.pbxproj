@@ -151,6 +151,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = B31340DD301599E5009B5598 /* Build configuration list for PBXNativeTarget "PacketTunnel" */;
 			buildPhases = (
+				B31340F1301599E5009B5598 /* Fetch Core Frameworks */,
 				B31340CA301599E5009B5598 /* Sources */,
 				B31340CB301599E5009B5598 /* Frameworks */,
 				B31340CC301599E5009B5598 /* Resources */,
@@ -239,6 +240,21 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "set -e\nexport PATH=\"$HOME/go/bin:/usr/local/go/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\"\nif [ -z \"$ARCHS\" ] || [ \"$ARCHS\" = \"undefined_arch\" ]; then\n  export ARCHS=arm64\nfi\nGRADLE_VERSION_ARGS=\"\"\nif [ -n \"$OLCBOX_VERSION\" ]; then\n  GRADLE_VERSION_ARGS=\"-Polcbox.version=$OLCBOX_VERSION\"\nfi\ncd \"$SRCROOT/..\"\n./gradlew $GRADLE_VERSION_ARGS :sharedUI:fetchLibboxIosXcframework :sharedUI:fetchLibXrayIosXcframework :sharedUI:buildOlcrtcIosXcframework :sharedUI:embedAndSignAppleFrameworkForXcode --no-configuration-cache\n";
+		};
+		B31340F1301599E5009B5598 /* Fetch Core Frameworks */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			name = "Fetch Core Frameworks";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e\n# The extension links Libbox and LibXray, so it fetches them itself.\n# It cannot inherit them from the app target: iosApp *depends on* this\n# target, so this one builds first and the app's gradle phase has not run\n# yet. Both fetch scripts return immediately once the framework is there,\n# so this costs nothing on every build after the first.\ncd \"$SRCROOT/..\"\nbash scripts/fetch-libbox-ios.sh \"$PWD/sharedUI/build/generated/libbox/ios\"\nbash scripts/fetch-libxray-ios.sh \"$PWD/sharedUI/build/generated/libxray/ios\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -467,7 +483,7 @@
 				);
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 3QJG3J7L66;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
 				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
 				GCC_WARN_UNDECLARED_SELECTOR = YES;
@@ -551,7 +567,7 @@
 				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 3QJG3J7L66;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
 				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
 				GCC_WARN_UNDECLARED_SELECTOR = YES;
