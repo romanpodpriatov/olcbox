@@ -276,9 +276,39 @@ All questions "None". The result is 4+.
 
 ## Screenshots
 
-Required: 6.9" (iPhone 17 Pro Max or equivalent). Everything else Apple scales.
+**One set, iPhone only.** The app now targets `TARGETED_DEVICE_FAMILY = 1`; it
+used to claim iPad as well, which would have meant a second set of screenshots
+and a review on a 13" screen of an interface built around a 200pt dial and a
+phone-width list. Claiming a device the layout was not designed for is how an
+app gets rejected for something nobody intended to ship.
 
-Five, in this order, because it is the order a new user meets the app:
+Required size: **6.9" iPhone — 1320 × 2868**. Apple derives every smaller size
+itself.
+
+### Capturing
+
+From a simulator, which is steadier than a device and always the right size:
+
+```bash
+xcrun simctl list devices available | grep "Pro Max"     # pick the 6.9" one
+xcrun simctl boot "iPhone 17 Pro Max"
+open -a Simulator
+# …drive the app to the state you want, then, per screen:
+xcrun simctl io booted screenshot screenshots/1-empty.png
+```
+
+Then, before uploading anything:
+
+```bash
+bash scripts/check-screenshots.sh screenshots/
+```
+
+It checks the three things App Store Connect refuses a set for and only tells
+you about afterwards: a size off by a pixel, an alpha channel an editor left
+behind, and a file that is a JPEG wearing a `.png`. It validates and never
+resizes — a screenshot scaled to fit is a screenshot of the wrong thing.
+
+### The five, in the order a new user meets the app
 
 1. **Empty state** — "Add relay setup", the three ways to add a subscription.
 2. **The list** — a subscription expanded, protocol filter chips visible, one
@@ -289,9 +319,13 @@ Five, in this order, because it is the order a new user meets the app:
 5. **Subscription settings** — the switches, so it is clear the app is
    configurable rather than a black box.
 
-> Take them from a build with the admin gate **on**, so no configurator or
-> "create custom location" is visible. A screenshot showing plumbing invites
-> questions about what else is hidden.
->
-> No device frames, no marketing text over the top: Apple allows both, and both
-> date badly.
+### Two things to get right before pressing the shutter
+
+- **Build with the admin gate on.** A screenshot showing the per-location
+  configurator or "create custom location" invites questions about what else is
+  hidden, and shows an operator's addresses to anyone who zooms in.
+- **Use the demo subscription**, the same one that goes in the review notes. A
+  real one puts a real provider's server names and quota in a public listing.
+
+No device frames and no marketing text over the top. Apple allows both; both
+date badly, and neither survives the next redesign.
