@@ -62,12 +62,32 @@ object XrayConfig {
                     }
                     putJsonObject("streamSettings") {
                         put("network", "xhttp")
-                        put("security", "reality")
-                        putJsonObject("realitySettings") {
-                            put("serverName", spec.sni)
-                            put("fingerprint", spec.fingerprint)
-                            put("publicKey", spec.publicKey)
-                            put("shortId", spec.shortId)
+                        // REALITY only where there is a key for it.
+                        //
+                        // A CDN entry is xhttp over ordinary TLS to a host with a
+                        // real certificate — `security=tls`, no `pbk`. Building
+                        // REALITY for it anyway handed Xray a config with an
+                        // empty key, and it says so exactly:
+                        //   Failed to build REALITY config > empty "password"
+                        // which reads as a missing credential rather than as the
+                        // wrong kind of security entirely.
+                        if (spec.publicKey.isBlank()) {
+                            put("security", "tls")
+                            putJsonObject("tlsSettings") {
+                                put("serverName", spec.sni)
+                                put("fingerprint", spec.fingerprint)
+                                // A CDN presents a certificate that chains; there
+                                // is nothing here that should need waiving.
+                                put("allowInsecure", false)
+                            }
+                        } else {
+                            put("security", "reality")
+                            putJsonObject("realitySettings") {
+                                put("serverName", spec.sni)
+                                put("fingerprint", spec.fingerprint)
+                                put("publicKey", spec.publicKey)
+                                put("shortId", spec.shortId)
+                            }
                         }
                         putJsonObject("xhttpSettings") {
                             put("path", xhttp.path)

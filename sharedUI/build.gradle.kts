@@ -170,6 +170,15 @@ val buildOlcrtcIosXcframework by tasks.registering(Exec::class) {
 }
 
 kotlin {
+    // `expect`/`actual` classes are still marked Beta, and the compiler says so
+    // on every build for PlatformCrypto — which is an `expect object` on purpose
+    // and is not going to stop being one. The flag is the documented way to
+    // accept that, and the warning it removes was drowning the ones worth
+    // reading. See KT-61573.
+    compilerOptions {
+        freeCompilerArgs.add("-Xexpect-actual-classes")
+    }
+
     android {
         namespace = "org.olcbox.app.sharedui"
         compileSdk = 37

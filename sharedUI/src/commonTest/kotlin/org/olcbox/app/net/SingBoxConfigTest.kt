@@ -8,6 +8,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class SingBoxConfigTest {
@@ -170,4 +171,59 @@ class SingBoxConfigTest {
         "xtls-rprx-vision", TransportSpec.Tcp, "DE"
     )
     private fun hy2() = OutboundSpec.Hysteria2("PW", "1.2.3.4", 443, "h.x", null, false, "RU")
+
+    /**
+     * The partner subscription's CDN row: xhttp over ordinary TLS to a host with
+     * a real certificate — `security=tls`, no `pbk`. Building REALITY for it
+     * anyway made Xray refuse the whole config with
+     * `Failed to build REALITY config > empty "password"`, which reads as a
+     * missing credential rather than the wrong kind of security.
+     */
+    @Test fun xhttpWithoutRealityKeyUsesPlainTls() {
+        val spec = OutboundSpec.Vless(
+            "u", "cdn.example.org", 443, "cdn.example.org", "", "", "chrome",
+            null, TransportSpec.Xhttp("/pk", "cdn.example.org", "stream-one"), "CDN"
+        )
+        val stream = Json.parseToJsonElement(XrayConfig.buildXhttp(spec))
+            .jsonObject["outbounds"]!!.jsonArray[0]
+            .jsonObject["streamSettings"]!!.jsonObject
+
+        assertEquals("tls", stream["security"]!!.jsonPrimitive.content)
+        assertNull(stream["realitySettings"])
+        assertEquals(
+            "cdn.example.org",
+            stream["tlsSettings"]!!.jsonObject["serverName"]!!.jsonPrimitive.content
+        )
+    }
+
+    @Test fun xhttpWithRealityKeyStillUsesReality() {
+        val spec = OutboundSpec.Vless(
+            "u", "1.2.3.4", 8644, "yandex.ru", "PBK", "b2c3", "chrome",
+            null, TransportSpec.Xhttp("/pk", "yandex.ru", "packet-up"), "MSK"
+        )
+        val stream = Json.parseToJsonElement(XrayConfig.buildXhttp(spec))
+            .jsonObject["outbounds"]!!.jsonArray[0]
+            .jsonObject["streamSettings"]!!.jsonObject
+
+        assertEquals("reality", stream["security"]!!.jsonPrimitive.content)
+        assertEquals(
+            "PBK",
+            stream["realitySettings"]!!.jsonObject["publicKey"]!!.jsonPrimitive.content
+        )
+    }
+
+    /** The same rule on the sing-box side, where an empty key is equally fatal. */
+    @Test fun vlessWithoutRealityKeyOmitsTheRealityBlock() {
+        val spec = OutboundSpec.Vless(
+            "u", "tls.example.org", 443, "tls.example.org", "", "", "chrome",
+            null, TransportSpec.Tcp, "TLS"
+        )
+        val tls = Json.parseToJsonElement(SingBoxConfig.build(spec))
+            .jsonObject["outbounds"]!!.jsonArray
+            .first { it.jsonObject["tag"]?.jsonPrimitive?.content == "out" }
+            .jsonObject["tls"]!!.jsonObject
+
+        assertNull(tls["reality"])
+        assertEquals("tls.example.org", tls["server_name"]!!.jsonPrimitive.content)
+    }
 }

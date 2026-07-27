@@ -183,8 +183,16 @@ object SingBoxConfig {
                 putJsonObject("tls") {
                     put("enabled", true); put("server_name", spec.sni)
                     putJsonObject("utls") { put("enabled", true); put("fingerprint", spec.fingerprint) }
-                    putJsonObject("reality") {
-                        put("enabled", true); put("public_key", spec.publicKey); put("short_id", spec.shortId)
+                    // Same rule as XrayConfig: a link without a public key is
+                    // VLESS over ordinary TLS, and `TransportKind.Tls` exists to
+                    // name exactly that case. A reality block with an empty key
+                    // is not a weaker handshake, it is a rejected config.
+                    if (spec.publicKey.isNotBlank()) {
+                        putJsonObject("reality") {
+                            put("enabled", true)
+                            put("public_key", spec.publicKey)
+                            put("short_id", spec.shortId)
+                        }
                     }
                 }
                 // Deliberately loud rather than best-effort. sing-box has no

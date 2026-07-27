@@ -81,7 +81,7 @@ actual object PlatformCrypto {
                             cp.addressOf(0), ciphertext.size.convert(),
                             op.addressOf(0), outBuf.size.convert(),
                             moved.ptr
-                        ).toInt()
+                        )
                     }
                 }
             }

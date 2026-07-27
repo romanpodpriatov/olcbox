@@ -146,6 +146,12 @@ fun ApplicationSettingsSheet(
     onSocksProxySettingsSaved: (String, String, Int) -> Unit = { _, _, _ -> },
     onSocksProxyPasswordRegenerated: () -> Unit = {}
 ) {
+    // rememberModalBottomSheetState is deprecated in favour of
+    // rememberBottomSheetState, which is itself alpha in the material3 this
+    // project pins. Suppressed rather than migrated: swapping a sheet API
+    // blind, mid-release, on a build nobody here can compile is a worse
+    // trade than a warning. Migrate all four together, deliberately.
+    @Suppress("DEPRECATION")
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var route by remember { mutableStateOf(SharedSettingsRoute.Hub) }
 
