@@ -31,11 +31,26 @@ enum OlcrtcEngine {
 
     private static let log = Logger(subsystem: "org.proofkit.app", category: "olcrtc")
 
+    private static let appGroup = "group.org.proofkit.app"
+
+    /// Verbose engine logging.
+    ///
+    /// olcRTC keeps almost everything worth reading behind `logger.Debugf`, so
+    /// with this off a failed start says "olcRTC start timed out" and not one
+    /// word about what it tried — no ICE state, no carrier, no signalling. That
+    /// is the whole of what a user, or whoever is debugging for them, ever gets.
+    /// Diagnostic switch: set false once it has stopped earning its place.
+    private static let verbose = true
+
     /// Held for the lifetime of the process: olcRTC keeps whatever is handed to
     /// `SetProtector`/`SetLogWriter`, and Go's reference does not keep a Swift
     /// object alive on its own.
     private static let protector = InterfaceProtector()
-    private static let logWriter = EngineLog()
+    private static let logWriter = EngineLog(
+        file: FileManager.default
+            .containerURL(forSecurityApplicationGroupIdentifier: appGroup)?
+            .appendingPathComponent("olcrtc.log")
+    )
 
     /// How long to wait for the engine to answer before calling it a failure.
     /// The same eight seconds the in-app path used, which is long enough for a
@@ -44,7 +59,11 @@ enum OlcrtcEngine {
     private static let readyTimeoutMillis = 8_000
 
     static func start(_ parameters: Parameters) throws {
+        // Fresh per attempt, so whatever the app reads back afterwards belongs
+        // to the attempt it is reporting on.
+        logWriter.reset()
         MobileSetLogWriter(logWriter)
+        MobileSetDebug(verbose)
         // Before anything dials: inside the extension the default route is our
         // own tun, so an unprotected socket loops straight back into it.
         MobileSetProtector(protector)
@@ -116,11 +135,50 @@ private final class InterfaceProtector: NSObject, MobileSocketProtectorProtocol 
 /// olcRTC explains itself through a callback rather than stderr, so its lines
 /// do not reach the engine.log the provider redirects sing-box into. Sending
 /// them to the system log at least puts them in the same place as ours.
-private final class EngineLog: NSObject, MobileLogWriterProtocol {
+/// Where olcRTC's own account of itself goes.
+///
+/// The unified log alone was not enough. Reaching it means Console.app, an
+/// iPhone in the sidebar, "Include Info Messages" switched on and a filter on
+/// the right process — four steps, each of which has silently produced an empty
+/// window at least once, for a log that answers the only question that matters
+/// when a connect fails. So it is also kept in the App Group, where the app can
+/// read it back and put it on screen next to the failure.
+private final class EngineLog: NSObject, @unchecked Sendable, MobileLogWriterProtocol {
     private let log = Logger(subsystem: "org.proofkit.app", category: "olcrtc")
+    private let file: URL?
+    /// Every mutable field below is touched only from this queue. Go calls
+    /// `writeLog` from whichever goroutine happens to be logging.
+    private let queue = DispatchQueue(label: "org.proofkit.olcrtc-log")
+    private var lines: [String] = []
+
+    /// A start that fails does so within seconds, so a couple of hundred lines
+    /// covers the whole attempt while keeping the file a few kilobytes.
+    private static let window = 200
+
+    init(file: URL?) {
+        self.file = file
+        super.init()
+    }
+
+    func reset() {
+        queue.async { [self] in
+            lines.removeAll(keepingCapacity: true)
+            if let file { try? Data().write(to: file, options: .atomic) }
+        }
+    }
 
     func writeLog(_ msg: String?) {
         guard let msg else { return }
         log.info("\(msg, privacy: .public)")
+        guard let file else { return }
+        queue.async { [self] in
+            lines.append(msg)
+            if lines.count > Self.window { lines.removeFirst(lines.count - Self.window) }
+            // Rewritten whole rather than appended: an append interrupted by the
+            // process dying can tear the last line, and the last line is the one
+            // this exists to read.
+            try? Data((lines.joined(separator: "\n") + "\n").utf8)
+                .write(to: file, options: .atomic)
+        }
     }
 }

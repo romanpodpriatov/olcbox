@@ -299,13 +299,18 @@ final class PacketTunnelController: ObservableObject {
         return nil
     }
 
-    /// The last few lines the engines wrote to stderr, which the extension
-    /// redirects into the App Group before it starts any of them.
+    /// The last few lines the engines wrote about themselves.
+    ///
+    /// `olcrtc.log` first, because olcRTC is the engine that fails on its own —
+    /// it has to cross the internet to an SFU before it reports ready, and it
+    /// does not write to stderr at all: it is given a log writer, so redirecting
+    /// stderr never captured a word of it. sing-box and Xray do use stderr, and
+    /// `engine.log` is theirs.
     ///
     /// Trimmed hard on purpose: this goes on a phone screen under a status pill,
     /// not into a log viewer, and the lines that matter are always the last ones.
     private static func engineLogTail(lines: Int = 4) -> String? {
-        guard let log = shared("engine.log") else { return nil }
+        guard let log = shared("olcrtc.log") ?? shared("engine.log") else { return nil }
         let tail = log
             .split(separator: "\n")
             .map { $0.trimmingCharacters(in: .whitespaces) }
