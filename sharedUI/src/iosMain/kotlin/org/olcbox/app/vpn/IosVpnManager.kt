@@ -244,7 +244,13 @@ class IosVpnManager(
             val settings = _socksProxySettings.value
                 .copy(port = SingBoxConfig.SINGBOX_SOCKS_PORT)
             return IosPacketTunnelStartRequest(
-                config = SingBoxConfig.buildTunSocks(SingBoxConfig.SINGBOX_SOCKS_PORT),
+                // The same credentials olcRTC is about to be started with. It
+                // demands them, and sing-box is the only thing that connects.
+                config = SingBoxConfig.buildTunSocks(
+                    SingBoxConfig.SINGBOX_SOCKS_PORT,
+                    username = settings.username,
+                    password = settings.password
+                ),
                 xrayConfig = null,
                 olcrtc = location.startRequest(locationsRepository.getDeviceIdentity(), settings)
             )

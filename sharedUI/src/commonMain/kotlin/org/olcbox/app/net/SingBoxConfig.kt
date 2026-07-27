@@ -68,6 +68,8 @@ object SingBoxConfig {
      */
     fun buildTunSocks(
         socksPort: Int,
+        username: String = "",
+        password: String = "",
         address: String = TUN_ADDRESS,
         mtu: Int = TUN_MTU,
     ): String = renderTun(address, mtu) {
@@ -75,6 +77,15 @@ object SingBoxConfig {
             put("type", "socks"); put("tag", "out")
             put("server", "127.0.0.1"); put("server_port", socksPort)
             put("version", "5")
+            // Sent only when the core on the other end asked for them, which is
+            // olcRTC and only olcRTC: it refuses the connection outright when
+            // started with a credential pair and offered none, and on iOS it
+            // always is — the app generates one on first run. That produced a
+            // tunnel that came up, carried its own media perfectly, and passed
+            // not one user connection. Xray's inbound has no auth, so for xhttp
+            // these stay absent exactly as before.
+            if (username.isNotBlank()) put("username", username)
+            if (password.isNotBlank()) put("password", password)
         }
     }
 
