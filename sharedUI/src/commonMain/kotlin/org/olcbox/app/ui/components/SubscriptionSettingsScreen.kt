@@ -16,7 +16,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -32,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import org.olcbox.app.data.model.SubscriptionSettings
 import org.olcbox.app.data.model.SubscriptionSort
 import org.olcbox.app.ui.components.kit.PkSectionLabel
+import org.olcbox.app.ui.icons.PkIcons
 
 /**
  * One subscriptions screen for every platform.
@@ -75,10 +75,9 @@ fun SubscriptionSettingsScreen(
 
             // Tapping cycles rather than opening a dialog: seven choices do not
             // earn a screen of their own, and the current one is on the row.
-            SharedNavigationRow(
+            SubscriptionValueRow(
                 title = "Update interval (h)",
                 value = settings.updateIntervalHours.toString(),
-                icon = Icons.Outlined.Refresh,
                 enabled = settings.autoUpdate,
                 onClick = {
                     val choices = SubscriptionSettings.INTERVAL_CHOICES
@@ -289,6 +288,59 @@ private fun SubscriptionSettingsHeader(
                 text = subtitle,
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+/**
+ * A row that shows a value and changes it when tapped.
+ *
+ * Its own rather than the settings sheet's, which is private to that file — and
+ * rightly so: this screen is shown by Android's sheet too, and a shared screen
+ * that reaches into one platform's internals is shared in name only.
+ */
+@Composable
+private fun SubscriptionValueRow(
+    title: String,
+    value: String,
+    enabled: Boolean,
+    onClick: () -> Unit
+) {
+    val alpha = if (enabled) 1f else 0.4f
+    Surface(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 56.dp)
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = alpha),
+                modifier = Modifier.weight(1f)
+            )
+            Text(
+                text = value,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.primary.copy(alpha = alpha),
+                fontWeight = FontWeight.SemiBold
+            )
+            Spacer(Modifier.width(8.dp))
+            Icon(
+                imageVector = PkIcons.ChevronRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = alpha),
+                modifier = Modifier.size(18.dp)
             )
         }
     }

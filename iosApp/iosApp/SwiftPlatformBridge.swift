@@ -217,6 +217,19 @@ final class SwiftPlatformBridge: NSObject, @preconcurrency IosPlatformBridge, UI
     }
 }
 
+/// An `AVCaptureSession` on its way to a background queue.
+///
+/// `nonisolated(unsafe)` on the property was the wrong tool: that says where the
+/// property may be *read from*, and the complaint is about carrying a
+/// non-Sendable value across a `@Sendable` boundary. `startRunning` and
+/// `stopRunning` are the two calls Apple documents as safe off the main thread —
+/// indeed startRunning must not be on it, since it blocks until the camera is
+/// configured — so the box is narrow and true rather than a way to quiet the
+/// compiler.
+private struct SendableSession: @unchecked Sendable {
+    let value: AVCaptureSession
+}
+
 /// Kotlin's callback in terms Swift concurrency accepts. Objects from
 /// Kotlin/Native carry no Sendable annotation but are safe to call from any
 /// thread under its memory model.
@@ -250,7 +263,7 @@ final class QrScannerViewController: UIViewController,
     /// animation on the main thread. `AVCaptureSession` is not Sendable, and
     /// start/stop are the two calls Apple documents as safe off the main thread —
     /// so the opt-out is narrow and true rather than a way to quiet the compiler.
-    nonisolated(unsafe) private let session = AVCaptureSession()
+    private let session = AVCaptureSession()
     private var preview: AVCaptureVideoPreviewLayer?
     /// A capture session keeps delivering after the first match; without this
     /// the callback fires once per frame and Kotlin sees a burst of imports.
@@ -330,17 +343,15 @@ final class QrScannerViewController: UIViewController,
         guard !session.isRunning else { return }
         // Never on the main thread: startRunning blocks until the camera is
         // configured, which freezes the presentation animation.
-        DispatchQueue.global(qos: .userInitiated).async { [session] in
-            session.startRunning()
-        }
+        let box = SendableSession(value: session)
+        DispatchQueue.global(qos: .userInitiated).async { box.value.startRunning() }
     }
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         guard session.isRunning else { return }
-        DispatchQueue.global(qos: .userInitiated).async { [session] in
-            session.stopRunning()
-        }
+        let box = SendableSession(value: session)
+        DispatchQueue.global(qos: .userInitiated).async { box.value.stopRunning() }
     }
 
     @objc private func cancelTapped() {
