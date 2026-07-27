@@ -35,10 +35,22 @@ URL="https://github.com/romanpodpriatov/olcbox/releases/download/${TAG}/${ASSET}
 # Same default as build-cores-ios.sh writes to. Keyed by tag: two version pairs
 # never share an entry.
 CACHE="${CORES_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/olcbox/cores}/${TAG}"
+# The destination says nothing about itself — a framework is a directory of
+# stripped binaries — so it is made to. Without this the check below is "is
+# there *a* framework here", which is how an app was built and shipped to a
+# device against an olcRTC revision two pins old while every version in the
+# tree said otherwise, and how a whole day went into explaining behaviour that
+# belonged to code the build did not contain.
+STAMP="${DEST}/Cores.xcframework.tag"
 
 if [ -d "${DEST}/Cores.xcframework/ios-arm64" ]; then
-    echo "Cores.xcframework already present in ${DEST}"
-    exit 0
+    present="$(cat "${STAMP}" 2>/dev/null || echo "an unstamped framework")"
+    if [ "${present}" = "${TAG}" ]; then
+        echo "Cores.xcframework already present in ${DEST} (${TAG})"
+        exit 0
+    fi
+    echo "== ${DEST} holds ${present}, this build wants ${TAG} — replacing =="
+    rm -rf "${DEST}/Cores.xcframework" "${STAMP}"
 fi
 
 mkdir -p "${DEST}"
@@ -47,7 +59,8 @@ if [ -d "${CACHE}/Cores.xcframework/ios-arm64" ]; then
     echo "== restoring Cores.xcframework from ${CACHE} =="
     rm -rf "${DEST}/Cores.xcframework"
     cp -R "${CACHE}/Cores.xcframework" "${DEST}/Cores.xcframework"
-    echo "== ready: ${DEST}/Cores.xcframework =="
+    printf '%s\n' "${TAG}" > "${STAMP}"
+    echo "== ready: ${DEST}/Cores.xcframework (${TAG}) =="
     exit 0
 fi
 
@@ -75,5 +88,6 @@ test -d "${DEST}/Cores.xcframework/ios-arm64" \
 mkdir -p "${CACHE}"
 rm -rf "${CACHE}/Cores.xcframework"
 cp -R "${DEST}/Cores.xcframework" "${CACHE}/Cores.xcframework"
+printf '%s\n' "${TAG}" > "${STAMP}"
 
 echo "== ready: ${DEST}/Cores.xcframework =="

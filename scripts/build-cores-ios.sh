@@ -158,6 +158,16 @@ test -f "$headers/Mobile.objc.h" \
   || { echo "no Mobile header — olcrtc was not bound"; exit 1; }
 echo "== all three APIs present =="
 
+# Say which pins this framework came from, next to the framework itself.
+#
+# A built framework is a directory of stripped binaries and looks exactly like
+# any other; fetch-cores-ios.sh used to see one sitting in the destination and
+# conclude there was nothing to do. That is how an app reached a device built
+# against an olcRTC revision two pins old, and how the day after was spent
+# explaining behaviour produced by code the binary did not contain. The stamp
+# is what makes "already present" mean "already present *and* the right one".
+printf '%s\n' "${CORES_TAG}" > "$OUT/Cores.xcframework.tag"
+
 # Keep a copy outside the build directory.
 #
 # The usual destination is inside `sharedUI/build`, which belongs to Gradle and
