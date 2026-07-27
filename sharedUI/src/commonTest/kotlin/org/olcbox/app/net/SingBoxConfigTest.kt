@@ -100,6 +100,50 @@ class SingBoxConfigTest {
         )
     }
 
+    // --- a TCP-only upstream still has to answer DNS --------------------
+
+    @Test fun tcpOnlyUpstreamResolvesOverTcpThroughTheSameOutbound() {
+        // olcRTC relays TCP streams and nothing else. Left alone, the device
+        // sends DNS as UDP into a hole: nothing resolves, no app opens a
+        // socket, and the tunnel looks connected while the browser stays
+        // blank. Measured — its server logged real traffic to Telegram and
+        // Meta, which dial hardcoded IPs, and none at all from Safari.
+        val json = Json.parseToJsonElement(
+            SingBoxConfig.buildTunSocks(10810, upstreamCarriesUdp = false)
+        ).jsonObject
+        val server = json["dns"]!!.jsonObject["servers"]!!.jsonArray[0].jsonObject
+        assertEquals("tcp", server["type"]!!.jsonPrimitive.content)
+        // Pointless unless it travels the tunnel: a detour naming anything but
+        // the one outbound would resolve outside it, or not at all.
+        assertEquals(
+            outbound(SingBoxConfig.buildTunSocks(10810))["tag"]!!.jsonPrimitive.content,
+            server["detour"]!!.jsonPrimitive.content,
+        )
+    }
+
+    @Test fun tcpOnlyUpstreamClaimsDnsBeforeItRejectsUdp() {
+        // Both rules are needed and the order is the whole point: the blanket
+        // UDP rule would otherwise swallow port 53 and undo the fix above.
+        val rules = Json.parseToJsonElement(
+            SingBoxConfig.buildTunSocks(10810, upstreamCarriesUdp = false)
+        ).jsonObject["route"]!!.jsonObject["rules"]!!.jsonArray
+        assertEquals("hijack-dns", rules[0].jsonObject["action"]!!.jsonPrimitive.content)
+        assertEquals(53, rules[0].jsonObject["port"]!!.jsonPrimitive.content.toInt())
+        assertEquals("reject", rules[1].jsonObject["action"]!!.jsonPrimitive.content)
+        assertEquals("udp", rules[1].jsonObject["network"]!!.jsonPrimitive.content)
+    }
+
+    @Test fun upstreamsThatCarryUdpAreLeftExactlyAsTheyWere() {
+        // xhttp reaches Xray through this same builder and works today; every
+        // native outbound carries UDP itself. Rewriting their DNS would be a
+        // regression dressed as a fix, so the sections appear for no one else.
+        for (json in listOf(SingBoxConfig.buildTunSocks(10810), SingBoxConfig.buildTun(vless()))) {
+            val obj = Json.parseToJsonElement(json).jsonObject
+            assertTrue(obj["dns"] == null, "an upstream that carries UDP must resolve as before")
+            assertTrue(obj["route"] == null, "no rules belong on a transport that already works")
+        }
+    }
+
     @Test fun xrayHandlesTheTransportSingBoxRefuses() {
         // The pairing that makes xhttp work at all: whatever sing-box turns
         // down, Xray must accept.

@@ -19,10 +19,13 @@ import kotlinx.serialization.json.putJsonObject
  * new schema and device-smoke before shipping.
  *
  * Re-verified for 1.13.14: every shape this builds — socks+vless/reality,
- * tun+hysteria2, tun+socks, socks+socks — passes `sing-box check` on the 1.13.14
- * binary. It survives the bump because it stays minimal: 1.13 removed the legacy
- * inbound fields and 1.12 replaced the DNS server format, and this emits neither
- * a `dns` nor a `route` section, nor any of the deprecated inbound fields.
+ * tun+hysteria2, tun+socks, socks+socks, and tun+socks over a TCP-only upstream
+ * — passes `sing-box check` on the 1.13.14 binary. Most of it survives version
+ * bumps by staying minimal, emitting none of the inbound fields 1.13 removed.
+ *
+ * The one shape that does reach for newer schema is the TCP-only upstream: it
+ * emits a `dns` server in the typed 1.12+ format and a `route` rule using the
+ * `action` form. Those two are the parts to re-check first on the next bump.
  */
 object SingBoxConfig {
     /** Pinned sing-box release whose config schema this builder targets. */
@@ -55,7 +58,7 @@ object SingBoxConfig {
         outbound: OutboundSpec,
         address: String = TUN_ADDRESS,
         mtu: Int = TUN_MTU,
-    ): String = renderTun(address, mtu) { addOutbound(outbound) }
+    ): String = renderTun(address, mtu, tcpOnlyUpstream = false) { addOutbound(outbound) }
 
     /**
      * Config for a core that owns the tun and hands the traffic to another core
@@ -70,9 +73,10 @@ object SingBoxConfig {
         socksPort: Int,
         username: String = "",
         password: String = "",
+        upstreamCarriesUdp: Boolean = true,
         address: String = TUN_ADDRESS,
         mtu: Int = TUN_MTU,
-    ): String = renderTun(address, mtu) {
+    ): String = renderTun(address, mtu, tcpOnlyUpstream = !upstreamCarriesUdp) {
         addJsonObject {
             put("type", "socks"); put("tag", "out")
             put("server", "127.0.0.1"); put("server_port", socksPort)
@@ -89,13 +93,38 @@ object SingBoxConfig {
         }
     }
 
+    /** Resolver reached over the tunnel when the upstream cannot carry UDP. */
+    private const val TCP_DNS_SERVER = "1.1.1.1"
+
     private fun renderTun(
         address: String,
         mtu: Int,
+        tcpOnlyUpstream: Boolean,
         outbounds: JsonArrayBuilder.() -> Unit,
     ): String {
         val obj = buildJsonObject {
             putJsonObject("log") { put("level", "info") }
+            // A tun in front of a TCP-only upstream has one fatal gap: the
+            // device sends DNS as UDP to the resolver in the tunnel settings,
+            // and those datagrams have nowhere to go. Nothing resolves, so no
+            // app ever opens a socket — the tunnel looks perfectly connected
+            // and the browser stays blank. Proven on olcRTC: its server logged
+            // real traffic to Telegram and Meta, which dial hardcoded IPs,
+            // while Safari made no connection at all.
+            //
+            // So sing-box answers DNS itself, over TCP, through the same
+            // upstream. Emitted only where it is needed — every other
+            // transport here carries UDP natively and resolves as before.
+            if (tcpOnlyUpstream) {
+                putJsonObject("dns") {
+                    putJsonArray("servers") {
+                        addJsonObject {
+                            put("type", "tcp"); put("tag", "dns-remote")
+                            put("server", TCP_DNS_SERVER); put("detour", "out")
+                        }
+                    }
+                }
+            }
             putJsonArray("inbounds") {
                 addJsonObject {
                     put("type", "tun"); put("tag", "tun-in")
@@ -106,6 +135,19 @@ object SingBoxConfig {
                 }
             }
             putJsonArray("outbounds", outbounds)
+            if (tcpOnlyUpstream) {
+                putJsonObject("route") {
+                    putJsonArray("rules") {
+                        // Order matters: DNS is claimed before the blanket UDP
+                        // rule below can swallow it.
+                        addJsonObject { put("action", "hijack-dns"); put("port", 53) }
+                        // Refused rather than dropped, so a QUIC attempt fails
+                        // at once and the client falls back to TCP instead of
+                        // waiting out a timeout on every request.
+                        addJsonObject { put("action", "reject"); put("network", "udp") }
+                    }
+                }
+            }
         }
         return obj.toString()
     }

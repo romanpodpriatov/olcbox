@@ -249,7 +249,11 @@ class IosVpnManager(
                 config = SingBoxConfig.buildTunSocks(
                     SingBoxConfig.SINGBOX_SOCKS_PORT,
                     username = settings.username,
-                    password = settings.password
+                    password = settings.password,
+                    // olcRTC relays TCP streams and nothing else, so sing-box
+                    // has to resolve names over the tunnel itself rather than
+                    // letting the device send DNS datagrams into a hole.
+                    upstreamCarriesUdp = false
                 ),
                 xrayConfig = null,
                 olcrtc = location.startRequest(locationsRepository.getDeviceIdentity(), settings)
