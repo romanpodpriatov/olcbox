@@ -28,7 +28,13 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     /// at all, and no amount of reordering our own calls will help.
     private static let useLibbox = true
 
-    private var boxService: LibboxBoxService?
+    /// 1.13 has no `LibboxNewService`: the command server owns the engine, and
+    /// starting sing-box means asking it to. See `LibboxCommandHandler`.
+    private var commandServer: LibboxCommandServer?
+
+    /// Held because libbox only keeps a reference from the Go side, and a
+    /// handler collected here would leave the engine calling into nothing.
+    private var commandHandler: LibboxCommandHandler?
 
     /// Watches for the device changing network underneath the tunnel.
     ///
@@ -135,9 +141,13 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
             setup.basePath = container.appendingPathComponent("libbox").path
             setup.workingPath = container.appendingPathComponent("libbox/work").path
             setup.tempPath = NSTemporaryDirectory()
-            setup.username = ""
-            setup.isTVOS = false
             setup.fixAndroidStack = false
+            // 0 means the command server would listen on a unix socket rather
+            // than a port — moot either way, because it is never started.
+            setup.commandServerListenPort = 0
+            setup.commandServerSecret = ""
+            setup.logMaxLines = 100
+            setup.debug = false
             try? FileManager.default.createDirectory(
                 atPath: setup.workingPath, withIntermediateDirectories: true
             )
@@ -146,20 +156,37 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
             var setupError: NSError?
             LibboxSetup(setup, &setupError)
             if let setupError { throw setupError }
+
+            // Where the engine's own account of itself goes now. 1.13 dropped
+            // the platform's WriteLog in favour of serving logs over the command
+            // channel, which nothing here connects to; stderr reaches the shared
+            // container just as well and carries Go panics besides.
+            var logError: NSError?
+            LibboxRedirectStderr(container.appendingPathComponent("engine.log").path, &logError)
+            if let logError {
+                // Not fatal: losing the log is worse for the next bug than for
+                // this connection.
+                log.error("engine log unavailable: \(logError.localizedDescription, privacy: .public)")
+            }
             mark("service")
 
             // The platform object is what libbox calls back into; openTun is where
             // the system settings get applied, so there is no separate call here.
             let platform = LibboxPlatform(provider: self)
-            var serviceError: NSError?
-            guard let service = LibboxNewService(config, platform, &serviceError) else {
-                throw serviceError ?? Self.failure("sing-box would not take the config")
+            let handler = LibboxCommandHandler(provider: self)
+            var serverError: NSError?
+            guard let server = LibboxNewCommandServer(handler, platform, &serverError) else {
+                throw serverError ?? Self.failure("libbox would not build a command server")
             }
             mark("starting")
-            try service.start()
+            // Deliberately not `server.start()`: that binds the gRPC command
+            // socket for an app that talks to us through handleAppMessage
+            // instead. Starting the engine is a separate call, and this is it.
+            try server.startOrReloadService(config, options: LibboxOverrideOptions())
             mark("ready")
             startWatchingNetworkChanges()
-            self.boxService = service
+            self.commandHandler = handler
+            self.commandServer = server
 
             log.info("sing-box started, config \(config.count, privacy: .public) bytes")
             completionHandler(nil)
@@ -176,9 +203,9 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
             let current = path.availableInterfaces.first?.name
             guard current != lastInterface else { return }
             lastInterface = current
-            guard let self, let service = self.boxService else { return }
+            guard let self, let server = self.commandServer else { return }
             self.log.info("network changed to \(current ?? "none", privacy: .public), resetting")
-            service.resetNetwork()
+            server.resetNetwork()
         }
         pathMonitor.start(queue: DispatchQueue(label: "org.proofkit.path"))
     }
@@ -189,10 +216,13 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     ) {
         log.info("stopTunnel reason=\(reason.rawValue, privacy: .public)")
         // Closing the service is what releases the tun descriptor; skipping it
-        // leaves the next start fighting the previous one for it.
+        // leaves the next start fighting the previous one for it. Two calls now:
+        // one stops the engine, the other tears down the server that owns it.
         pathMonitor.cancel()
-        try? boxService?.close()
-        boxService = nil
+        try? commandServer?.closeService()
+        commandServer?.close()
+        commandServer = nil
+        commandHandler = nil
         XrayEngine.stop()
         completionHandler()
     }
@@ -204,5 +234,54 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         completionHandler: ((Data?) -> Void)?
     ) {
         completionHandler?(nil)
+    }
+}
+
+/// The callbacks libbox 1.13 requires in order to hand out an engine at all.
+///
+/// `LibboxNewService` is gone: a command server owns the engine now, and one
+/// cannot be built without a handler. Its gRPC socket stays unopened — the app
+/// reaches the tunnel through `handleAppMessage` — so in practice only the
+/// engine itself calls in here, and only to report that it is stopping.
+final class LibboxCommandHandler: NSObject, LibboxCommandServerHandlerProtocol {
+
+    private weak var provider: NEPacketTunnelProvider?
+    private let log = Logger(subsystem: "org.proofkit.app", category: "command")
+
+    init(provider: NEPacketTunnelProvider) {
+        self.provider = provider
+        super.init()
+    }
+
+    /// The engine deciding to stop — an OOM kill against the extension's memory
+    /// cap arrives here and nowhere else. Tearing the tunnel down makes the
+    /// system show it as disconnected instead of leaving a VPN icon over a dead
+    /// engine, which is the failure that cost a night once already.
+    func serviceStop() throws {
+        log.error("engine asked to stop")
+        provider?.cancelTunnelWithError(nil)
+    }
+
+    /// Nothing to reload into: a new location is a new config, and the app
+    /// restarts the tunnel for it rather than reloading in place.
+    func serviceReload() throws {}
+
+    func getSystemProxyStatus() throws -> LibboxSystemProxyStatus {
+        let status = LibboxSystemProxyStatus()
+        // A packet tunnel carries every flow already; there is no separate
+        // system proxy for iOS to offer.
+        status.available = false
+        status.enabled = false
+        return status
+    }
+
+    func setSystemProxyEnabled(_ enabled: Bool) throws {
+        throw NSError(domain: "org.proofkit.tunnel", code: 4,
+                      userInfo: [NSLocalizedDescriptionKey: "no system proxy on iOS"])
+    }
+
+    func writeDebugMessage(_ message: String?) {
+        guard let message else { return }
+        log.debug("\(message, privacy: .public)")
     }
 }

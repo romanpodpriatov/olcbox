@@ -17,10 +17,16 @@ import kotlinx.serialization.json.putJsonObject
  * The JSON schema is tied to the pinned sing-box release [SINGBOX_VERSION].
  * Bumping sing-box is a deliberate change: re-verify this builder against the
  * new schema and device-smoke before shipping.
+ *
+ * Re-verified for 1.13.14: every shape this builds — socks+vless/reality,
+ * tun+hysteria2, tun+socks, socks+socks — passes `sing-box check` on the 1.13.14
+ * binary. It survives the bump because it stays minimal: 1.13 removed the legacy
+ * inbound fields and 1.12 replaced the DNS server format, and this emits neither
+ * a `dns` nor a `route` section, nor any of the deprecated inbound fields.
  */
 object SingBoxConfig {
     /** Pinned sing-box release whose config schema this builder targets. */
-    const val SINGBOX_VERSION = "1.11.15"
+    const val SINGBOX_VERSION = "1.13.14"
     // NOT 10809: the desktop PAC server (PacServer.PAC_PORT) owns that port, and the
     // core binding it first made every desktop connect fail with "Address already in use".
     const val SINGBOX_SOCKS_PORT = 10810

@@ -129,30 +129,11 @@ final class LibboxPlatform: NSObject, LibboxPlatformInterfaceProtocol {
     /// Only meaningful with a multipath configuration we do not use.
     func includeAllNetworks() -> Bool { false }
 
-    func writeLog(_ message: String?) {
-        guard let message else { return }
-        log.info("\(message, privacy: .public)")
-        Self.appendEngineLog(message)
-    }
-
-    /// sing-box explains itself in these lines, and the system log they go to
-    /// never reaches the person debugging. Keeping the last few in the shared
-    /// container costs nothing and is the difference between a diagnosis and a
-    /// guess.
-    private static let engineLogQueue = DispatchQueue(label: "org.proofkit.enginelog")
-    private static var engineLog: [String] = []
-
-    private static func appendEngineLog(_ message: String) {
-        engineLogQueue.async {
-            engineLog.append(message)
-            if engineLog.count > 12 { engineLog.removeFirst(engineLog.count - 12) }
-            guard let container = FileManager.default.containerURL(
-                forSecurityApplicationGroupIdentifier: "group.org.proofkit.app"
-            ) else { return }
-            let text = engineLog.joined(separator: "\n")
-            try? Data(text.utf8).write(to: container.appendingPathComponent("engine.log"))
-        }
-    }
+    // sing-box no longer pushes its log lines here — 1.13 keeps them in the
+    // daemon and serves them over the command channel instead, and the platform
+    // lost `WriteLog` with that change. The lines still reach the shared
+    // container: the provider redirects the engine's stderr into `engine.log`
+    // before starting it, which also catches the Go panics `WriteLog` never saw.
 
     func clearDNSCache() {
         // The system resolver is bypassed entirely — the engine does its own DNS.
@@ -201,27 +182,28 @@ final class LibboxPlatform: NSObject, LibboxPlatformInterfaceProtocol {
         return cellular
     }
 
+    /// 1.13 returns a whole owner record rather than a uid, and folded the two
+    /// Android package-name lookups into it — so the pair of methods that used to
+    /// sit here is gone with them.
     func findConnectionOwner(
         _ ipProtocol: Int32,
         sourceAddress: String?,
         sourcePort: Int32,
         destinationAddress: String?,
-        destinationPort: Int32,
-        ret0_: UnsafeMutablePointer<Int32>?
-    ) throws {
+        destinationPort: Int32
+    ) throws -> LibboxConnectionOwner {
         throw Self.unsupported("connection ownership is not visible on iOS")
     }
 
-    /// Not `throws`: the Objective-C method returns a non-optional string, so
-    /// Swift keeps the error parameter explicit instead of converting it.
-    func packageName(byUid uid: Int32, error: NSErrorPointer) -> String {
-        error?.pointee = Self.unsupported("no package names on iOS")
-        return ""
-    }
+    /// Only Android has a DNS resolver worth borrowing. Answering nil leaves the
+    /// engine on its own resolver, which is what the config already asks for.
+    func localDNSTransport() -> LibboxLocalDNSTransportProtocol? { nil }
 
-    func uid(byPackageName packageName: String?, ret0_: UnsafeMutablePointer<Int32>?) throws {
-        throw Self.unsupported("no package names on iOS")
-    }
+    /// New in 1.13, and only meaningful where the platform holds a trust store
+    /// the engine cannot read. iOS pins nothing here: outbound TLS is either
+    /// verified against the system roots the engine already reaches or, for a
+    /// published certificate pin, deliberately unverified.
+    func systemCertificates() -> LibboxStringIteratorProtocol? { nil }
 
     /// Reported as unavailable rather than faked: sing-box only asks when a rule
     /// depends on it, and a wrong answer would route traffic on a false premise.

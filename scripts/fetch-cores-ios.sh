@@ -10,7 +10,7 @@
 set -euo pipefail
 
 DEST="${1:?usage: fetch-cores-ios.sh <destination-dir>}"
-TAG="${CORES_RELEASE_TAG:-ios-cores-sb1.11.15-lxv1.260711.0}"
+TAG="${CORES_RELEASE_TAG:-ios-cores-sb1.13.14-lxv1.260711.0}"
 ASSET="Cores-ios.zip"
 URL="https://github.com/romanpodpriatov/olcbox/releases/download/${TAG}/${ASSET}"
 

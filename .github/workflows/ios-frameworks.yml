@@ -25,9 +25,13 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  SINGBOX_VERSION: 1.11.15
+  # 1.13 is not a preference, it is the only line that fits. libXray pulls
+  # apernet/quic-go, which needs quic-go/qpack v0.6.0; sing-box only reaches
+  # qpack v0.6.0 in 1.13 (1.11 wants v0.4.0, 1.12 v0.5.1, and v0.6.0 renamed
+  # the decoder API). Pairing either of those with libXray fails to compile.
+  SINGBOX_VERSION: 1.13.14
   # Pinned, not `latest`: this is what the combined module was verified to
-  # resolve and compile against, alongside sing-box 1.11.15.
+  # resolve and compile against, alongside sing-box 1.13.14.
   LIBXRAY_VERSION: v1.260711.0
 
 jobs:

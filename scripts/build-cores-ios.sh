@@ -27,7 +27,7 @@ set -euo pipefail
 # Defaults are the pinned pair this was verified against, so a laptop run and a
 # CI run produce the same framework. The workflow passes the same values because
 # it also needs them for the release tag; fetch-cores-ios.sh names that tag.
-SINGBOX_VERSION="${SINGBOX_VERSION:-1.11.15}"
+SINGBOX_VERSION="${SINGBOX_VERSION:-1.13.14}"
 LIBXRAY_VERSION="${LIBXRAY_VERSION:-v1.260711.0}"
 # Pinned rather than @latest: gobind generates code against the seq package of
 # its own version, so the tool and the module dependency below must be the same
@@ -119,3 +119,13 @@ test -f "$headers/Libbox.objc.h" \
 test -f "$headers/LibXray.objc.h" \
   || { echo "no LibXray header — Xray was not bound"; exit 1; }
 echo "== both APIs present =="
+
+# The generated header is the authority on what the Swift bridge must implement,
+# and guessing at it has cost several rounds before: Swift renames some of these
+# on import, so the Go source is not the last word. Print the two protocols the
+# extension conforms to, so a conformance error can be fixed by reading rather
+# than by another build.
+echo
+echo "== protocols the extension must match =="
+sed -n '/@protocol LibboxPlatformInterface /,/@end/p;/@protocol LibboxCommandServerHandler /,/@end/p' \
+  "$headers/Libbox.objc.h"

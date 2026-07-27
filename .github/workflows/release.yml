@@ -348,7 +348,7 @@ jobs:
       - name: Bundle sing-box + Xray cores into the app
         working-directory: olcbox
         env:
-          SINGBOX_VERSION: "1.11.15"
+          SINGBOX_VERSION: "1.13.14"
           XRAY_VERSION: "25.3.6"
           MATRIX_ARCH: ${{ matrix.arch }}
         run: |
