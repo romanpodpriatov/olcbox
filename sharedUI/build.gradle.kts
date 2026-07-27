@@ -1,3 +1,4 @@
+import java.util.Properties
 import org.gradle.api.DefaultTask
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.provider.Property
@@ -31,7 +32,7 @@ val olcboxVersionValue = olcboxVersion.get()
 // provider was tried first and silently yielded nothing — the task ran, the key
 // stayed empty — and a build input that can fail without saying so is worth less
 // than the laziness it buys.
-val localBuildProperties = java.util.Properties().apply {
+val localBuildProperties = Properties().apply {
     val file = rootProject.file("local.properties")
     if (file.exists()) file.inputStream().use { load(it) }
 }
