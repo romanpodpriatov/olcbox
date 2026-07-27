@@ -26,24 +26,23 @@ val olcboxVersionValue = olcboxVersion.get()
 // It exists because the environment variable is not a local route at all —
 // Xcode's build phases do not inherit the shell's environment, so exporting one
 // in a terminal never reaches the gradle that Xcode runs.
-val localBuildProperties = providers.fileContents(
-    rootProject.layout.projectDirectory.file("local.properties")
-).asText.map { text ->
-    java.util.Properties().apply { load(text.reader()) }
-}.orElse(java.util.Properties())
+//
+// Read plainly, the way this file already reads OLCRTC_REPO. A `fileContents`
+// provider was tried first and silently yielded nothing — the task ran, the key
+// stayed empty — and a build input that can fail without saying so is worth less
+// than the laziness it buys.
+val localBuildProperties = java.util.Properties().apply {
+    val file = rootProject.file("local.properties")
+    if (file.exists()) file.inputStream().use { load(it) }
+}
 
-// Returns an absent provider when unset, not an empty one: an empty string is a
-// value, and it would win over the defaults chained after it.
-fun localBuildProperty(name: String) =
-    localBuildProperties.map { it.getProperty(name)?.takeIf(String::isNotBlank) }
+fun localBuildProperty(name: String): String? =
+    localBuildProperties.getProperty(name)?.takeIf { it.isNotBlank() }
 
 // The same value in gradle.properties would be committed and published. Say so
 // loudly rather than let it happen quietly. Only the tracked file is checked,
 // so this cannot misfire on a location that would have been safe.
-require(
-    !providers.fileContents(rootProject.layout.projectDirectory.file("gradle.properties"))
-        .asText.orElse("").get().contains("olcbox.cryptKeyV1")
-) {
+require(!rootProject.file("gradle.properties").readText().contains("olcbox.cryptKeyV1")) {
     "olcbox.cryptKeyV1 belongs in local.properties (gitignored), not gradle.properties " +
         "(tracked, and this repository is public)."
 }
@@ -51,16 +50,13 @@ require(
 // crypt1 client key + admin unlock hash: baked at build time (absent ⇒ features
 // off, so a crypt1 link imports as "No valid ProofKit config found").
 val olcboxCryptKeyV1 = providers.environmentVariable("OLCBOX_CRYPT_KEY_V1")
-    .orElse(localBuildProperty("olcbox.cryptKeyV1"))
-    .orElse("")
+    .orElse(localBuildProperty("olcbox.cryptKeyV1").orEmpty())
 val olcboxAdminPassSha256 = providers.environmentVariable("OLCBOX_ADMIN_PASS_SHA256")
-    .orElse(localBuildProperty("olcbox.adminPassSha256"))
-    .orElse("")
+    .orElse(localBuildProperty("olcbox.adminPassSha256").orEmpty())
 // Where the app asks what a partner's opaque link points at. Not a secret —
 // overridable only so a test build can aim at something other than production.
 val olcboxResolverBase = providers.environmentVariable("OLCBOX_RESOLVER_BASE")
-    .orElse(localBuildProperty("olcbox.resolverBase"))
-    .orElse("https://proofkit.org/api/v1")
+    .orElse(localBuildProperty("olcbox.resolverBase") ?: "https://proofkit.org/api/v1")
 val generatedAppInfoDir = layout.buildDirectory.dir("generated/source/olcboxAppInfo/commonMain")
 
 val olcrtcRepoPath = providers.environmentVariable("OLCRTC_REPO")
@@ -89,6 +85,13 @@ abstract class GenerateAppInfoTask : DefaultTask() {
 
     @TaskAction
     fun generate() {
+        // Never the values: one is a secret, and the other is a hash of one. The
+        // point is only that a build which quietly disabled a feature says so.
+        logger.lifecycle(
+            "olcbox app info: crypt1 " +
+                (if (cryptKeyV1.get().isBlank()) "OFF (no key — crypt1 links will not import)" else "ON") +
+                ", admin gate " + (if (adminPassSha256.get().isBlank()) "OFF" else "ON")
+        )
         val packageDir = outputDir.get().asFile.resolve("org/olcbox/app")
         packageDir.mkdirs()
         fun esc(s: String) = s.replace("\\", "\\\\").replace("\"", "\\\"")
