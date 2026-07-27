@@ -120,6 +120,21 @@ test -f "$headers/LibXray.objc.h" \
   || { echo "no LibXray header — Xray was not bound"; exit 1; }
 echo "== both APIs present =="
 
+# Keep a copy outside the build directory.
+#
+# The usual destination is inside `sharedUI/build`, which belongs to Gradle and
+# which Gradle sweeps: it is the declared output of fetchCoresIosXcframework,
+# and a sweep once deleted twenty minutes of work that could not be
+# re-downloaded, because the release for this version pair did not exist yet.
+# fetch-cores-ios.sh looks here before it looks at the network.
+CACHE="${CORES_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/olcbox/cores}/ios-cores-sb${SINGBOX_VERSION}-lx${LIBXRAY_VERSION}"
+if [ "$(cd "$OUT" && pwd)" != "$CACHE" ]; then
+  mkdir -p "$CACHE"
+  rm -rf "$CACHE/Cores.xcframework"
+  cp -R "$OUT/Cores.xcframework" "$CACHE/Cores.xcframework"
+  echo "== cached in $CACHE =="
+fi
+
 # The generated header is the authority on what the Swift bridge must implement,
 # and guessing at it has cost several rounds before: Swift renames some of these
 # on import, so the Go source is not the last word. Print the two protocols the
