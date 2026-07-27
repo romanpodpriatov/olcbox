@@ -384,6 +384,20 @@ final class SwiftPacketTunnelBridge: NSObject, @unchecked Sendable, IosPacketTun
     func start(request: IosPacketTunnelStartRequest, callback: IosBridgeCallback) {
         let answer = SendableCallback(callback: callback)
 
+        // The Simulator has no Network Extension. `saveToPreferences` fails
+        // there, so the manager stays nil and the app reported "no VPN
+        // configuration" — which reads as something missing that could be
+        // supplied, and sends whoever sees it looking for it. Nothing is
+        // missing; the platform does not have the feature.
+        #if targetEnvironment(simulator)
+        answer.callback.onResult(result: IosBridgeResult(
+            success: false,
+            message: "The VPN cannot run in the Simulator — iOS has no Network "
+                + "Extension there. Build to a device."
+        ))
+        return
+        #endif
+
         guard let container = FileManager.default.containerURL(
             forSecurityApplicationGroupIdentifier: Self.appGroupId
         ) else {

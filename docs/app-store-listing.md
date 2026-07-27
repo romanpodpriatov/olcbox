@@ -285,9 +285,27 @@ app gets rejected for something nobody intended to ship.
 Required size: **6.9" iPhone — 1320 × 2868**. Apple derives every smaller size
 itself.
 
+### The Simulator cannot make all five
+
+**Network Extension does not exist in the Simulator.** Not "does not work
+well" — the framework is absent, `saveToPreferences` fails, and the app now
+says so plainly instead of reporting "no VPN configuration", which reads as
+something missing that could be supplied.
+
+So four of the five screenshots can be taken in the Simulator, and the
+connected one cannot. That one needs a device, and the device has to be the
+right size: App Store Connect accepts **1320 × 2868** (iPhone 16/17 Pro Max)
+or **1290 × 2796** (iPhone 14/15 Pro Max, or a Plus) for this slot. A 6.1"
+phone produces 1179 × 2556, which is not accepted and cannot honestly be
+scaled into one that is.
+
+If no Pro Max is to hand, the options are borrowing one, or shipping the four
+that the Simulator can produce — Apple requires a minimum of one screenshot,
+not five. Four honest screenshots beat five with an upscaled one.
+
 ### Capturing
 
-From a simulator, which is steadier than a device and always the right size:
+From a simulator, for everything except the connected screen:
 
 ```bash
 xcrun simctl list devices available | grep "Pro Max"     # pick the 6.9" one
