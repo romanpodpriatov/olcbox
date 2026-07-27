@@ -157,32 +157,80 @@ domains, and one required-reason API (`NSUserDefaults`, `CA92.1`).
 
 ## Export compliance
 
-Answered in `Info.plist` as `ITSAppUsesNonExemptEncryption = true`, so App Store
-Connect stops asking per upload.
+Answered in `Info.plist` as `ITSAppUsesNonExemptEncryption = false`, so App
+Store Connect stops asking per upload.
 
-**Why true.** The exemptions cover apps whose encryption is the operating
-system's, or HTTPS, or protects only credentials or DRM. This app is none of
-those: it carries traffic inside Reality, Hysteria2 with Salamander, and
-olcRTC's own encrypted transport, and it decrypts its own subscription links.
+**Why false, and why not for the reason people usually give.** It is not exempt
+because the algorithms are standard. Almost every app uses standard algorithms
+and is caught by ECCN 5D992 regardless; "we have no proprietary crypto" answers
+a *different* question in the questionnaire, and the answer there is indeed
+**No**, but it settles nothing here.
 
-**What that obliges, once, at company level:**
+It is exempt because the source is public. Under **EAR §742.15(b)**, publicly
+available encryption object code whose corresponding source is publicly
+available **and has been notified to BIS and the NSA** is *not subject to the
+EAR*. No registration number, no annual self-classification report, nothing
+filed each January. Everything this app encrypts with is in a public
+repository — olcbox itself, the olcrtc fork, sing-box, Xray.
 
-1. A **BIS Encryption Registration Number (ERN)** — one form, one time,
-   `snap-r` at BIS.
-2. An **annual self-classification report** for **ECCN 5D992.c** (mass-market
-   encryption software), emailed to BIS and the NSA each January for the
-   preceding year.
+**The notification is a condition, not a formality.** Until the email below has
+been sent, the `false` in `Info.plist` is a false declaration on a customs
+question. Send it once, before the first upload, and keep the sent copy.
 
-**Questionnaire answers, when asked:**
+### The email — send once
+
+To: `crypt@bis.doc.gov`, `enc@nsa.gov`
+Subject: `Notification of publicly available encryption source code`
+
+```
+This is a notification under Section 742.15(b) of the Export Administration
+Regulations of publicly available encryption source code.
+
+Product:            ProofKit (olcbox) — VPN client for iOS, Android, macOS,
+                    Windows and Linux
+Source code URL:    https://github.com/romanpodpriatov/olcbox
+
+The complete corresponding source code is available at the URL above without
+charge and without restriction on access. Cryptographic functionality is
+provided by publicly available components:
+
+  https://github.com/romanpodpriatov/olcrtc
+  https://github.com/SagerNet/sing-box
+  https://github.com/XTLS/Xray-core
+
+The algorithms used are published standards: AES, ChaCha20-Poly1305 and TLS.
+No cryptographic algorithm developed by us is included.
+
+Submitter:          Globvent inc
+Contact:            <name, email, telephone>
+```
+
+> Reply-to and contact details have to be a real person who can answer a
+> follow-up. There is no acknowledgement to wait for — the notification is
+> effective on sending — but keep the sent message, because the only proof that
+> it went is your own copy of it.
+
+### If this ever stops being true
+
+A private fork of a core, a vendored binary nobody can read, or crypto written
+here and not published: any of those and the app is no longer publicly
+available encryption. The answer goes back to `true`, and the route becomes a
+one-time **BIS Encryption Registration Number** plus an **annual
+self-classification report for ECCN 5D992.c**, emailed each January.
+
+### Questionnaire answers, if App Store Connect still asks
 
 - Uses encryption → **Yes**
-- Qualifies for an exemption → **No**
-- *"Does your app implement any proprietary encryption algorithms?"* → **No**.
-  The question is about algorithms, not protocols. Ours are AES,
-  ChaCha20-Poly1305 and TLS; the protocols around them are bespoke, which is a
-  different thing and not what is being asked.
-- CCATS → none. Do not invent a number; the ERN plus self-classification is the
-  route for 5D992.c.
+- Qualifies for an exemption → **Yes**, publicly available under §742.15(b)
+- *"Proprietary encryption algorithms?"* → **No**. The question is about
+  algorithms, not protocols. Ours are AES, ChaCha20-Poly1305 and TLS; the
+  protocols around them are bespoke, which is a different thing and not what is
+  being asked.
+- CCATS → none, and none is needed on this route. Do not invent a number.
+
+> **What other clients answer is not knowable and would not help.** Export
+> answers are not published, and a closed-source client cannot use this route at
+> all — it has to register. Copying its answer would be copying the wrong one.
 
 ---
 

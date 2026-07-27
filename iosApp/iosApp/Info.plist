@@ -27,27 +27,26 @@
 	<!--
 		Export compliance, answered once here instead of on every upload.
 
-		True, and it is the accurate answer rather than the convenient one. The
-		exemptions App Store Connect offers cover an app whose encryption is the
-		operating system's, or is HTTPS, or protects only credentials or DRM.
-		This app is none of those: it carries traffic inside Reality, Hysteria2
-		with Salamander obfuscation, and olcRTC's own encrypted transport, and it
-		decrypts its own subscription links. Answering "no" to save a form would
-		be a false declaration.
+		False, and the reason is narrower than it looks. The encryption is not
+		exempt because the algorithms are standard — almost everything uses
+		standard algorithms and is caught by 5D992 anyway. It is exempt because the
+		source is publicly available: under EAR 742.15(b), publicly available
+		object code whose source is public and **notified to BIS and the NSA** is
+		not subject to the EAR at all. No registration number, no annual
+		self-classification report.
 
-		What it obliges — and this part is the company's, not the code's — is a
-		one-time BIS Encryption Registration Number and the annual
-		self-classification report for 5D992.c mass-market software. Apple asks
-		for that documentation once, not per release. `ITSEncryptionExportCompliance
-		Code` belongs here too, but only if a CCATS is ever obtained; there is
-		none, so the key is absent rather than empty.
+		That notification is a condition, not a formality. Until the one-time email
+		has gone to crypt@bis.doc.gov and enc@nsa.gov naming the repository, this
+		key is a false declaration on a customs question. The template and the
+		addresses are in docs/app-store-listing.md; send it before the first
+		upload, keep the sent copy.
 
-		The algorithms are standard — AES, ChaCha20-Poly1305, TLS — which is what
-		the "proprietary algorithms" question in the questionnaire is asking
-		about. Our protocols are bespoke; the ciphers underneath are not.
+		If the app ever ships crypto that is not in the public repository — a
+		private fork of a core, a vendored binary nobody can read — this stops
+		being true and the answer goes back to true with an ERN behind it.
 	-->
 	<key>ITSAppUsesNonExemptEncryption</key>
-	<true/>
+	<false/>
 	<key>NSCameraUsageDescription</key>
 	<string>ProofKit uses the camera only to scan a subscription QR code. Nothing is recorded or sent anywhere.</string>
 	<!--
