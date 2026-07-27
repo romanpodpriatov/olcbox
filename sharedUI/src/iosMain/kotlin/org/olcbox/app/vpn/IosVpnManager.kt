@@ -210,10 +210,27 @@ class IosVpnManager(
         // measurement is of the path. Hysteria2 in particular refuses every
         // other probe going — it answers no TCP, and its UDP is obfuscated —
         // which is why a subscription full of it had nothing to show at all.
-        val host = serverHost(config) ?: return null
-        return withContext(Dispatchers.Default) {
-            packetTunnelBridge.icmpLatencyMs(host, ICMP_TIMEOUT_MS).takeIf { it >= 0 }
+        val label = config.displayName().ifBlank { "location" }
+        val host = serverHost(config) ?: run {
+            addLog("ping $label: no server address in the link")
+            return null
         }
+        val result = withContext(Dispatchers.Default) {
+            packetTunnelBridge.icmpLatencyMs(host, ICMP_TIMEOUT_MS)
+        }
+        // Said out loud, because this has now been guessed at twice. Whatever
+        // comes back, the log names the host and what happened to it.
+        addLog(
+            when {
+                result >= 0 -> "ping $label: $host answered in ${result}ms"
+                result == ICMP_UNRESOLVED -> "ping $label: could not resolve $host"
+                result == ICMP_SOCKET_REFUSED ->
+                    "ping $label: this device would not open an ICMP socket"
+                result == ICMP_SEND_FAILED -> "ping $label: could not send an echo to $host"
+                else -> "ping $label: $host did not answer within ${ICMP_TIMEOUT_MS}ms"
+            }
+        )
+        return result.takeIf { it >= 0 }
     }
 
     /**
@@ -731,6 +748,11 @@ class IosVpnManager(
         const val TUNNEL_PROBE_TIMEOUT_MS = 6_000L
         /** One echo and back. Anything slower than this is not a usable exit. */
         const val ICMP_TIMEOUT_MS = 3_000L
+
+        // Mirrors IcmpProbe.Failure on the Swift side.
+        const val ICMP_UNRESOLVED = -2L
+        const val ICMP_SOCKET_REFUSED = -3L
+        const val ICMP_SEND_FAILED = -4L
         const val HTTP_PING_URL = "https://www.google.com/generate_204"
         const val WATCHDOG_INTERVAL_MS = 10_000L
         const val SYSTEM_SYNC_INTERVAL_MS = 3_000L

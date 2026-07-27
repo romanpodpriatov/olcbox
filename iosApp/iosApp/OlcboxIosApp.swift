@@ -496,10 +496,7 @@ final class SwiftPacketTunnelBridge: NSObject, @unchecked Sendable, IosPacketTun
     func tunnelBytesOut() -> Int64 { TunnelCounters.read().bytesOut }
 
     func icmpLatencyMs(host: String, timeoutMillis: Int64) -> Int64 {
-        IcmpProbe.measure(
-            host: host,
-            timeout: TimeInterval(timeoutMillis) / 1000
-        ) ?? -1
+        IcmpProbe.measure(host: host, timeout: TimeInterval(timeoutMillis) / 1000)
     }
 
     func engineLog() -> String {
@@ -620,12 +617,24 @@ enum IcmpProbe {
         return sequence
     }
 
-    /// Round trip in milliseconds, or nil if it did not come back in time.
-    static func measure(host: String, timeout: TimeInterval) -> Int64? {
-        guard let target = resolve(host) else { return nil }
+    /// Why a measurement did not happen, so the app can say which.
+    ///
+    /// Distinguishing these is the difference between "that server is down" and
+    /// "this phone cannot send an ICMP echo at all" — one is about the network
+    /// and the other about the app, and a single nil made them the same event.
+    enum Failure: Int64 {
+        case unresolved = -2
+        case socketRefused = -3
+        case sendFailed = -4
+        case noReply = -1
+    }
+
+    /// Round trip in milliseconds, or a negative [Failure] raw value.
+    static func measure(host: String, timeout: TimeInterval) -> Int64 {
+        guard let target = resolve(host) else { return Failure.unresolved.rawValue }
 
         let fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_ICMP)
-        guard fd >= 0 else { return nil }
+        guard fd >= 0 else { return Failure.socketRefused.rawValue }
         defer { close(fd) }
 
         var tv = timeval(
@@ -649,7 +658,7 @@ enum IcmpProbe {
                 }
             }
         }
-        guard sent == request.count else { return nil }
+        guard sent == request.count else { return Failure.sendFailed.rawValue }
 
         // Somebody else's reply can arrive on this socket, so read until ours
         // does or the clock runs out. SO_RCVTIMEO bounds each read; the deadline
@@ -659,12 +668,12 @@ enum IcmpProbe {
             let read = reply.withUnsafeMutableBufferPointer { buffer in
                 recv(fd, buffer.baseAddress, buffer.count, 0)
             }
-            if read <= 0 { return nil }
+            if read <= 0 { return Failure.noReply.rawValue }
             if matches(reply, count: read, sequence: seq) {
                 return Int64(Date().timeIntervalSince(started) * 1000)
             }
         }
-        return nil
+        return Failure.noReply.rawValue
     }
 
     private static func echoPacket(sequence: UInt16) -> [UInt8] {

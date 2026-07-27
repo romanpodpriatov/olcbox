@@ -135,7 +135,8 @@ fun HomeScreen(
                     if (state.isVpnConnected) {
                         "Latency is measured on the connected location"
                     } else {
-                        "Connect first — latency is measured through the tunnel"
+                        "Nothing here can be measured — these locations have no " +
+                            "address to reach"
                     }
                 )
             }
@@ -154,10 +155,17 @@ fun HomeScreen(
     // What the app does on its own when it opens. Each is off unless asked for:
     // connecting without being told to is not a default anyone should inherit.
     var launchActionsDone by rememberSaveable { mutableStateOf(false) }
-    LaunchedEffect(subscriptionSettingsLoaded, launchActionsDone) {
+    LaunchedEffect(subscriptionSettingsLoaded, locations.isEmpty(), launchActionsDone) {
         // Only once the stored settings have actually arrived: the first value is
         // a default object, and acting on it would ignore what the user chose.
-        if (launchActionsDone || !subscriptionSettingsLoaded) return@LaunchedEffect
+        //
+        // And only once there are locations to act on. Settings load faster than
+        // the location list, so "ping on launch" fired against an empty list,
+        // found nothing measurable and announced that instead — which is exactly
+        // what "the checkbox does nothing" looks like from outside.
+        if (launchActionsDone || !subscriptionSettingsLoaded || locations.isEmpty()) {
+            return@LaunchedEffect
+        }
         val settings = subscriptionSettings
         launchActionsDone = true
         if (settings.refreshOnOpen && hasSubscriptions) refreshSubscriptions()
