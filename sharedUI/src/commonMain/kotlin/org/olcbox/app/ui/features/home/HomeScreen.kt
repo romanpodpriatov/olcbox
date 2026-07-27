@@ -117,6 +117,27 @@ fun HomeScreen(
     }
 
     fun refreshHttpPings(targetLocationIds: List<String>? = null) {
+        // The button is always there; the measurement is not always possible.
+        // Latency is timed through a connection, so with nothing connected only
+        // an olcRTC room can be probed — say that instead of appearing to do
+        // nothing, which is what the user is left with otherwise.
+        val measurable = locations.any { item ->
+            (targetLocationIds == null || item.storageId in targetLocationIds) &&
+                item.config?.let { viewModel.canPing(it) } == true
+        }
+        if (!measurable) {
+            scope.launch {
+                snackbarHostState.showSnackbar(
+                    if (state.isVpnConnected) {
+                        "Latency is measured on the connected location"
+                    } else {
+                        "Connect first — latency is measured through the tunnel"
+                    }
+                )
+            }
+            return
+        }
+
         locationViewModel.refreshPings(
             targetLocationIds = targetLocationIds,
             performPing = { config ->
