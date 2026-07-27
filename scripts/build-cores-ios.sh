@@ -33,6 +33,14 @@ LIBXRAY_VERSION="${LIBXRAY_VERSION:-v1.260711.0}"
 # app's own OlcRtcMobile is built from (OLCRTC_REPO): the extension is built on
 # machines that do not have that checkout. A protocol change in olcrtc therefore
 # has to be pushed before it reaches the tunnel.
+#
+# Our fork never rewrote its own module path, so it still declares itself as
+# OLCRTC_MODULE below while living at OLCRTC_FORK. Go refuses to require it under
+# the name it is fetched from — that is what `module declares its path as` means
+# — and the fix is the ordinary fork shape: require the declared path, replace it
+# with the fork. It works precisely *because* the fork kept the upstream path.
+OLCRTC_MODULE="github.com/openlibrecommunity/olcrtc"
+OLCRTC_FORK="${OLCRTC_FORK:-github.com/romanpodpriatov/olcrtc}"
 OLCRTC_VERSION="${OLCRTC_VERSION:-v0.0.0-20260713124136-42ae4e0c6a1a}"
 # Pinned rather than @latest: gobind generates code against the seq package of
 # its own version, so the tool and the module dependency below must be the same
@@ -66,14 +74,21 @@ package cores
 import (
 	_ "github.com/sagernet/sing-box/experimental/libbox"
 	_ "github.com/xtls/libxray"
-	_ "github.com/romanpodpriatov/olcrtc/mobile"
+	_ "github.com/openlibrecommunity/olcrtc/mobile"
 )
 EOF
 
 export GOFLAGS=-mod=mod
+# olcrtc goes in by edit rather than by `go get`: the version lives on the
+# replacement, and asking go to fetch the declared path would send it to the
+# upstream repository instead of ours. The required version is a placeholder for
+# exactly that reason — the replacement decides what is downloaded.
+go mod edit \
+  -require="${OLCRTC_MODULE}@v0.0.0-00010101000000-000000000000" \
+  -replace="${OLCRTC_MODULE}=${OLCRTC_FORK}@${OLCRTC_VERSION}"
+
 go get "github.com/sagernet/sing-box@v${SINGBOX_VERSION}"
 go get "github.com/xtls/libxray@${LIBXRAY_VERSION}"
-go get "github.com/romanpodpriatov/olcrtc@${OLCRTC_VERSION}"
 # gobind looks for the bind package through the module being built, so it has
 # to be a dependency rather than merely installed.
 go get "github.com/sagernet/gomobile/bind@${GOMOBILE_VERSION}"
@@ -86,7 +101,7 @@ go get "github.com/sagernet/gomobile/bind@${GOMOBILE_VERSION}"
 # version bump, this is the line that says why.
 echo "== resolved =="
 go list -m github.com/sagernet/sing-box github.com/xtls/libxray github.com/xtls/xray-core \
-  github.com/romanpodpriatov/olcrtc github.com/sagernet/sing github.com/pion/transport/v4 \
+  "${OLCRTC_MODULE}" github.com/sagernet/sing github.com/pion/transport/v4 \
   golang.org/x/net golang.org/x/crypto
 
 # Compile every core against that merged graph before binding them. The bind is
@@ -124,7 +139,7 @@ gomobile bind -v \
   -o "$OUT/Cores.xcframework" \
   github.com/sagernet/sing-box/experimental/libbox \
   github.com/xtls/libxray \
-  github.com/romanpodpriatov/olcrtc/mobile
+  "${OLCRTC_MODULE}/mobile"
 
 echo "== slices produced =="
 ls -1 "$OUT/Cores.xcframework"
