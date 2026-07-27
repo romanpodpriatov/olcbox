@@ -107,6 +107,9 @@ import org.olcbox.app.vpn.AndroidConnectionMode
 import org.olcbox.app.vpn.AndroidInstalledApp
 import org.olcbox.app.vpn.AndroidSocksProxySettings
 import org.olcbox.app.vpn.AndroidSplitTunnelList
+import org.olcbox.app.data.model.SubscriptionSettings
+import org.olcbox.app.ui.components.SubscriptionSettingsScreen
+import org.olcbox.app.ui.components.hubSummary
 import org.olcbox.app.vpn.AndroidSplitTunnelMode
 import org.olcbox.app.vpn.AndroidSplitTunnelSettings
 import java.text.DateFormat
@@ -125,6 +128,8 @@ internal fun AppSettingsSheet(
     updateStatusText: String?,
     updateDownloadProgress: Float?,
     subscriptions: List<SubscriptionShareItem>,
+    subscriptionSettings: SubscriptionSettings = SubscriptionSettings(),
+    onSubscriptionSettingsChanged: (SubscriptionSettings) -> Unit = {},
     enabled: Boolean,
     isConnectionActive: Boolean,
     onDismiss: () -> Unit,
@@ -209,6 +214,12 @@ internal fun AppSettingsSheet(
             label = "appSettingsRoute"
         ) { currentRoute ->
             when (currentRoute) {
+                AppSettingsRoute.SubscriptionOptions -> SubscriptionSettingsScreen(
+                    settings = subscriptionSettings,
+                    onChanged = onSubscriptionSettingsChanged,
+                    onBack = { route = AppSettingsRoute.Hub }
+                )
+
                 AppSettingsRoute.Hub -> AppSettingsHubContent(
                     selectedMode = selectedMode,
                     updateSettings = updateSettings,
@@ -216,6 +227,8 @@ internal fun AppSettingsSheet(
                     enabled = enabled,
                     onConnectionSettingsClick = { route = AppSettingsRoute.ConnectionSettings },
                     onSubscriptionsSharingClick = { route = AppSettingsRoute.SubscriptionsSharing },
+                    onSubscriptionOptionsClick = { route = AppSettingsRoute.SubscriptionOptions },
+                    subscriptionSettings = subscriptionSettings,
                     onUpdatesClick = { route = AppSettingsRoute.Updates },
                     onApplicationLogsClick = { route = AppSettingsRoute.ApplicationLogs }
                 )
@@ -310,9 +323,11 @@ private fun AppSettingsHubContent(
     selectedMode: AndroidConnectionMode,
     updateSettings: AppUpdateSettings,
     subscriptionsCount: Int,
+    subscriptionSettings: SubscriptionSettings,
     enabled: Boolean,
     onConnectionSettingsClick: () -> Unit,
     onSubscriptionsSharingClick: () -> Unit,
+    onSubscriptionOptionsClick: () -> Unit,
     onUpdatesClick: () -> Unit,
     onApplicationLogsClick: () -> Unit
 ) {
@@ -337,6 +352,14 @@ private fun AppSettingsHubContent(
             icon = selectedMode.icon(),
             enabled = enabled,
             onClick = onConnectionSettingsClick
+        )
+
+        SettingsNavigationRow(
+            title = "Subscription Settings",
+            value = subscriptionSettings.hubSummary(),
+            icon = Icons.Outlined.Refresh,
+            enabled = enabled,
+            onClick = onSubscriptionOptionsClick
         )
 
         SettingsNavigationRow(
@@ -2207,6 +2230,7 @@ private sealed class AppSettingsRoute(val depth: Int) {
     object SocksProxy : AppSettingsRoute(1)
     object SplitTunneling : AppSettingsRoute(1)
     object SubscriptionsSharing : AppSettingsRoute(1)
+    object SubscriptionOptions : AppSettingsRoute(1)
     object Updates : AppSettingsRoute(1)
     object ApplicationLogs : AppSettingsRoute(1)
     data class AppList(val list: AndroidSplitTunnelList) : AppSettingsRoute(2)

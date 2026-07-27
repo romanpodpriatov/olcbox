@@ -79,6 +79,7 @@ fun AndroidMainScreen(
     val splitTunnelSettings by vpnManager.splitTunnelSettings.collectAsState()
     val installedApps by vpnManager.installedApps.collectAsState()
     val homeState by viewModel.state.collectAsState()
+    val subscriptionSettings by viewModel.subscriptionSettings.collectAsState()
     val logs by viewModel.logs.collectAsState()
     val pendingLogSaveCallbacks = remember {
         mutableStateOf<Pair<(String) -> Unit, (String) -> Unit>?>(null)
@@ -424,6 +425,8 @@ fun AndroidMainScreen(
             updateStatusText = updateStatusText,
             updateDownloadProgress = updateDownloadProgress,
             subscriptions = subscriptionShareItems,
+            subscriptionSettings = subscriptionSettings,
+            onSubscriptionSettingsChanged = viewModel::updateSubscriptionSettings,
             enabled = !homeState.isVpnLoading,
             isConnectionActive = homeState.isVpnConnected,
             onDismiss = {

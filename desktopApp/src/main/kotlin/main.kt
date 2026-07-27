@@ -301,6 +301,7 @@ fun main(args: Array<String>) = application {
         AppTheme {
             val logs by dependencies.homeViewModel.logs.collectAsState()
             val homeState by dependencies.homeViewModel.state.collectAsState()
+            val subscriptionSettings by dependencies.homeViewModel.subscriptionSettings.collectAsState()
             val socksProxySettings by dependencies.vpnManager.socksProxySettings.collectAsState()
 
             fun reloadLocationsAfterImport(onComplete: () -> Unit = {}) {
@@ -389,6 +390,9 @@ fun main(args: Array<String>) = application {
                         ),
                         socksProxySettings = socksProxySettings.toApplicationSocksProxySettings(),
                         isConnectionActive = homeState.isVpnConnected,
+                        subscriptionSettings = subscriptionSettings,
+                        onSubscriptionSettingsChanged =
+                            dependencies.homeViewModel::updateSubscriptionSettings,
                         onDismiss = { showDesktopSettings = false },
                         onCopyConfigClick = {
                             dependencies.homeViewModel.onCopyFullConfigClicked()
