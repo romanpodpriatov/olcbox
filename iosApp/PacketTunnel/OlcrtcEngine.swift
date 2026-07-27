@@ -53,10 +53,20 @@ enum OlcrtcEngine {
     )
 
     /// How long to wait for the engine to answer before calling it a failure.
-    /// The same eight seconds the in-app path used, which is long enough for a
-    /// WebRTC negotiation on a slow network and short enough that a user waiting
-    /// on the connect button does not think the app has died.
-    private static let readyTimeoutMillis = 8_000
+    ///
+    /// Was eight seconds, inherited from the in-app path. A trace of a failed
+    /// start shows ICE reaching two valid candidate pairs — a TURN relay and a
+    /// server-reflexive one — inside the first second, both `succeeded`, neither
+    /// nominated, and then nothing at all until the timeout. Eight seconds may
+    /// simply be short for a negotiation that crosses the Atlantic to an SFU in
+    /// Russia and still has DTLS and the VP8 channel ahead of it.
+    ///
+    /// So: raised, as an experiment that tells the two remaining explanations
+    /// apart. If it connects at twelve seconds the answer is that this was too
+    /// short and the number wants choosing properly; if it still stops dead
+    /// after the same pairs, more time was never the problem and the log now
+    /// covers enough of the attempt to say what is.
+    private static let readyTimeoutMillis = 20_000
 
     static func start(_ parameters: Parameters) throws {
         // Fresh per attempt, so whatever the app reads back afterwards belongs
@@ -149,11 +159,21 @@ private final class EngineLog: NSObject, @unchecked Sendable, MobileLogWriterPro
     /// Every mutable field below is touched only from this queue. Go calls
     /// `writeLog` from whichever goroutine happens to be logging.
     private let queue = DispatchQueue(label: "org.proofkit.olcrtc-log")
-    private var lines: [String] = []
 
-    /// A start that fails does so within seconds, so a couple of hundred lines
-    /// covers the whole attempt while keeping the file a few kilobytes.
-    private static let window = 200
+    /// Both ends of the attempt, never the sagging middle.
+    ///
+    /// A plain tail is the wrong shape here: with ICE tracing on, a few seconds
+    /// of candidate checks bury the lines that say which room was joined and
+    /// what was negotiated — and those come first. So the opening is kept
+    /// whole, the most recent lines are kept whole, and what is dropped between
+    /// them is counted rather than hidden.
+    private var head: [String] = []
+    private var tail: [String] = []
+    private var dropped = 0
+    private var flushScheduled = false
+
+    private static let headWindow = 150
+    private static let tailWindow = 250
 
     init(file: URL?) {
         self.file = file
@@ -162,7 +182,9 @@ private final class EngineLog: NSObject, @unchecked Sendable, MobileLogWriterPro
 
     func reset() {
         queue.async { [self] in
-            lines.removeAll(keepingCapacity: true)
+            head.removeAll(keepingCapacity: true)
+            tail.removeAll(keepingCapacity: true)
+            dropped = 0
             if let file { try? Data().write(to: file, options: .atomic) }
         }
     }
@@ -170,15 +192,44 @@ private final class EngineLog: NSObject, @unchecked Sendable, MobileLogWriterPro
     func writeLog(_ msg: String?) {
         guard let msg else { return }
         log.info("\(msg, privacy: .public)")
-        guard let file else { return }
+        guard file != nil else { return }
         queue.async { [self] in
-            lines.append(msg)
-            if lines.count > Self.window { lines.removeFirst(lines.count - Self.window) }
-            // Rewritten whole rather than appended: an append interrupted by the
-            // process dying can tear the last line, and the last line is the one
-            // this exists to read.
-            try? Data((lines.joined(separator: "\n") + "\n").utf8)
-                .write(to: file, options: .atomic)
+            if head.count < Self.headWindow {
+                head.append(msg)
+            } else {
+                tail.append(msg)
+                if tail.count > Self.tailWindow {
+                    let over = tail.count - Self.tailWindow
+                    tail.removeFirst(over)
+                    dropped += over
+                }
+            }
+            scheduleFlush()
         }
+    }
+
+    /// Coalesced, because ICE tracing logs faster than a phone should be asked
+    /// to rewrite a file. An atomic write per line — a temp file and a rename,
+    /// hundreds of times a second, inside an extension with a ~50 MB ceiling —
+    /// would risk changing the very outcome this is here to observe.
+    private func scheduleFlush() {
+        guard !flushScheduled else { return }
+        flushScheduled = true
+        queue.asyncAfter(deadline: .now() + 0.25) { [self] in
+            flushScheduled = false
+            persist()
+        }
+    }
+
+    private func persist() {
+        guard let file else { return }
+        var out = head
+        if dropped > 0 { out.append("… \(dropped) lines dropped …") }
+        out += tail
+        // Rewritten whole rather than appended: an append interrupted by the
+        // process dying can tear the last line, and the last line is the one
+        // this exists to read.
+        try? Data((out.joined(separator: "\n") + "\n").utf8)
+            .write(to: file, options: .atomic)
     }
 }

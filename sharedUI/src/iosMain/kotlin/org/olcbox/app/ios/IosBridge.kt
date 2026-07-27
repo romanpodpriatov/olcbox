@@ -118,6 +118,16 @@ interface IosPacketTunnelBridge {
      */
     fun tunnelBytesIn(): Long
     fun tunnelBytesOut(): Long
+
+    /**
+     * Everything the tunnel's engines wrote about the last attempt, or empty.
+     *
+     * The failure shown on screen carries only a few lines — it sits under a
+     * status pill on a phone. This is the whole of it, for the log the user can
+     * share: when a connect fails, what came *before* the last line is usually
+     * where the answer is.
+     */
+    fun engineLog(): String
 }
 
 interface IosPlatformBridge {

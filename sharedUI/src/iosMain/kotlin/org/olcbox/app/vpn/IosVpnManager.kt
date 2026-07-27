@@ -231,6 +231,15 @@ class IosVpnManager(
             val message = result.message ?: "packet tunnel start failed"
             setStatus(VpnStatus.Error(message))
             addLog("Packet tunnel start failed: $message")
+            // The whole engine log, not the few lines the screen can hold. This
+            // is what makes "share logs" worth asking anyone for: the last line
+            // says a start timed out, and the lines above it say what it was
+            // doing for those eight seconds.
+            packetTunnelBridge.engineLog()
+                .lineSequence()
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+                .forEach { addLog("engine: $it") }
             packetTunnelBridge.stop()
         }
     }

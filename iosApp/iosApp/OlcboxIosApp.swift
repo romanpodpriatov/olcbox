@@ -233,7 +233,11 @@ final class PacketTunnelController: ObservableObject {
     /// transport sing-box could not even parse went unnoticed.
     ///
     /// Returns nil on success, or a description of what went wrong.
-    func waitUntilUp(timeout: TimeInterval = 20) async -> String? {
+    /// 45s, which has to stay clear of the extension's own budget: olcRTC may
+    /// now spend twenty seconds reaching its SFU, and sing-box still has to
+    /// start behind it. Give up first and the app reports a failure over a
+    /// tunnel that was seconds from coming up.
+    func waitUntilUp(timeout: TimeInterval = 45) async -> String? {
         guard let manager else { return "no VPN configuration" }
         var sawAttempt = false
         let deadline = Date().addingTimeInterval(timeout)
@@ -490,6 +494,20 @@ final class SwiftPacketTunnelBridge: NSObject, @unchecked Sendable, IosPacketTun
     func tunnelBytesIn() -> Int64 { TunnelCounters.read().bytesIn }
 
     func tunnelBytesOut() -> Int64 { TunnelCounters.read().bytesOut }
+
+    func engineLog() -> String {
+        guard let container = FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: Self.appGroupId
+        ) else { return "" }
+        // olcRTC's first, since it is the engine that fails on its own; the
+        // other two write to stderr, which lands in engine.log.
+        let both = ["olcrtc.log", "engine.log"].compactMap { name -> String? in
+            try? String(
+                contentsOf: container.appendingPathComponent(name), encoding: .utf8
+            )
+        }
+        return both.joined(separator: "\n")
+    }
 }
 
 /// Bytes carried by our tun, read from the interface itself.
