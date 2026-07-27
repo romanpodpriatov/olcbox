@@ -154,11 +154,16 @@ fun LocationSelectorScreen(
                         val isGroupRefreshing = pingsState is PingsState.Loading &&
                                 pingsState.pendingLocationIds.any { it in groupIds }
 
-                        RefreshButton(
-                            isRefreshing = isGroupRefreshing,
-                            onClick = { onRefreshClick(groupIds) },
-                            tint = MaterialTheme.colorScheme.primary
-                        )
+                        // Only where a measurement is possible. A subscription
+                        // of Reality exits has nothing this button could do,
+                        // and one that visibly does nothing reads as broken.
+                        if (group.any { it.config?.isPingable() == true }) {
+                            RefreshButton(
+                                isRefreshing = isGroupRefreshing,
+                                onClick = { onRefreshClick(groupIds) },
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(2.dp))
@@ -194,16 +199,18 @@ fun LocationSelectorScreen(
                             modifier = Modifier.weight(1f)
                         )
 
-                        // 2. Вычисляем состояние загрузки только для кастомных локаций
+                        // Loading state for the custom locations only.
                         val customIds = customLocations.map { it.storageId }
                         val isCustomRefreshing = pingsState is PingsState.Loading &&
                                 pingsState.pendingLocationIds.any { it in customIds }
 
-                        RefreshButton(
-                            isRefreshing = isCustomRefreshing,
-                            onClick = { onRefreshClick(customIds) },
-                            tint = MaterialTheme.colorScheme.primary
-                        )
+                        if (customLocations.any { it.config?.isPingable() == true }) {
+                            RefreshButton(
+                                isRefreshing = isCustomRefreshing,
+                                onClick = { onRefreshClick(customIds) },
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(6.dp))

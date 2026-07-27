@@ -22,6 +22,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.olcbox.app.ui.icons.PkIcons
@@ -67,6 +72,18 @@ fun StartButton(
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
 
+    // The whole dial is one control, and this is what a screen reader announces
+    // for it. Without it VoiceOver read the icon's own label — "Start Icon" —
+    // which says neither what the button does nor what state it is in, on an
+    // app whose entire surface is this one button.
+    val spokenLabel = when {
+        requiresSetup -> "Set up a connection"
+        isLoading -> "Cancel connecting"
+        isActive -> "Disconnect"
+        else -> "Connect"
+    }
+    val haptics = LocalHapticFeedback.current
+
     Box(
         modifier = modifier
             .size(200.dp)
@@ -77,9 +94,18 @@ fun StartButton(
             .clip(CircleShape)
             .background(color = MaterialTheme.colorScheme.surfaceContainerHigh)
             .border(width = 2.dp, color = ringColor, shape = CircleShape)
-            .clickable(enabled = enabled) {
+            .clickable(
+                enabled = enabled,
+                onClickLabel = spokenLabel,
+                role = Role.Button
+            ) {
+                // Connecting and disconnecting are the two moments where the
+                // screen takes a second to catch up; a tap with no confirmation
+                // reads as a tap that missed.
+                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                 onClick()
-            },
+            }
+            .semantics { contentDescription = spokenLabel },
         contentAlignment = Alignment.Center
     ) {
         if (isLoading) {
@@ -96,7 +122,9 @@ fun StartButton(
         ) {
             Icon(
                 imageVector = PkIcons.PowerSettingsNew,
-                contentDescription = "Start Icon",
+                // Decorative: the button above carries the label, and two
+                // announcements for one control is worse than none.
+                contentDescription = null,
                 tint = contentColor.copy(alpha = if (isLoading || !enabled) 0.5f else 1f),
                 modifier = Modifier.size(48.dp)
             )

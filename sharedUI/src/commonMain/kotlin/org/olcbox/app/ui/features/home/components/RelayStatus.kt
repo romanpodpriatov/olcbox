@@ -1,9 +1,18 @@
 package org.olcbox.app.ui.features.home.components
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -18,8 +27,10 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import org.olcbox.app.ui.components.kit.PkStatus
 import org.olcbox.app.ui.components.kit.PkStatusPill
+import org.olcbox.app.ui.icons.PkIcons
 import org.olcbox.app.ui.theme.LocalPkPalette
 import org.olcbox.app.util.nowMillis
+import org.olcbox.app.vpn.TrafficCounters
 
 /**
  * [transportLabel] names what is carrying traffic right now (Reality, Hysteria2,
@@ -37,6 +48,7 @@ fun RelayStatus(
     transportLabel: String? = null,
     exitName: String? = null,
     connectedSince: Long? = null,
+    traffic: TrafficCounters? = null,
     modifier: Modifier = Modifier
 ) {
     val state = if (isActive) PkStatus.Active else PkStatus.Idle
@@ -58,12 +70,56 @@ fun RelayStatus(
             SessionTimer(since = connectedSince)
         }
 
+        if (isActive && traffic != null) {
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = "↓ ${formatBytes(traffic.bytesIn)}   ↑ ${formatBytes(traffic.bytesOut)}",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
         Spacer(Modifier.height(8.dp))
         Text(
             text = caption,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+    }
+}
+
+/**
+ * Why the last attempt failed, or what is blocking a start.
+ *
+ * Kept as its own element rather than folded into the caption above: it has to
+ * survive being three lines long — an extension's own account of its death is
+ * not a phrase — and the caption is a single line by design.
+ */
+@Composable
+fun RelayNotice(text: String, modifier: Modifier = Modifier) {
+    val pk = LocalPkPalette.current
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.errorContainer,
+        border = BorderStroke(1.dp, pk.danger)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Icon(
+                imageVector = PkIcons.PriorityHigh,
+                contentDescription = null,
+                tint = pk.danger,
+                modifier = Modifier.size(18.dp)
+            )
+            Text(
+                text = text,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onErrorContainer
+            )
+        }
     }
 }
 
@@ -114,3 +170,27 @@ internal fun formatSessionDuration(millis: Long): String {
 }
 
 private fun Long.padded(): String = if (this < 10) "0$this" else toString()
+
+/**
+ * Bytes as a person reads them. Binary units, because that is what every other
+ * VPN client on the device shows and a figure that disagrees with the system's
+ * own reads as a bug.
+ */
+internal fun formatBytes(bytes: Long): String {
+    if (bytes < 1024) return "$bytes B"
+    val units = listOf("KB", "MB", "GB", "TB")
+    var value = bytes.toDouble() / 1024
+    var unit = 0
+    while (value >= 1024 && unit < units.lastIndex) {
+        value /= 1024
+        unit++
+    }
+    // One decimal below 10, none above: "9.4 MB" is useful, "947.3 MB" is noise.
+    val rounded = if (value < 10) {
+        val tenths = (value * 10).toLong()
+        "${tenths / 10}.${tenths % 10}"
+    } else {
+        value.toLong().toString()
+    }
+    return "$rounded ${units[unit]}"
+}

@@ -4,6 +4,9 @@ import kotlinx.coroutines.flow.StateFlow
 import org.olcbox.app.data.model.LocationConfig
 import org.olcbox.app.data.repository.SubscriptionFetchProxy
 
+/** Bytes carried by the current session, as the platform counts them. */
+data class TrafficCounters(val bytesIn: Long, val bytesOut: Long)
+
 sealed class VpnStatus {
     object Disconnected : VpnStatus()
     object Connecting : VpnStatus()
@@ -27,6 +30,14 @@ interface VpnManager {
      * that resets every time the phone changes network says nothing useful.
      */
     val connectedSince: StateFlow<Long?>
+
+    /**
+     * Bytes carried this session, or null where the platform has no counter to
+     * read. Null rather than zeroes: a pair of counters frozen at 0 looks like a
+     * tunnel carrying nothing, which is a very different thing from a tunnel
+     * nobody is measuring.
+     */
+    val traffic: StateFlow<TrafficCounters?>
 
     fun needsPermission(): Boolean
     fun startVpn()

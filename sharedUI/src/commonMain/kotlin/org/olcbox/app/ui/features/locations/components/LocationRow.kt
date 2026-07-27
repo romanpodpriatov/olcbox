@@ -113,7 +113,12 @@ fun LocationRow(
                 text = cleanName,
                 color = textColor,
                 style = MaterialTheme.typography.labelLarge,
-                fontSize = 15.sp
+                fontSize = 15.sp,
+                // The row is a fixed 76dp. Without this a long subscription
+                // name wraps to three lines and is cut off mid-letter by the
+                // height, taking the subtitle out of view with it.
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
 
             Text(

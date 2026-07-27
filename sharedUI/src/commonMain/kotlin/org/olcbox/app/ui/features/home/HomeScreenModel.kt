@@ -50,6 +50,9 @@ class HomeScreenViewModel(
      */
     val connectedSince get() = vpnManager.connectedSince
 
+    /** Same reasoning as [connectedSince]: the platform's own counter. */
+    val traffic get() = vpnManager.traffic
+
     init {
         loadCurrentConfig()
         startSubscriptionAutoRefresh()
@@ -66,12 +69,35 @@ class HomeScreenViewModel(
             vpnManager.status.collect { status ->
                 _state.update {
                     when (status) {
-                        VpnStatus.Connected -> it.copy(isVpnConnected = true, isVpnLoading = false)
-                        VpnStatus.Connecting -> it.copy(isVpnConnected = false, isVpnLoading = true)
-                        VpnStatus.Reconnecting -> it.copy(isVpnConnected = true, isVpnLoading = true)
-                        VpnStatus.Stopping -> it.copy(isVpnConnected = false, isVpnLoading = false)
-                        VpnStatus.Disconnected -> it.copy(isVpnConnected = false, isVpnLoading = false)
-                        is VpnStatus.Error -> it.copy(isVpnConnected = false, isVpnLoading = false)
+                        VpnStatus.Connected ->
+                            it.copy(isVpnConnected = true, isVpnLoading = false, failure = null)
+
+                        VpnStatus.Connecting ->
+                            it.copy(isVpnConnected = false, isVpnLoading = true, failure = null)
+
+                        VpnStatus.Reconnecting ->
+                            it.copy(isVpnConnected = true, isVpnLoading = true)
+
+                        VpnStatus.Stopping ->
+                            it.copy(isVpnConnected = false, isVpnLoading = false)
+
+                        VpnStatus.Disconnected ->
+                            it.copy(isVpnConnected = false, isVpnLoading = false)
+
+                        // The reason used to stop here. The extension goes to
+                        // real trouble to explain itself — it writes a stage
+                        // breadcrumb the app reads back precisely because the
+                        // system will only ever say "disconnected" — and this
+                        // dropped the message on the floor, leaving a button
+                        // that spins, returns to START and says nothing. The
+                        // commonest case of all is a user who declined the VPN
+                        // permission prompt.
+                        is VpnStatus.Error ->
+                            it.copy(
+                                isVpnConnected = false,
+                                isVpnLoading = false,
+                                failure = status.message
+                            )
                     }
                 }
             }
@@ -131,7 +157,7 @@ class HomeScreenViewModel(
     }
 
     fun startVpnContinuation() {
-        _state.update { it.copy(isVpnLoading = true) }
+        _state.update { it.copy(isVpnLoading = true, failure = null) }
     }
 
     fun ToggleVpn() {
@@ -148,7 +174,7 @@ class HomeScreenViewModel(
         }
 
         viewModelScope.launch {
-            _state.update { it.copy(isVpnLoading = true) }
+            _state.update { it.copy(isVpnLoading = true, failure = null) }
             try {
                 if (_state.value.isVpnConnected || vpnManager.status.value is VpnStatus.Connected) {
                     vpnManager.stopVpn()
@@ -167,7 +193,12 @@ class HomeScreenViewModel(
                     vpnManager.startVpn()
                 }
             } catch (e: Exception) {
-                _state.update { it.copy(isVpnLoading = false) }
+                _state.update {
+                    it.copy(
+                        isVpnLoading = false,
+                        failure = e.message ?: "Could not start the connection"
+                    )
+                }
             }
         }
     }
@@ -177,7 +208,7 @@ class HomeScreenViewModel(
             VpnStatus.Connected,
             VpnStatus.Connecting,
             VpnStatus.Reconnecting -> viewModelScope.launch {
-                _state.update { it.copy(isVpnLoading = true) }
+                _state.update { it.copy(isVpnLoading = true, failure = null) }
                 vpnManager.startVpn()
             }
 
@@ -390,7 +421,20 @@ data class HomeScreenState(
     val configData: LocationConfig,
     val shouldShowConfigInvalidReminder: Boolean,
     val canStartVpn: Boolean,
-    val startBlockedReason: String?
-)
+    val startBlockedReason: String?,
+    /** Why the last connection attempt failed, or null when nothing has. */
+    val failure: String? = null
+) {
+    /**
+     * The one line worth putting under the status pill: what went wrong, or
+     * failing that what is stopping the user from starting at all.
+     *
+     * `startBlockedReason` is deliberately not shown while a location is merely
+     * missing — the status pill already says "no location" and the button reads
+     * SETUP, so repeating it adds noise rather than information.
+     */
+    fun notice(): String? = failure
+        ?: startBlockedReason?.takeIf { selectedLocation != null && !canStartVpn }
+}
 
 private const val SUBSCRIPTION_AUTO_REFRESH_POLL_MS = 60L * 60L * 1_000L

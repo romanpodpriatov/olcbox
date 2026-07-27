@@ -61,6 +61,9 @@ class IosVpnManager(
     private val _connectedSince = MutableStateFlow<Long?>(null)
     override val connectedSince: StateFlow<Long?> = _connectedSince.asStateFlow()
 
+    private val _traffic = MutableStateFlow<TrafficCounters?>(null)
+    override val traffic: StateFlow<TrafficCounters?> = _traffic.asStateFlow()
+
     private val _socksProxySettings = MutableStateFlow(loadSocksProxySettings())
     val socksProxySettings: StateFlow<ApplicationSocksProxySettings> = _socksProxySettings.asStateFlow()
 
@@ -406,9 +409,25 @@ class IosVpnManager(
         systemSyncJob = scope.launch {
             while (isActive) {
                 adoptRunningTunnelIfAny()
+                sampleTraffic()
                 delay(SYSTEM_SYNC_INTERVAL_MS)
             }
         }
+    }
+
+    /**
+     * Reads the tunnel interface's counters. Cheap — a `getifaddrs` walk — and
+     * on the same tick as the state sync so there is one timer, not two.
+     */
+    private fun sampleTraffic() {
+        if (!packetTunnelBridge.isRunning()) {
+            _traffic.value = null
+            return
+        }
+        _traffic.value = TrafficCounters(
+            bytesIn = packetTunnelBridge.tunnelBytesIn(),
+            bytesOut = packetTunnelBridge.tunnelBytesOut()
+        )
     }
 
     private suspend fun adoptRunningTunnelIfAny() {

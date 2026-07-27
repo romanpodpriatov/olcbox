@@ -1345,7 +1345,12 @@ class OlcboxVpnService : VpnService() {
                 rxPackets = values[2],
                 rxBytes = values[3]
             )
-        }.getOrNull()
+        }.getOrNull()?.also { stats ->
+            // The byte figures were read and thrown away — only the packet
+            // deltas fed the stall watchdog. They are the session's traffic, and
+            // the screen had nothing to show.
+            OlcboxVpnState.setTraffic(bytesIn = stats.rxBytes, bytesOut = stats.txBytes)
+        }
     }
 
     private fun requestTransportRecovery(

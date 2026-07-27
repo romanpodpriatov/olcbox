@@ -24,10 +24,19 @@
 	<true/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
-	<key>UIBackgroundModes</key>
-	<array>
-		<string>audio</string>
-	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>ProofKit uses the camera only to scan a subscription QR code. Nothing is recorded or sent anywhere.</string>
+	<!--
+		No UIBackgroundModes.
+
+		`audio` was declared for the silent-audio keep-alive that kept the in-app
+		SOCKS proxy alive in the background. olcRTC runs in the packet tunnel
+		extension now, `SwiftOlcRtcManager.start` is unreachable from Kotlin, and
+		that keep-alive never runs — so the app declared a background mode it does
+		not use, which App Store review rejects on sight (2.5.4). The tunnel needs
+		no background mode of its own: a NEPacketTunnelProvider is its own process
+		and the system keeps it running.
+	-->
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

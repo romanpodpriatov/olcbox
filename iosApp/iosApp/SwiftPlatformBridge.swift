@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 import SwiftUI
 import SharedUI
@@ -34,6 +35,47 @@ final class SwiftPlatformBridge: NSObject, @preconcurrency IosPlatformBridge, UI
             picker.delegate = self
             self.present(picker)
         }
+    }
+
+    func scanQrCode(callback: IosTextCallback) {
+        let answer = SendableTextCallback(callback: callback)
+        DispatchQueue.main.async {
+            // Asked for explicitly rather than left to the capture session: a
+            // session started without permission simply shows black, which reads
+            // as a broken camera rather than as a decision the user has to make.
+            switch AVCaptureDevice.authorizationStatus(for: .video) {
+            case .authorized:
+                self.presentScanner(answer)
+            case .notDetermined:
+                AVCaptureDevice.requestAccess(for: .video) { granted in
+                    DispatchQueue.main.async {
+                        if granted {
+                            self.presentScanner(answer)
+                        } else {
+                            answer.callback.onError(message: "Camera access denied")
+                        }
+                    }
+                }
+            case .denied, .restricted:
+                answer.callback.onError(
+                    message: "Camera access is off for ProofKit. Settings → ProofKit → Camera."
+                )
+            @unknown default:
+                answer.callback.onError(message: "Camera unavailable")
+            }
+        }
+    }
+
+    private func presentScanner(_ answer: SendableTextCallback) {
+        let scanner = QrScannerViewController { [weak self] result in
+            self?.topPresenter()?.dismiss(animated: true)
+            switch result {
+            case .success(let text): answer.callback.onSuccess(text: text)
+            case .failure(let message): answer.callback.onError(message: message)
+            }
+        }
+        scanner.modalPresentationStyle = .fullScreen
+        self.present(scanner)
     }
 
     func shareText(title: String, text: String) {
@@ -172,5 +214,143 @@ final class SwiftPlatformBridge: NSObject, @preconcurrency IosPlatformBridge, UI
             .appendingPathComponent("\(UUID().uuidString)-\(sanitized)")
         try content.write(to: url, atomically: true, encoding: .utf8)
         return url
+    }
+}
+
+/// Kotlin's callback in terms Swift concurrency accepts. Objects from
+/// Kotlin/Native carry no Sendable annotation but are safe to call from any
+/// thread under its memory model.
+private struct SendableTextCallback: @unchecked Sendable {
+    let callback: IosTextCallback
+}
+
+/// Reads one QR code and gets out of the way.
+///
+/// Lives in this file rather than its own: the app target lists its sources by
+/// name in project.pbxproj — only the PacketTunnel folder is a synchronized
+/// group — so a new .swift here would not be compiled until someone added it in
+/// Xcode, and would fail as a mysteriously missing symbol.
+final class QrScannerViewController: UIViewController, AVCaptureMetadataOutputObjectsDelegate {
+
+    enum Outcome {
+        case success(String)
+        case failure(String)
+    }
+
+    private let finished: (Outcome) -> Void
+    private let session = AVCaptureSession()
+    private var preview: AVCaptureVideoPreviewLayer?
+    /// A capture session keeps delivering after the first match; without this
+    /// the callback fires once per frame and Kotlin sees a burst of imports.
+    private var answered = false
+
+    init(finished: @escaping (Outcome) -> Void) {
+        self.finished = finished
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("not from a nib") }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .black
+
+        guard let device = AVCaptureDevice.default(for: .video),
+              let input = try? AVCaptureDeviceInput(device: device),
+              session.canAddInput(input) else {
+            answer(.failure("No camera available"))
+            return
+        }
+        session.addInput(input)
+
+        let output = AVCaptureMetadataOutput()
+        guard session.canAddOutput(output) else {
+            answer(.failure("Camera cannot read QR codes"))
+            return
+        }
+        session.addOutput(output)
+        output.setMetadataObjectsDelegate(self, queue: .main)
+        // Set only after the output is attached — assigning it before throws.
+        output.metadataObjectTypes = [.qr]
+
+        let layer = AVCaptureVideoPreviewLayer(session: session)
+        layer.videoGravity = .resizeAspectFill
+        layer.frame = view.bounds
+        view.layer.addSublayer(layer)
+        preview = layer
+
+        let hint = UILabel()
+        hint.text = "Point the camera at a subscription QR code"
+        hint.textColor = .white
+        hint.textAlignment = .center
+        hint.numberOfLines = 0
+        hint.font = .preferredFont(forTextStyle: .callout)
+        hint.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(hint)
+
+        let cancel = UIButton(type: .system)
+        cancel.setTitle("Cancel", for: .normal)
+        cancel.setTitleColor(.white, for: .normal)
+        cancel.titleLabel?.font = .preferredFont(forTextStyle: .headline)
+        cancel.addTarget(self, action: #selector(cancelTapped), for: .touchUpInside)
+        cancel.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(cancel)
+
+        NSLayoutConstraint.activate([
+            hint.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 24),
+            hint.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -24),
+            hint.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 24),
+            cancel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            cancel.bottomAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -32
+            )
+        ])
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        preview?.frame = view.bounds
+    }
+
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        guard !session.isRunning else { return }
+        // Never on the main thread: startRunning blocks until the camera is
+        // configured, which freezes the presentation animation.
+        DispatchQueue.global(qos: .userInitiated).async { [session] in
+            session.startRunning()
+        }
+    }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        guard session.isRunning else { return }
+        DispatchQueue.global(qos: .userInitiated).async { [session] in
+            session.stopRunning()
+        }
+    }
+
+    @objc private func cancelTapped() {
+        answer(.failure("Scan cancelled"))
+    }
+
+    func metadataOutput(
+        _ output: AVCaptureMetadataOutput,
+        didOutput metadataObjects: [AVMetadataObject],
+        from connection: AVCaptureConnection
+    ) {
+        guard let object = metadataObjects.first as? AVMetadataMachineReadableCodeObject,
+              object.type == .qr,
+              let text = object.stringValue,
+              !text.isEmpty else { return }
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+        answer(.success(text))
+    }
+
+    private func answer(_ outcome: Outcome) {
+        guard !answered else { return }
+        answered = true
+        finished(outcome)
     }
 }

@@ -11,6 +11,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -32,6 +33,7 @@ import org.olcbox.app.ui.features.home.components.AddConfigurationSheet
 import org.olcbox.app.ui.features.home.components.HomeScreenAppBar
 import org.olcbox.app.ui.features.home.components.LocationSelectorScreen
 import org.olcbox.app.ui.features.home.components.LogsSheet
+import org.olcbox.app.ui.features.home.components.RelayNotice
 import org.olcbox.app.ui.features.home.components.RelayStatus
 import org.olcbox.app.ui.features.locations.LocationViewModel
 
@@ -58,9 +60,11 @@ fun HomeScreen(
 ) {
     var isLogsSheetOpen by remember { mutableStateOf(false) }
     var isAddSheetOpen by remember { mutableStateOf(false) }
+    var isRefreshingSubscriptions by remember { mutableStateOf(false) }
 
     val state by viewModel.state.collectAsState()
     val connectedSince by viewModel.connectedSince.collectAsState()
+    val traffic by viewModel.traffic.collectAsState()
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
     val pingsState = locationViewModel.pingsState
@@ -82,8 +86,10 @@ fun HomeScreen(
     }
 
     fun refreshSubscriptions() {
+        isRefreshingSubscriptions = true
         viewModel.refreshSubscriptions { report ->
             locationViewModel.loadLocations {
+                isRefreshingSubscriptions = false
                 viewModel.restartVpnIfRunning()
 
                 scope.launch {
@@ -146,8 +152,14 @@ fun HomeScreen(
                     // strip the " · XHTTP" suffix: the pill already names the transport
                     exitName = state.selectedLocation?.config?.displayName()
                         ?.let { TransportGroup.baseName(it) },
-                    connectedSince = connectedSince
+                    connectedSince = connectedSince,
+                    traffic = traffic
                 )
+
+                state.notice()?.let { notice ->
+                    Spacer(modifier = Modifier.height(12.dp))
+                    RelayNotice(text = notice)
+                }
 
                 Spacer(modifier = Modifier.height(16.dp))
 
@@ -169,46 +181,72 @@ fun HomeScreen(
                 Spacer(modifier = Modifier.height(16.dp))
             }
 
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-                    .verticalScroll(scrollState)
-                    .padding(horizontal = 32.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+            // Pull down on the list to fetch the subscriptions again. It was
+            // reachable only from a menu item inside the "+" sheet, which is
+            // not where anyone looks for it on a list of servers.
+            PullToRefreshBox(
+                isRefreshing = isRefreshingSubscriptions,
+                onRefresh = { refreshSubscriptions() },
+                modifier = Modifier.weight(1f)
             ) {
-                LocationSelectorScreen(
-                    onGetSubscriptionClick = onGetSubscriptionClick,
-                    onRefreshClick = { targetIds ->
-                        refreshHttpPings(targetIds)
-                    },
-                    onAddSubscriptionClick = {
-                        isAddSheetOpen = true
-                    },
-                    locations = locations,
-                    selectedLocationId = locationViewModel.selectedLocationId,
-                    pingsState = pingsState,
-                    onLocationSelected = { id ->
-                        locationViewModel.selectLocation(id) {
-                            viewModel.loadCurrentConfig()
-                            viewModel.restartVpnIfRunning()
-                        }
-                    },
-                    onLocationSettingsClick = { id ->
-                        onOpenLocationSettings(id)
-                    },
-                    onAddLocationClick = {
-                        onAddLocation()
-                    },
-                    showSettings = admin,
-                    showCustomLocation = admin
-                )
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(scrollState)
+                        .padding(horizontal = 32.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    LocationSelectorScreen(
+                        onGetSubscriptionClick = onGetSubscriptionClick,
+                        onRefreshClick = { targetIds ->
+                            refreshHttpPings(targetIds)
+                        },
+                        onAddSubscriptionClick = {
+                            isAddSheetOpen = true
+                        },
+                        locations = locations,
+                        selectedLocationId = locationViewModel.selectedLocationId,
+                        pingsState = pingsState,
+                        onLocationSelected = { id ->
+                            // Read before the switch: picking a row while
+                            // connected tears the tunnel down and builds a new
+                            // one, which took seconds and announced itself only
+                            // as a spinner.
+                            val wasConnected = state.isVpnConnected
+                            val name = locations.firstOrNull { it.storageId == id }
+                                ?.let { item ->
+                                    item.metadata?.name?.takeIf { it.isNotBlank() }
+                                        ?: item.fullName
+                                }
+                            locationViewModel.selectLocation(id) {
+                                viewModel.loadCurrentConfig()
+                                viewModel.restartVpnIfRunning()
+                                if (wasConnected) {
+                                    scope.launch {
+                                        snackbarHostState.showSnackbar(
+                                            name?.let { "Reconnecting through $it" }
+                                                ?: "Reconnecting through the new location"
+                                        )
+                                    }
+                                }
+                            }
+                        },
+                        onLocationSettingsClick = { id ->
+                            onOpenLocationSettings(id)
+                        },
+                        onAddLocationClick = {
+                            onAddLocation()
+                        },
+                        showSettings = admin,
+                        showCustomLocation = admin
+                    )
 
-                Spacer(modifier = Modifier.height(24.dp))
+                    Spacer(modifier = Modifier.height(24.dp))
 
-                PkVersionFooter()
+                    PkVersionFooter()
 
-                Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
+                }
             }
         }
 

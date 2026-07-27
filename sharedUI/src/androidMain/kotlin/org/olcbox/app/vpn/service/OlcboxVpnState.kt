@@ -5,6 +5,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import org.olcbox.app.util.nowMillis
+import org.olcbox.app.vpn.TrafficCounters
 import org.olcbox.app.vpn.VpnStatus
 
 object OlcboxVpnState {
@@ -20,9 +21,21 @@ object OlcboxVpnState {
     private val _connectedSince = MutableStateFlow<Long?>(null)
     val connectedSince = _connectedSince.asStateFlow()
 
+    private val _traffic = MutableStateFlow<TrafficCounters?>(null)
+    val traffic = _traffic.asStateFlow()
+
+    fun setTraffic(bytesIn: Long, bytesOut: Long) {
+        _traffic.value = TrafficCounters(bytesIn = bytesIn, bytesOut = bytesOut)
+    }
+
     fun setStatus(status: VpnStatus) {
         _status.value = status
         _isConnected.value = status is VpnStatus.Connected
+        // A session's counters belong to that session; carrying them into the
+        // next one would show yesterday's gigabytes on a fresh connection.
+        if (status !is VpnStatus.Connected && status !is VpnStatus.Reconnecting) {
+            _traffic.value = null
+        }
         _connectedSince.value = when (status) {
             // Only the first Connected of a session stamps the clock; a
             // reconnect passes through Reconnecting and back, and must not

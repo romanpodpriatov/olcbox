@@ -64,30 +64,31 @@ fun HomeScreenAppBar(
                 )
             }
         },
+        // Settings on the left, everything else on the right. These used to
+        // share one slot through a `when`, so asking for both — which every
+        // platform that shows settings does — silently dropped the history
+        // button and there was no way to reach the log from the main screen.
         navigationIcon = {
-            when {
-                showAppSettingsButton -> {
-                    IconButton(onClick = onAppSettingsClick) {
-                        Icon(
-                            imageVector = Icons.Outlined.Settings,
-                            contentDescription = "Application settings",
-                            tint = MaterialTheme.colorScheme.onSurface
-                        )
-                    }
+            if (showAppSettingsButton) {
+                IconButton(onClick = onAppSettingsClick) {
+                    Icon(
+                        imageVector = Icons.Outlined.Settings,
+                        contentDescription = "Application settings",
+                        tint = MaterialTheme.colorScheme.onSurface
+                    )
                 }
-                showHistoryButton -> {
-                    IconButton(onClick = onHistoryClick) {
-                        Icon(
-                            imageVector = PkIcons.History,
-                            contentDescription = "History",
-                            tint = MaterialTheme.colorScheme.onSurface
-                        )
-                    }
-                }
-                // user mode: no settings, no logs/history
             }
         },
         actions = {
+            if (showHistoryButton) {
+                IconButton(onClick = onHistoryClick) {
+                    Icon(
+                        imageVector = PkIcons.History,
+                        contentDescription = "History",
+                        tint = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+            }
             if (AdminState.showLock) {
                 IconButton(onClick = { AdminState.lock() }) {
                     Icon(

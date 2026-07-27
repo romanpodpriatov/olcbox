@@ -177,7 +177,7 @@ class LocationViewModel(
 
         val pingableLocations = locationsSnapshot
             .filter { location ->
-                location.config?.isComplete() == true &&
+                location.config?.isPingable() == true &&
                         (targetLocationIds == null || targetLocationIds.contains(location.storageId))
             }
             .filterNot { location ->
@@ -296,7 +296,7 @@ class LocationViewModel(
         location: LocationItem,
         performPing: suspend (LocationConfig) -> Long?
     ): Long? {
-        val config = location.config?.takeIf { it.isComplete() } ?: return null
+        val config = location.config?.takeIf { it.isPingable() } ?: return null
 
         return withTimeoutOrNull(LOCATION_PING_TIMEOUT_MS) {
             repeat(LOCATION_PING_ATTEMPTS) { attempt ->

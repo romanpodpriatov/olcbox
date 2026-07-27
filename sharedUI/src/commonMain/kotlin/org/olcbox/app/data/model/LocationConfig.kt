@@ -55,6 +55,18 @@ data class LocationConfig(
             rawLink?.let { LinkParser.parse(it) != null } ?: false
     }
 
+    /**
+     * Whether a latency measurement is possible for this location at all.
+     *
+     * The prober joins an olcRTC room and times an HTTP request through it —
+     * that is the only measurement the app has. Handing it a Reality, XHTTP or
+     * Hysteria2 location means handing it a room id that is not a room, so it
+     * cannot succeed by construction; the null it returns was then stored and
+     * drawn as **Offline**, marking working exits dead. Measuring nothing is
+     * the honest answer where nothing can be measured.
+     */
+    fun isPingable(): Boolean = kind == LocationKind.Olcrtc && isComplete()
+
     fun displayName(): String = name.ifBlank { id }
 
     fun providerName(): String = providerDisplayName(bypassProvider)

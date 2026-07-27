@@ -415,6 +415,72 @@ final class SwiftPacketTunnelBridge: NSObject, @unchecked Sendable, IosPacketTun
     /// See `systemConnectedSinceMs`. Zero when nothing is up, which Kotlin
     /// reads as "no session".
     func connectedSinceEpochMs() -> Int64 { PacketTunnelController.systemConnectedSinceMs }
+
+    func tunnelBytesIn() -> Int64 { TunnelCounters.read().bytesIn }
+
+    func tunnelBytesOut() -> Int64 { TunnelCounters.read().bytesOut }
+}
+
+/// Bytes carried by our tun, read from the interface itself.
+///
+/// The tunnel lives in another process and libbox does not report to the app:
+/// its command server is deliberately never started, and `NEVPNConnection` has
+/// no byte counters at all. The kernel's per-interface counters are visible to
+/// every process, so the app can simply read them — and because the interface is
+/// created when the tunnel comes up, "since the interface appeared" is exactly
+/// "this session".
+enum TunnelCounters {
+
+    struct Snapshot {
+        let bytesIn: Int64
+        let bytesOut: Int64
+    }
+
+    /// Must match `LibboxPlatform.Tun.address` in the extension. The two targets
+    /// share no code — the extension links Cores, the app does not — so this is
+    /// a duplicated constant, and the one place it could drift.
+    private static let tunAddress = "172.19.0.1"
+
+    static func read() -> Snapshot {
+        var head: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&head) == 0, let first = head else {
+            return Snapshot(bytesIn: 0, bytesOut: 0)
+        }
+        defer { freeifaddrs(head) }
+
+        // Two passes over one list: the address that identifies our interface is
+        // on the AF_INET entry, the counters are on the AF_LINK entry, and they
+        // are different entries with the same name.
+        var name: String?
+        var entry: UnsafeMutablePointer<ifaddrs>? = first
+        while let current = entry {
+            defer { entry = current.pointee.ifa_next }
+            guard let addr = current.pointee.ifa_addr,
+                  addr.pointee.sa_family == UInt8(AF_INET) else { continue }
+            var host = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+            let ok = getnameinfo(
+                addr, socklen_t(addr.pointee.sa_len),
+                &host, socklen_t(host.count), nil, 0, NI_NUMERICHOST
+            ) == 0
+            if ok, String(cString: host) == tunAddress {
+                name = String(cString: current.pointee.ifa_name)
+                break
+            }
+        }
+        guard let interface = name else { return Snapshot(bytesIn: 0, bytesOut: 0) }
+
+        entry = first
+        while let current = entry {
+            defer { entry = current.pointee.ifa_next }
+            guard String(cString: current.pointee.ifa_name) == interface,
+                  let addr = current.pointee.ifa_addr,
+                  addr.pointee.sa_family == UInt8(AF_LINK),
+                  let raw = current.pointee.ifa_data else { continue }
+            let data = raw.assumingMemoryBound(to: if_data.self).pointee
+            return Snapshot(bytesIn: Int64(data.ifi_ibytes), bytesOut: Int64(data.ifi_obytes))
+        }
+        return Snapshot(bytesIn: 0, bytesOut: 0)
+    }
 }
 
 /// Kotlin's callback, in terms Swift's concurrency checking accepts.

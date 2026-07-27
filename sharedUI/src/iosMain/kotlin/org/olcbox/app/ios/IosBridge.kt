@@ -108,12 +108,29 @@ interface IosPacketTunnelBridge {
      * on iOS is the ordinary case, not the exception.
      */
     fun connectedSinceEpochMs(): Long
+
+    /**
+     * Bytes the tunnel interface has carried, in and out.
+     *
+     * From the interface's own kernel counters rather than from the engine: the
+     * tunnel is another process and libbox's command server is never started, so
+     * there is nothing to ask. Both are 0 when no tunnel is up.
+     */
+    fun tunnelBytesIn(): Long
+    fun tunnelBytesOut(): Long
 }
 
 interface IosPlatformBridge {
     fun readClipboard(): String?
     fun writeClipboard(text: String)
     fun pickConfigText(callback: IosTextCallback)
+
+    /**
+     * Reads one QR code, or reports why it could not. Subscriptions are handed
+     * out as QR codes, so this is the path a phone user expects — the others
+     * (paste, file) assume the link already reached the device somehow.
+     */
+    fun scanQrCode(callback: IosTextCallback)
     fun shareText(title: String, text: String)
     fun saveLogs(defaultName: String, content: String, callback: IosMessageCallback)
     fun shareLogs(defaultName: String, content: String, callback: IosMessageCallback)

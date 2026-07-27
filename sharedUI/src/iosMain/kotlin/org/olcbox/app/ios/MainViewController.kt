@@ -8,15 +8,12 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.window.ComposeUIViewController
-import kotlinx.coroutines.launch
 import org.olcbox.app.data.datasource.IosLocationsDataSourceImpl
 import org.olcbox.app.data.datasource.LocationsRepositoryImpl
 import org.olcbox.app.data.exporter.IosLogExporter
-import org.olcbox.app.data.identity.PersistentDeviceIdentityProvider
 import org.olcbox.app.data.importer.IosConfigImporter
 import org.olcbox.app.data.model.LocationConfig
 import org.olcbox.app.data.share.ConfigShareService
@@ -24,20 +21,14 @@ import org.olcbox.app.data.share.SubscriptionShareItem
 import org.olcbox.app.ui.OlcboxAppContent
 import org.olcbox.app.ui.components.kit.PkBrand
 import org.olcbox.app.ui.components.ApplicationSettingsSheet
-import org.olcbox.app.ui.components.ApplicationUpdateOfferSheet
 import org.olcbox.app.ui.features.home.HomeScreenViewModel
 import org.olcbox.app.ui.features.locations.LocationItem
 import org.olcbox.app.ui.features.locations.LocationViewModel
 import org.olcbox.app.ui.navigation.AppScreen
 import org.olcbox.app.ui.theme.AppTheme
-import org.olcbox.app.update.AppUpdateInfo
+import org.olcbox.app.net.TransportGroup
+import org.olcbox.app.net.transportKind
 import org.olcbox.app.update.AppUpdateSettings
-import org.olcbox.app.update.AppUpdateService
-import org.olcbox.app.update.IosUpdateSettingsStore
-import org.olcbox.app.update.identity
-import org.olcbox.app.update.isDownloaded
-import org.olcbox.app.update.isUpdateCheckDue
-import org.olcbox.app.update.shouldShowOffer
 import org.olcbox.app.vpn.IosVpnManager
 import platform.UIKit.UIViewController
 
@@ -85,10 +76,7 @@ private class IosAppDependencies(
     private val locationsDataSource = IosLocationsDataSourceImpl()
     val locationsRepository = LocationsRepositoryImpl(locationsDataSource)
     val vpnManager = IosVpnManager(locationsRepository, olcRtcBridge, packetTunnelBridge)
-    val updateService = AppUpdateService(
-        deviceIdentityProvider = PersistentDeviceIdentityProvider(locationsDataSource)
-    )
-    val updateSettingsStore = IosUpdateSettingsStore()
+    // No AppUpdateService here on purpose — see the comment in IosApp.
     val homeViewModel = HomeScreenViewModel(
         vpnManager = vpnManager,
         locationsRepository = locationsRepository,
@@ -107,13 +95,15 @@ private fun IosApp(
     platformBridge: IosPlatformBridge,
     dependencies: IosAppDependencies
 ) {
-    val scope = rememberCoroutineScope()
     var currentScreen by remember { mutableStateOf<AppScreen>(AppScreen.Home) }
     var isAppSettingsOpen by remember { mutableStateOf(false) }
-    var updateSettings by remember { mutableStateOf(AppUpdateSettings()) }
-    var updateStatusText by remember { mutableStateOf<String?>(null) }
-    var updateDownloadProgress by remember { mutableStateOf<Float?>(null) }
-    var updateOffer by remember { mutableStateOf<AppUpdateInfo?>(null) }
+    // No update machinery on iOS. The App Store owns updates here: its version
+    // numbers are not the release feed's, an "Update available" sheet over a
+    // store build is simply wrong, and pointing anyone at a download page to
+    // obtain the app is grounds for rejection. The state below exists only
+    // because the shared sheet takes it; `showUpdates = false` means none of it
+    // is ever displayed and nothing is ever fetched.
+    val updateSettings = remember { AppUpdateSettings() }
 
     fun reloadLocationsAfterImport(onComplete: () -> Unit = {}) {
         dependencies.locationViewModel.loadLocations {
@@ -121,73 +111,30 @@ private fun IosApp(
         }
     }
 
-    suspend fun saveUpdateSettings(settings: AppUpdateSettings) {
-        val normalized = settings.normalized()
-        updateSettings = normalized
-        dependencies.updateSettingsStore.save(normalized)
-    }
-
-    fun checkUpdate(manual: Boolean) {
-        scope.launch {
-            val previousSettings = updateSettings
-            val checkStartedAt = kotlin.time.Clock.System.now().toEpochMilliseconds()
-            if (!manual && !previousSettings.isUpdateCheckDue(checkStartedAt)) return@launch
-
-            updateStatusText = "Checking ${previousSettings.channel.name.lowercase()}..."
-            val result = dependencies.updateService.check(previousSettings.channel)
-            val checkedAt = kotlin.time.Clock.System.now().toEpochMilliseconds()
-            val checkedSettings = previousSettings.copy(lastCheckAtEpochMs = checkedAt).normalized()
-            saveUpdateSettings(checkedSettings)
-            result.fold(
-                onSuccess = { info ->
-                    if (manual || info.shouldShowOffer(previousSettings, checkedAt)) {
-                        if (info.isDownloaded(checkedSettings)) {
-                            updateOffer = null
-                            updateStatusText = "Latest ${info.channel.name.lowercase()} is already downloaded"
-                        } else if (info.isUpdateAvailable) {
-                            updateOffer = info
-                            updateStatusText = "${info.channel.name} update available: ${info.version}"
-                        } else {
-                            updateOffer = null
-                            updateStatusText = "ProofKit is up to date"
-                        }
-                    } else {
-                        updateOffer = null
-                        updateStatusText = null
-                    }
-                },
-                onFailure = { error ->
-                    updateStatusText = error.message ?: "Update check failed"
-                }
-            )
-        }
-    }
-
-    fun laterUpdate(info: AppUpdateInfo) {
-        scope.launch {
-            saveUpdateSettings(updateSettings.copy(lastSeenUpdateVersion = info.identity()))
-            updateOffer = null
-        }
-    }
-
-    fun downloadUpdate(info: AppUpdateInfo) {
-        updateStatusText = "Install ${info.version} from the release page"
-        updateOffer = null
-    }
-
     LaunchedEffect(Unit) {
-        val loaded = dependencies.updateSettingsStore.load()
-        updateSettings = loaded
         dependencies.locationViewModel.loadLocations()
         dependencies.homeViewModel.loadCurrentConfig()
-        checkUpdate(manual = false)
     }
 
     AppTheme {
         val logs by dependencies.homeViewModel.logs.collectAsState()
         val homeState by dependencies.homeViewModel.state.collectAsState()
-        val socksProxySettings by dependencies.vpnManager.socksProxySettings.collectAsState()
-        val connectionSummary = "SOCKS5 127.0.0.1:${socksProxySettings.port}"
+        // What the connection actually is, not what it was two rewrites ago.
+        // olcRTC ran as an in-app SOCKS endpoint on 127.0.0.1 once; it runs in
+        // the packet tunnel extension now, like every other transport, and the
+        // port a user could set there is overridden inside the extension. The
+        // sheet went on describing "Local SOCKS5 proxy 127.0.0.1:<port>" and
+        // offering credentials that changed nothing observable.
+        val activeLocation = homeState.selectedLocation?.config
+        val connectionSummary = when {
+            homeState.isVpnConnected ->
+                listOfNotNull(
+                    "System VPN",
+                    activeLocation?.transportKind()?.label()
+                ).joinToString(" · ")
+
+            else -> "Not connected"
+        }
 
         Box(modifier = Modifier.fillMaxSize()) {
             OlcboxAppContent(
@@ -221,7 +168,26 @@ private fun IosApp(
                         onError = onError
                     )
                 },
-                onScanQrRequested = {},
+                onScanQrRequested = {
+                    platformBridge.scanQrCode(object : IosTextCallback {
+                        override fun onSuccess(text: String) {
+                            dependencies.homeViewModel.onImportFullConfig(
+                                rawText = text,
+                                onComplete = {
+                                    reloadLocationsAfterImport {
+                                        platformBridge.showMessage("Imported from QR code")
+                                    }
+                                },
+                                onError = platformBridge::showMessage
+                            )
+                        }
+
+                        override fun onError(message: String) {
+                            // Cancelling is not a failure worth an alert.
+                            if (message != "Scan cancelled") platformBridge.showMessage(message)
+                        }
+                    })
+                },
                 onCopyConfigRequested = {
                     dependencies.homeViewModel.onCopyFullConfigClicked()
                 },
@@ -238,7 +204,7 @@ private fun IosApp(
                 showAppSettingsButton = true,
                 onGetSubscriptionClick = { platformBridge.openUrl(PkBrand.siteUrl) },
                 showSplitTunnelingButton = false,
-                canScanQr = false,
+                canScanQr = true,
                 onAppSettingsClick = { isAppSettingsOpen = true },
                 onSplitTunnelingClick = {}
             )
@@ -246,19 +212,31 @@ private fun IosApp(
             if (isAppSettingsOpen) {
                 ApplicationSettingsSheet(
                     updateSettings = updateSettings,
-                    updateStatusText = updateStatusText,
-                    updateDownloadProgress = updateDownloadProgress,
-                    updateOffer = updateOffer,
+                    updateStatusText = null,
+                    updateDownloadProgress = null,
+                    updateOffer = null,
                     subscriptions = iosSubscriptionItems(dependencies.locationViewModel.locations.toList()),
                     logs = logs,
                     connectionSummary = connectionSummary,
-                    connectionDetails = listOf(
-                        "Mode" to "Local SOCKS5 proxy",
-                        "Host" to "127.0.0.1",
-                        "Port" to socksProxySettings.port.toString()
+                    connectionDetails = listOfNotNull(
+                        activeLocation?.transportKind()?.label()?.let { "Transport" to it },
+                        activeLocation?.displayName()
+                            ?.let { TransportGroup.baseName(it) }
+                            ?.takeIf { it.isNotBlank() }
+                            ?.let { "Exit" to it },
+                        "Traffic" to if (homeState.isVpnConnected) {
+                            "All apps and system traffic"
+                        } else {
+                            "Not routed"
+                        }
                     ),
-                    socksProxySettings = socksProxySettings,
+                    // No local proxy to configure: the extension carries
+                    // everything, and its SOCKS port is internal to it.
+                    socksProxySettings = null,
                     isConnectionActive = homeState.isVpnConnected,
+                    connectionModeTitle = "System VPN",
+                    connectionModeSummary = "All device traffic through the tunnel",
+                    showUpdates = false,
                     onDismiss = { isAppSettingsOpen = false },
                     onCopyConfigClick = {
                         dependencies.homeViewModel.onCopyFullConfigClicked()
@@ -276,14 +254,11 @@ private fun IosApp(
                             onError = platformBridge::showMessage
                         )
                     },
-                    onUpdateIntervalSelected = { hours ->
-                        scope.launch {
-                            saveUpdateSettings(updateSettings.copy(intervalHours = hours))
-                        }
-                    },
-                    onCheckUpdatesClick = { checkUpdate(manual = true) },
-                    onDownloadUpdateClick = ::downloadUpdate,
-                    onLaterUpdateClick = ::laterUpdate,
+                    // Unreachable with showUpdates = false; no update UI is built.
+                    onUpdateIntervalSelected = {},
+                    onCheckUpdatesClick = {},
+                    onDownloadUpdateClick = {},
+                    onLaterUpdateClick = {},
                     onSubscriptionShareClick = { url ->
                         platformBridge.shareText("Subscription", ConfigShareService.subscriptionQrText(url))
                     },
@@ -304,27 +279,6 @@ private fun IosApp(
                             }
                         }
                     },
-                    onSocksProxySettingsSaved = { username, password, port ->
-                        dependencies.vpnManager.updateSocksProxySettings(username, password, port)
-                        if (homeState.isVpnConnected) {
-                            dependencies.homeViewModel.restartVpnIfRunning()
-                        }
-                    },
-                    onSocksProxyPasswordRegenerated = {
-                        dependencies.vpnManager.regenerateSocksProxyPassword()
-                        if (homeState.isVpnConnected) {
-                            dependencies.homeViewModel.restartVpnIfRunning()
-                        }
-                    }
-                )
-            }
-
-            updateOffer?.let { info ->
-                ApplicationUpdateOfferSheet(
-                    info = info,
-                    downloadProgress = updateDownloadProgress,
-                    onLater = { laterUpdate(info) },
-                    onDownload = { downloadUpdate(info) }
                 )
             }
         }

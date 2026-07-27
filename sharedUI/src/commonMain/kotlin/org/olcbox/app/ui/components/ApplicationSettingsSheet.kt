@@ -72,6 +72,7 @@ import org.olcbox.app.CurrentAppInfo
 import org.olcbox.app.admin.AdminState
 import org.olcbox.app.data.share.SubscriptionShareItem
 import org.olcbox.app.ui.components.kit.pkMaskSubscriptionUrl
+import org.olcbox.app.ui.components.kit.PkBrand
 import org.olcbox.app.ui.components.kit.PkSectionLabel
 import org.olcbox.app.ui.components.kit.pkVersionLine
 import org.olcbox.app.ui.features.home.components.LogLines
@@ -109,6 +110,23 @@ fun ApplicationSettingsSheet(
     connectionDetails: List<Pair<String, String>>,
     socksProxySettings: ApplicationSocksProxySettings? = null,
     isConnectionActive: Boolean = false,
+    /**
+     * How this platform actually carries traffic. The defaults describe the
+     * in-app SOCKS endpoint the desktop build still uses; a platform that
+     * carries the whole device through a tun says so instead, rather than
+     * inheriting copy that stopped being true for it.
+     */
+    connectionModeTitle: String = "Proxy",
+    connectionModeSummary: String = "Local SOCKS5 proxy",
+    /**
+     * False where the store owns updates.
+     *
+     * An App Store build must not check a release feed, must not offer an
+     * "Update available" sheet, and must not point anyone at a download page:
+     * the version numbers do not even correspond, and telling users to install
+     * the app from somewhere else is grounds for rejection.
+     */
+    showUpdates: Boolean = true,
     onDismiss: () -> Unit,
     onCopyConfigClick: () -> Unit,
     onSaveLogsClick: () -> Unit,
@@ -164,6 +182,8 @@ fun ApplicationSettingsSheet(
             when (currentRoute) {
                 SharedSettingsRoute.Hub -> SharedSettingsHubContent(
                     updateSettings = updateSettings,
+                    showUpdates = showUpdates,
+                    connectionSummary = connectionModeSummary,
                     subscriptionsCount = subscriptions.size,
                     onConnectionClick = { route = SharedSettingsRoute.Connection },
                     onSubscriptionsClick = { route = SharedSettingsRoute.Subscriptions },
@@ -174,6 +194,7 @@ fun ApplicationSettingsSheet(
                 SharedSettingsRoute.Connection -> SharedConnectionSettingsContent(
                     summary = connectionSummary,
                     details = connectionDetails,
+                    modeSummary = connectionModeSummary,
                     socksProxySettings = socksProxySettings,
                     onConnectionModeClick = { route = SharedSettingsRoute.ConnectionMode },
                     onSocksProxyClick = { route = SharedSettingsRoute.SocksProxy },
@@ -181,6 +202,8 @@ fun ApplicationSettingsSheet(
                 )
 
                 SharedSettingsRoute.ConnectionMode -> SharedConnectionModeSettingsContent(
+                    title = connectionModeTitle,
+                    summary = connectionModeSummary,
                     onBack = { route = SharedSettingsRoute.Connection }
                 )
 
@@ -226,6 +249,8 @@ fun ApplicationSettingsSheet(
 @Composable
 private fun SharedSettingsHubContent(
     updateSettings: AppUpdateSettings,
+    showUpdates: Boolean,
+    connectionSummary: String,
     subscriptionsCount: Int,
     onConnectionClick: () -> Unit,
     onSubscriptionsClick: () -> Unit,
@@ -242,14 +267,14 @@ private fun SharedSettingsHubContent(
         SharedSettingsHeader(
             icon = Icons.Outlined.Settings,
             title = "Application Settings",
-            subtitle = "SOCKS"
+            subtitle = PkBrand.name
         )
 
         Spacer(Modifier.height(8.dp))
 
         SharedNavigationRow(
             title = "Connection Settings",
-            value = "Mode and SOCKS5 proxy",
+            value = connectionSummary,
             icon = PkIcons.Public,
             onClick = onConnectionClick
         )
@@ -261,12 +286,14 @@ private fun SharedSettingsHubContent(
             onClick = onSubscriptionsClick
         )
 
-        SharedNavigationRow(
-            title = "Update Settings",
-            value = "Nightly · every ${updateSettings.intervalHours}h",
-            icon = Icons.Outlined.Refresh,
-            onClick = onUpdatesClick
-        )
+        if (showUpdates) {
+            SharedNavigationRow(
+                title = "Update Settings",
+                value = "Nightly · every ${updateSettings.intervalHours}h",
+                icon = Icons.Outlined.Refresh,
+                onClick = onUpdatesClick
+            )
+        }
 
         SharedNavigationRow(
             title = "Application Logs",
@@ -294,6 +321,7 @@ private fun SharedSettingsHubContent(
 private fun SharedConnectionSettingsContent(
     summary: String,
     details: List<Pair<String, String>>,
+    modeSummary: String,
     socksProxySettings: ApplicationSocksProxySettings?,
     onConnectionModeClick: () -> Unit,
     onSocksProxyClick: () -> Unit,
@@ -316,7 +344,7 @@ private fun SharedConnectionSettingsContent(
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             SharedNavigationRow(
                 title = "Connection Mode",
-                value = "Proxy · Local SOCKS5",
+                value = modeSummary,
                 icon = PkIcons.Public,
                 onClick = onConnectionModeClick
             )
@@ -342,6 +370,8 @@ private fun SharedConnectionSettingsContent(
 
 @Composable
 private fun SharedConnectionModeSettingsContent(
+    title: String,
+    summary: String,
     onBack: () -> Unit
 ) {
     Column(
@@ -352,7 +382,7 @@ private fun SharedConnectionModeSettingsContent(
     ) {
         SharedDetailHeader(
             title = "Connection Mode",
-            subtitle = "Local SOCKS5 proxy",
+            subtitle = summary,
             onBack = onBack
         )
 
@@ -361,8 +391,8 @@ private fun SharedConnectionModeSettingsContent(
         SharedSelectableSettingsCard(
             selected = true,
             icon = PkIcons.Public,
-            title = "Proxy",
-            subtitle = "Local SOCKS endpoint"
+            title = title,
+            subtitle = summary
         )
     }
 }
@@ -770,7 +800,7 @@ private fun SharedUpdateOfferCard(
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Text(
-                text = "Обновите приложение",
+                text = "Update available",
                 color = MaterialTheme.colorScheme.onPrimaryContainer,
                 fontSize = 15.sp,
                 fontWeight = FontWeight.SemiBold
