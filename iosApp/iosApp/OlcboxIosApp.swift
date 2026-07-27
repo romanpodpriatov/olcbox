@@ -178,14 +178,40 @@ final class PacketTunnelController: ObservableObject {
     /// The extension's own breadcrumb, which is the only thing that knows *why*
     /// a start failed — the system tells the app nothing but "disconnected".
     private static func lastStage() -> String? {
+        let stage = shared("stage.txt")
+
+        // A stage that says `failed` explains itself: the extension caught an
+        // error and wrote it down.
+        if let stage, stage.hasPrefix("failed") { return stage }
+
+        // The harder case, and until now the silent one: the extension reached
+        // a perfectly good stage — `ready`, carrying traffic — and was then
+        // killed from outside. The stage cannot explain that, so it was
+        // reported as the useless "stopped right after starting". The memory
+        // trace can: it says how much headroom was left at the last sample
+        // before the process disappeared. Near zero means the ceiling; wide
+        // open means the kill had nothing to do with memory.
+        if let stage, let memory = lastMemorySample() {
+            return "died at stage '\(stage)' — \(memory)"
+        }
+        return nil
+    }
+
+    /// Last line of the extension's memory trace. See MemoryWatch.
+    private static func lastMemorySample() -> String? {
+        shared("memory.txt")?
+            .split(separator: "\n")
+            .last
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+    }
+
+    private static func shared(_ name: String) -> String? {
         guard let container = FileManager.default.containerURL(
             forSecurityApplicationGroupIdentifier: "group.org.proofkit.app"
         ) else { return nil }
-        let stage = try? String(
-            contentsOf: container.appendingPathComponent("stage.txt"), encoding: .utf8
+        return try? String(
+            contentsOf: container.appendingPathComponent(name), encoding: .utf8
         )
-        guard let stage, stage.hasPrefix("failed") else { return nil }
-        return stage
     }
 
     private nonisolated static func describe(_ status: NEVPNStatus) -> String {

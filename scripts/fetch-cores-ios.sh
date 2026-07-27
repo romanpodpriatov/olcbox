@@ -18,10 +18,18 @@
 #
 # The tag names the versions it was built from, so a version bump is a new tag
 # rather than a silent swap — and a new cache entry rather than a stale hit.
+# That only holds while the tag is *derived*: it was a literal here once, olcRTC
+# was re-pinned without it, and this script went on restoring a framework built
+# from the previous revision. Nothing looked wrong, because step 1 below finds
+# the freshly built framework in the destination and returns before the stale
+# cache entry is ever consulted — until Gradle sweeps the destination, which is
+# exactly what it is documented above to do.
 set -euo pipefail
 
 DEST="${1:?usage: fetch-cores-ios.sh <destination-dir>}"
-TAG="${CORES_RELEASE_TAG:-ios-cores-sb1.13.14-lxv1.260711.0-rtc42ae4e0c6a1a}"
+# shellcheck source=scripts/cores-pins.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/cores-pins.sh"
+TAG="${CORES_RELEASE_TAG:-${CORES_TAG}}"
 ASSET="Cores-ios.zip"
 URL="https://github.com/romanpodpriatov/olcbox/releases/download/${TAG}/${ASSET}"
 # Same default as build-cores-ios.sh writes to. Keyed by tag: two version pairs

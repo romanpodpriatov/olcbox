@@ -52,6 +52,9 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     /// that killed it.
     private func mark(_ stage: String) {
         log.info("stage: \(stage, privacy: .public)")
+        // Stamped onto the memory trace too, so the footprint curve can be read
+        // against the stage it was climbing during.
+        MemoryWatch.mark(stage)
         guard let container = FileManager.default.containerURL(
             forSecurityApplicationGroupIdentifier: Self.appGroup
         ) else { return }
@@ -85,6 +88,11 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
             completionHandler(Self.failure("app group unavailable"))
             return
         }
+
+        // Before any core is loaded, so the first sample is the extension with
+        // nothing in it and the climb afterwards is attributable. The record
+        // outlives the process; that is the whole point of it. See MemoryWatch.
+        MemoryWatch.start(container: container)
 
         let configURL = container.appendingPathComponent("config.json")
         guard let config = try? String(contentsOf: configURL, encoding: .utf8), !config.isEmpty else {
@@ -248,6 +256,8 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         commandHandler = nil
         XrayEngine.stop()
         OlcrtcEngine.stop()
+        // Last, so a stop that is itself slow or fatal is still on the trace.
+        MemoryWatch.stop()
         completionHandler()
     }
 

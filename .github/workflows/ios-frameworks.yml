@@ -35,7 +35,7 @@ env:
   LIBXRAY_VERSION: v1.260711.0
   # A published revision, not the OLCRTC_REPO working copy the app's own
   # OlcRtcMobile is built from — this runner has no such checkout.
-  OLCRTC_VERSION: v0.0.0-20260713124136-42ae4e0c6a1a
+  OLCRTC_VERSION: v0.0.0-20260717184831-c83717e7e900
 
 jobs:
   build:
@@ -45,6 +45,23 @@ jobs:
 
     steps:
       - uses: actions/checkout@v5
+
+      # The pins above have to be a copy — a job-level cache key cannot be
+      # computed from a sourced shell file — so the copy is checked instead of
+      # trusted. A tag that names versions the scripts do not use is how a
+      # framework once got linked that no pin in the tree described.
+      - name: Pins match scripts/cores-pins.sh
+        run: |
+          set -euo pipefail
+          expected="$(env -u SINGBOX_VERSION -u LIBXRAY_VERSION -u OLCRTC_VERSION \
+            bash -c '. scripts/cores-pins.sh; echo "$SINGBOX_VERSION $LIBXRAY_VERSION $OLCRTC_VERSION"')"
+          actual="${SINGBOX_VERSION} ${LIBXRAY_VERSION} ${OLCRTC_VERSION}"
+          [ "$expected" = "$actual" ] || {
+            echo "workflow env and scripts/cores-pins.sh disagree:"
+            echo "  cores-pins.sh: $expected"
+            echo "  workflow env : $actual"
+            exit 1
+          }
 
       - uses: actions/setup-go@v7
         with:

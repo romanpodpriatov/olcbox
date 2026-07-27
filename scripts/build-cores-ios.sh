@@ -24,11 +24,13 @@
 # Reality fingerprinting.
 set -euo pipefail
 
-# Defaults are the pinned pair this was verified against, so a laptop run and a
-# CI run produce the same framework. The workflow passes the same values because
-# it also needs them for the release tag; fetch-cores-ios.sh names that tag.
-SINGBOX_VERSION="${SINGBOX_VERSION:-1.13.14}"
-LIBXRAY_VERSION="${LIBXRAY_VERSION:-v1.260711.0}"
+# The pinned trio this was verified against, so a laptop run and a CI run
+# produce the same framework. It lives in one file because the cache key below,
+# the release tag the workflow publishes and the lookup fetch-cores-ios.sh does
+# all have to name the same thing — they did not, once, and the framework that
+# got linked was not the one the pins described.
+# shellcheck source=scripts/cores-pins.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/cores-pins.sh"
 # Our own engine, pinned to a published revision rather than the working copy the
 # app's own OlcRtcMobile is built from (OLCRTC_REPO): the extension is built on
 # machines that do not have that checkout. A protocol change in olcrtc therefore
@@ -41,7 +43,6 @@ LIBXRAY_VERSION="${LIBXRAY_VERSION:-v1.260711.0}"
 # with the fork. It works precisely *because* the fork kept the upstream path.
 OLCRTC_MODULE="github.com/openlibrecommunity/olcrtc"
 OLCRTC_FORK="${OLCRTC_FORK:-github.com/romanpodpriatov/olcrtc}"
-OLCRTC_VERSION="${OLCRTC_VERSION:-v0.0.0-20260713124136-42ae4e0c6a1a}"
 # Pinned rather than @latest: gobind generates code against the seq package of
 # its own version, so the tool and the module dependency below must be the same
 # version or the generated bindings compile against the wrong API.
@@ -164,7 +165,7 @@ echo "== all three APIs present =="
 # and a sweep once deleted twenty minutes of work that could not be
 # re-downloaded, because the release for this version pair did not exist yet.
 # fetch-cores-ios.sh looks here before it looks at the network.
-CACHE="${CORES_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/olcbox/cores}/ios-cores-sb${SINGBOX_VERSION}-lx${LIBXRAY_VERSION}-rtc${OLCRTC_VERSION##*-}"
+CACHE="${CORES_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/olcbox/cores}/${CORES_TAG}"
 if [ "$(cd "$OUT" && pwd)" != "$CACHE" ]; then
   mkdir -p "$CACHE"
   rm -rf "$CACHE/Cores.xcframework"
