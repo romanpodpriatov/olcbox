@@ -743,10 +743,11 @@ jobs:
              [ -n "${ANDROID_RELEASE_KEY_PASSWORD}" ]; then
             printf '%s' "${ANDROID_RELEASE_KEYSTORE_BASE64}" | tr -d '\r\n' | base64 --decode > release-keystore.jks
 
-            # Trailing whitespace survives a paste into `gh secret set`, and Java's
+            # Whitespace survives a paste into `gh secret set`, and Java's
             # Properties does not trim the end of a value — so an invisible space
-            # becomes an alias that does not exist.
-            alias="$(printf '%s' "${ANDROID_RELEASE_KEY_ALIAS}" | tr -d '\r\n' | sed 's/[[:space:]]*$//')"
+            # becomes an alias that does not exist, with nothing at all to see.
+            alias="$(printf '%s' "${ANDROID_RELEASE_KEY_ALIAS}" | tr -d '\r\n' \
+              | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
             store_pw="$(printf '%s' "${ANDROID_RELEASE_STORE_PASSWORD}" | tr -d '\r\n')"
             key_pw="$(printf '%s' "${ANDROID_RELEASE_KEY_PASSWORD}" | tr -d '\r\n')"
 
@@ -758,7 +759,12 @@ jobs:
               echo "No key with that alias in the keystore. It holds:" >&2
               keytool -list -keystore release-keystore.jks -storepass "${store_pw}" 2>/dev/null \
                 | grep -i "PrivateKeyEntry" >&2 || echo "  (no private keys at all)" >&2
-              echo "Set ANDROID_RELEASE_KEY_ALIAS to the name in the first column." >&2
+              # The value is masked in this log, so its length is the only way to
+              # tell "wrong name" from "right name with an invisible character" —
+              # and the two have completely different fixes.
+              echo "ANDROID_RELEASE_KEY_ALIAS is ${#alias} characters after trimming." >&2
+              echo "If that count is not what you typed, the secret carries something" >&2
+              echo "invisible; otherwise set it to the name in the first column above." >&2
               exit 1
             fi
 
