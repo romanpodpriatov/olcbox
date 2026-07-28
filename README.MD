@@ -1,22 +1,43 @@
 # Olcbox
 
-`olcrtc` configurator built with Kotlin Multiplatform and Compose.
+A VPN client for a subscription you already have. Kotlin Multiplatform and
+Compose, one codebase for Android, iOS, macOS, Windows and Linux.
+
+It is a client, not a service: you bring a subscription link from your
+provider, and the app turns it into a list of servers you can connect to.
+There is no account and nothing to sign up for.
 
 <p align="center">
-  <img src="docs/screenshots/photo_2026-05-05_15-40-57.jpg" alt="Olcbox home screen" width="200">
-  <img src="docs/screenshots/photo_2026-05-05_15-40-59.jpg" alt="Olcbox location settings screen" width="200">
-  <img src="docs/screenshots/photo_2026-05-05_20-40-45.jpg" alt="Olcbox split tunneling settings screen" width="200">
+  <img src="docs/screenshots/01-connected.png" alt="Connected, with session timer and traffic" width="200">
+  <img src="docs/screenshots/02-list.png" alt="Server list grouped by subscription" width="200">
+  <img src="docs/screenshots/03-subscription.png" alt="Subscription header with quota and expiry" width="200">
+  <img src="docs/screenshots/04-settings.png" alt="Subscription settings" width="200">
 </p>
 
+## Protocols
+
+| Protocol | Engine |
+| --- | --- |
+| VLESS + Reality | sing-box |
+| VLESS over TLS, incl. behind a CDN | sing-box |
+| Hysteria2, with Salamander obfuscation | sing-box |
+| XHTTP | Xray, behind sing-box's tun |
+| olcRTC | our own transport, riding inside a video call |
+
+One subscription usually carries several. The app groups them by provider,
+filters by protocol, and remembers the exit last used.
+
 ## Status
-Alpha version.
-Not intended for production use.
+
+Shipping. iOS is distributed through the App Store; every other platform is
+built by the release workflow and published on the Releases page.
 
 ## Support
+
 Support options are not publicly listed. Contact the author if needed.
 
-> **Автор ничего не продаёт.  
-> Не продаются приложение, доступ, конфигурации, подписки или услуги поддержки.  
+> **Автор ничего не продаёт.
+> Не продаются приложение, доступ, конфигурации, подписки или услуги поддержки.
 > Возможен только добровольный донат.**
 
 ## Legal Notice
@@ -34,23 +55,26 @@ This software is not intended to be used for bypassing access restrictions or vi
 The author does not support or encourage such use.
 
 ## Features
-- One-tap tunnel start/stop with live relay status.
-- Saved connection profiles with active location selection.
-- Providers: Jazz, Telemost, WB Stream, Jitsi.
-- Transports: DataChannel, VP8, SEI.
-- VP8 tuning: FPS and batch size.
-- Connectivity checks for individual locations.
-- Config import from clipboard/file and export to clipboard.
-- Diagnostics log view with log export.
+- One tap to connect, with the session's elapsed time and traffic on screen.
+- Subscriptions by link, QR code or file; grouped, foldable, and refreshed on
+  a schedule you choose.
+- What the provider says about your plan — quota, expiry, its own support and
+  web links — read from the subscription's own headers.
+- Latency where it can honestly be measured: through the tunnel for the
+  connection you are on, ICMP for a server you are not connected to.
+- Sorting by ping or name, filtering by protocol, duplicate subscriptions
+  refreshed rather than added twice.
+- Diagnostics log with export, and a failed connection that says why.
 - Android TUN/proxy modes, SOCKS5 credentials, split tunneling.
 - Network migration, reconnect handling, and watchdog recovery.
+- No account, no analytics, nothing collected.
 
 ## Platform Matrix
 
 | Platform | Modes | Runtime |
 | --- | --- | --- |
 | Android | TUN, proxy | `VpnService`, `hev-socks5-tunnel`, local `olcrtc` SOCKS5 |
-| iOS | Proxy | local `olcrtc` SOCKS5 hosted by a Swift shell |
+| iOS | System VPN | `NEPacketTunnelProvider`; sing-box, Xray and olcRTC bound into one framework inside the extension |
 | macOS | Proxy | local `olcrtc` SOCKS5 with OS PAC settings |
 | Windows | TUN | local `olcrtc` SOCKS5, `hev-socks5-tunnel`, Wintun |
 | Linux | TUN | local `olcrtc` SOCKS5, `hev-socks5-tunnel`, policy routes |
