@@ -8,10 +8,10 @@ provider, and the app turns it into a list of servers you can connect to.
 There is no account and nothing to sign up for.
 
 <p align="center">
-  <img src="docs/screenshots/01-connected.png" alt="Connected, with session timer and traffic" width="200">
-  <img src="docs/screenshots/02-list.png" alt="Server list grouped by subscription" width="200">
-  <img src="docs/screenshots/03-subscription.png" alt="Subscription header with quota and expiry" width="200">
-  <img src="docs/screenshots/04-settings.png" alt="Subscription settings" width="200">
+  <img src="docs/screenshots/03-connected.PNG" alt="Connected, with session timer and traffic" width="200">
+  <img src="docs/screenshots/02-list.PNG" alt="Server list grouped by subscription" width="200">
+  <img src="docs/screenshots/04-settings.PNG" alt="Subscription settings" width="200">
+  <img src="docs/screenshots/01-empty.PNG" alt="Adding a subscription" width="200">
 </p>
 
 ## Protocols
