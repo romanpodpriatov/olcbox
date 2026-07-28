@@ -742,11 +742,31 @@ jobs:
              [ -n "${ANDROID_RELEASE_KEY_ALIAS}" ] &&
              [ -n "${ANDROID_RELEASE_KEY_PASSWORD}" ]; then
             printf '%s' "${ANDROID_RELEASE_KEYSTORE_BASE64}" | tr -d '\r\n' | base64 --decode > release-keystore.jks
+
+            # Trailing whitespace survives a paste into `gh secret set`, and Java's
+            # Properties does not trim the end of a value — so an invisible space
+            # becomes an alias that does not exist.
+            alias="$(printf '%s' "${ANDROID_RELEASE_KEY_ALIAS}" | tr -d '\r\n' | sed 's/[[:space:]]*$//')"
+            store_pw="$(printf '%s' "${ANDROID_RELEASE_STORE_PASSWORD}" | tr -d '\r\n')"
+            key_pw="$(printf '%s' "${ANDROID_RELEASE_KEY_PASSWORD}" | tr -d '\r\n')"
+
+            # Asked here rather than discovered by Gradle six minutes later, where
+            # it arrives as a KeytoolException under thirty frames of packager
+            # stack and says nothing about which aliases the keystore does have.
+            if ! keytool -list -keystore release-keystore.jks \
+                   -storepass "${store_pw}" -alias "${alias}" >/dev/null 2>&1; then
+              echo "No key with that alias in the keystore. It holds:" >&2
+              keytool -list -keystore release-keystore.jks -storepass "${store_pw}" 2>/dev/null \
+                | grep -i "PrivateKeyEntry" >&2 || echo "  (no private keys at all)" >&2
+              echo "Set ANDROID_RELEASE_KEY_ALIAS to the name in the first column." >&2
+              exit 1
+            fi
+
             cat > keystore.properties <<EOF
           storeFile=release-keystore.jks
-          storePassword=${ANDROID_RELEASE_STORE_PASSWORD}
-          keyAlias=${ANDROID_RELEASE_KEY_ALIAS}
-          keyPassword=${ANDROID_RELEASE_KEY_PASSWORD}
+          storePassword=${store_pw}
+          keyAlias=${alias}
+          keyPassword=${key_pw}
           EOF
           else
             # ProofKit fork: no release secrets → generate an EPHEMERAL keystore so
