@@ -818,32 +818,46 @@ jobs:
           build_singbox arm   armv7a-linux-androideabi23 armeabi-v7a
           build_singbox amd64 x86_64-linux-android23     x86_64
 
-      - name: Bundle Xray cores into jniLibs
-        working-directory: olcbox
+      # Downloaded until 1.0.237, and the alignment check is what ended that. Xray
+      # publishes one Android asset, arm64; the other two ABIs were filled with its
+      # linux builds on the reasoning that Android is Linux and a static Go binary
+      # does not care. It does care about one thing: Go's linker rounds segments
+      # differently per GOOS, so the android asset came out at 64 KB while
+      # Xray-linux-64 came out at 4 KB — unusable on a 16 KB-page device, and
+      # shipped that way to x86_64 in the same release that fixed sing-box.
+      #
+      # Building all three from GOOS=android removes the substitution rather than
+      # patching around it, and -R makes the result ours instead of a per-GOOS
+      # default that can move under us. CGO_ENABLED=0 and no build tags are XTLS's
+      # own release settings.
+      - name: Build Xray for Android with 16 KB page alignment
         run: |
           set -euo pipefail
+          git clone --depth 1 --branch "v${XRAY_VERSION}" \
+            https://github.com/XTLS/Xray-core.git "${RUNNER_TEMP}/xray"
+          cd "${RUNNER_TEMP}/xray"
+          OUT="${GITHUB_WORKSPACE}/olcbox/androidApp/jniLibs"
 
-          fetch_xray() {      # $1 = Xray asset, $2 = android ABI
-            curl -fsSL "https://github.com/XTLS/Xray-core/releases/download/v${XRAY_VERSION}/$1" -o xray.zip
-            rm -rf xr-x && mkdir xr-x && (cd xr-x && unzip -oq ../xray.zip)
-            install -D -m 0755 "$(find xr-x -type f -name xray | head -1)" \
-              "androidApp/jniLibs/$2/libxraycore.so"
+          build_xray() {      # $1 = GOARCH, $2 = android ABI
+            mkdir -p "${OUT}/$2"
+            CGO_ENABLED=0 GOOS=android GOARCH="$1" GOARM=7 \
+            go build -v -trimpath -buildvcs=false -o "${OUT}/$2/libxraycore.so" \
+              -ldflags "-X github.com/xtls/xray-core/core.build=v${XRAY_VERSION} -s -w -buildid= -R 0x4000" \
+              ./main
           }
 
-          # Xray publishes one Android asset. The rest of its builds are static Go
-          # binaries and Android is Linux, so the matching linux/<arch> build runs
-          # unchanged — the same substitution x86_64 has used since it was added.
-          fetch_xray Xray-android-arm64-v8a.zip arm64-v8a
-          fetch_xray Xray-linux-arm32-v7a.zip   armeabi-v7a
-          fetch_xray Xray-linux-64.zip          x86_64
+          build_xray arm64 arm64-v8a
+          build_xray arm   armeabi-v7a
+          build_xray amd64 x86_64
 
           echo "== staged cores =="
-          ls -la androidApp/jniLibs/*/
+          ls -la "${OUT}"/*/
 
-      # The build flag above is a request, not a guarantee: Go's linker passes its
-      # own -z max-page-size and whichever lands last wins. Checking the artifact is
-      # what makes the request safe to make — and it covers Xray too, which is
-      # aligned today by XTLS's choice and not by ours.
+      # The build flags above are requests, not guarantees: Go's linker passes its
+      # own -z max-page-size and whichever lands last wins, and its segment rounding
+      # defaults are per-architecture — arm and arm64 round to 64 KB, amd64 to 4 KB,
+      # which is how a 4 KB Xray reached x86_64 in the release that fixed sing-box.
+      # Checking the artifact is what makes the requests safe to make.
       - name: Verify cores are 16 KB aligned
         working-directory: olcbox
         run: |
