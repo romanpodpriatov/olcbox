@@ -701,15 +701,26 @@ class OlcboxVpnService : VpnService() {
             stopCoreProcesses()
             waitForSocksPortReleased(port, SOCKS_RELEASE_QUICK_TIMEOUT_MS)
             val label: String
+            // Which core to ask afterwards, decided here rather than re-derived
+            // from the label — the failure path should not have to parse a string
+            // we build for humans.
+            val diagnose: () -> String
             if (spec is OutboundSpec.Vless && spec.transport is TransportSpec.Xhttp) {
                 xrayCore.start(XrayConfig.buildXhttp(spec, socksPort = port))
                 label = "Xray/xhttp"
+                diagnose = xrayCore::diagnostics
             } else {
                 singBoxCore.start(SingBoxConfig.build(spec, socksPort = port))
                 label = "sing-box/${location.kind}"
+                diagnose = singBoxCore::diagnostics
             }
             activeCorePort = port
             if (!waitForSocksPortOpen(port, MOBILE_READY_TIMEOUT_MS)) {
+                // The core's own account of what went wrong, which otherwise sits
+                // in a cache file only root can read. Without it this branch says
+                // a port did not open and nothing about why, and that is all a
+                // user has ever been able to report.
+                addLog(diagnose())
                 error("$label SOCKS not ready on $port")
             }
             coroutineContext.ensureActive()
@@ -1067,11 +1078,27 @@ class OlcboxVpnService : VpnService() {
 
                 if (mode == AndroidConnectionMode.Tun && isTunTrafficStalled()) {
                     addLog("Watchdog: TUN traffic has no upstream response")
+                    // A core whose SOCKS port opened is reported as connected, and
+                    // the port opens before the core has touched the server — so
+                    // "connected but nothing loads" and "the exit is unreachable"
+                    // look identical from here. The core knows which it is.
+                    addLog(activeCoreDiagnostics())
                     requestTransportRecovery("TUN traffic stalled", fullRestart = false)
                     return@launch
                 }
             }
         }
+    }
+
+    /**
+     * The running core's account of itself, whichever core that is. An olcRTC
+     * location runs neither, and saying so is the useful answer there rather than
+     * an empty string that reads like a core with nothing to report.
+     */
+    private fun activeCoreDiagnostics(): String = when {
+        xrayCore.isRunning() -> xrayCore.diagnostics()
+        singBoxCore.isRunning() -> singBoxCore.diagnostics()
+        else -> "no core process is running"
     }
 
     private fun cleanup(stopService: Boolean = true) {

@@ -19,4 +19,6 @@ class AndroidXrayController(context: Context) : XrayController {
     /** Non-suspend stop for the VpnService stop paths (which are not coroutines). */
     fun stopNow() = proc.stop()
     fun isRunning(): Boolean = proc.isRunning()
+    /** What the core said, for the app log when the SOCKS port never opens. */
+    fun diagnostics(): String = proc.diagnostics()
 }

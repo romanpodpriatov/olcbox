@@ -58,5 +58,41 @@ internal class AndroidCoreProcess(
         }
     }
 
+    /**
+     * What the core said, for the app log when it fails to come up.
+     *
+     * Everything the core writes lands in a file inside the app's private cache,
+     * which on a production build only root can read — so the one place that knows
+     * why a connection failed was reachable by nobody who ever hit the failure. A
+     * user could report "it does not connect" and nothing else, which is exactly
+     * what happened, twice, and cost a day each time.
+     *
+     * Whether the file is empty matters as much as what is in it: a core that wrote
+     * nothing at all did not get far enough to complain, which points at the exec
+     * rather than at the config.
+     */
+    fun diagnostics(maxLines: Int = 12): String {
+        val log = File(File(context.cacheDir, "olcbox-$label"), "$label.log")
+        val state = process?.let { p ->
+            try {
+                "exited with code ${p.exitValue()}"
+            } catch (_: IllegalThreadStateException) {
+                "still running"
+            }
+        } ?: "was never started"
+
+        val tail = try {
+            if (log.isFile) log.readLines().takeLast(maxLines) else emptyList()
+        } catch (e: Exception) {
+            listOf("(could not read ${log.name}: ${e.message})")
+        }
+
+        return if (tail.isEmpty()) {
+            "$label $state and wrote nothing to ${log.name}"
+        } else {
+            "$label $state; last ${tail.size} line(s):\n" + tail.joinToString("\n")
+        }
+    }
+
     private companion object
 }

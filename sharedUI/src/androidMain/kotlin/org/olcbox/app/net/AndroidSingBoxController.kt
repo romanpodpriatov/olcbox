@@ -17,6 +17,8 @@ class AndroidSingBoxController(context: Context) : SingBoxController {
 
     override suspend fun start(configJson: String) = proc.start(configJson)
     override suspend fun stop() = proc.stop()
+    /** What the core said, for the app log when the SOCKS port never opens. */
+    fun diagnostics(): String = proc.diagnostics()
     /** Non-suspend stop for the VpnService stop paths (which are not coroutines). */
     fun stopNow() = proc.stop()
     fun isRunning(): Boolean = proc.isRunning()
