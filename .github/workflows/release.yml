@@ -56,6 +56,28 @@ jobs:
       macos_any: ${{ steps.p.outputs.macos_any }}
       macos_matrix: ${{ steps.p.outputs.macos_matrix }}
     steps:
+      # A build without these is not a broken build — it is a working build of a
+      # different app, and it says so nowhere. crypt1 links stop importing, which
+      # takes the partner's subscriptions with them, and the admin gate is off,
+      # which puts an operator's edge addresses on every tester's screen. Both
+      # were shipped once exactly this way, and the first report was two users
+      # saying "the link does not activate" about two different links with one
+      # cause.
+      - name: Secrets are set
+        run: |
+          missing=""
+          [ -n "${OLCBOX_CRYPT_KEY_V1}" ] || missing="${missing} OLCBOX_CRYPT_KEY_V1"
+          [ -n "${OLCBOX_ADMIN_PASS_SHA256}" ] || missing="${missing} OLCBOX_ADMIN_PASS_SHA256"
+          if [ -n "${missing}" ]; then
+            echo "Missing repository secrets:${missing}"
+            echo
+            echo "crypt1 links will not import and the configurator will be"
+            echo "visible to everyone. Set them in Settings -> Secrets and"
+            echo "variables -> Actions, then run this again."
+            exit 1
+          fi
+          echo "crypt1 key and admin hash are both present."
+
       - name: Resolve requested platforms
         id: p
         run: |
