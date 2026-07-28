@@ -779,17 +779,49 @@ jobs:
       #
       # singbox-verify.yml has staged these all along, which is why that workflow
       # stayed green over a release that could not connect.
-      - name: Bundle sing-box + Xray cores into jniLibs
+      # Built here rather than downloaded, for one reason: every sing-box release
+      # binary — 1.13.14 and 1.14.0-beta.2 alike — has 4 KB LOAD alignment, and a
+      # device with 16 KB pages cannot map it. On a Pixel 10 the process died
+      # without executing a single instruction: its log was empty, not even the
+      # version banner Xray prints on its first line, while Xray (aligned to 64 KB)
+      # started normally. There is no upstream version to move to, so the choice is
+      # to align it ourselves or to ship Hysteria2 broken on every recent phone.
+      #
+      # The recipe is theirs, from SagerNet's own build.yml: same build tags, same
+      # shared ldflags, same NDK triples, CGO through the NDK clang. The one
+      # addition is max-page-size. Deviating from those tags silently drops
+      # protocols, so they are read from the tree at the pinned tag rather than
+      # copied here where they would rot.
+      - name: Build sing-box for Android with 16 KB page alignment
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch "v${SINGBOX_VERSION}" \
+            https://github.com/SagerNet/sing-box.git "${RUNNER_TEMP}/sing-box"
+          cd "${RUNNER_TEMP}/sing-box"
+
+          TAGS="$(cat release/DEFAULT_BUILD_TAGS_OTHERS)"
+          LDFLAGS_SHARED="$(cat release/LDFLAGS)"
+          NDK_BIN="${ANDROID_HOME}/ndk/${ANDROID_NDK_VERSION}/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          OUT="${GITHUB_WORKSPACE}/olcbox/androidApp/jniLibs"
+          echo "build tags: ${TAGS}"
+
+          build_singbox() {   # $1 = GOARCH, $2 = NDK triple, $3 = android ABI
+            mkdir -p "${OUT}/$3"
+            CGO_ENABLED=1 GOOS=android GOARCH="$1" GOARM=7 \
+            CC="${NDK_BIN}/$2-clang" CXX="${NDK_BIN}/$2-clang++" \
+            go build -v -trimpath -o "${OUT}/$3/libsingboxcore.so" -tags "${TAGS}" \
+              -ldflags "-X 'github.com/sagernet/sing-box/constant.Version=${SINGBOX_VERSION}' ${LDFLAGS_SHARED} -s -w -buildid= -extldflags=-Wl,-z,max-page-size=16384" \
+              ./cmd/sing-box
+          }
+
+          build_singbox arm64 aarch64-linux-android23    arm64-v8a
+          build_singbox arm   armv7a-linux-androideabi23 armeabi-v7a
+          build_singbox amd64 x86_64-linux-android23     x86_64
+
+      - name: Bundle Xray cores into jniLibs
         working-directory: olcbox
         run: |
           set -euo pipefail
-
-          fetch_singbox() {   # $1 = sing-box arch, $2 = android ABI
-            curl -fsSL "https://github.com/SagerNet/sing-box/releases/download/v${SINGBOX_VERSION}/sing-box-${SINGBOX_VERSION}-android-$1.tar.gz" -o sb.tgz
-            rm -rf sb-x && mkdir sb-x && tar xzf sb.tgz -C sb-x
-            install -D -m 0755 "$(find sb-x -type f -name sing-box | head -1)" \
-              "androidApp/jniLibs/$2/libsingboxcore.so"
-          }
 
           fetch_xray() {      # $1 = Xray asset, $2 = android ABI
             curl -fsSL "https://github.com/XTLS/Xray-core/releases/download/v${XRAY_VERSION}/$1" -o xray.zip
@@ -797,10 +829,6 @@ jobs:
             install -D -m 0755 "$(find xr-x -type f -name xray | head -1)" \
               "androidApp/jniLibs/$2/libxraycore.so"
           }
-
-          fetch_singbox arm64 arm64-v8a
-          fetch_singbox arm   armeabi-v7a
-          fetch_singbox amd64 x86_64
 
           # Xray publishes one Android asset. The rest of its builds are static Go
           # binaries and Android is Linux, so the matching linux/<arch> build runs
@@ -811,6 +839,29 @@ jobs:
 
           echo "== staged cores =="
           ls -la androidApp/jniLibs/*/
+
+      # The build flag above is a request, not a guarantee: Go's linker passes its
+      # own -z max-page-size and whichever lands last wins. Checking the artifact is
+      # what makes the request safe to make — and it covers Xray too, which is
+      # aligned today by XTLS's choice and not by ours.
+      - name: Verify cores are 16 KB aligned
+        working-directory: olcbox
+        run: |
+          set -euo pipefail
+          bad=0
+          for f in androidApp/jniLibs/*/lib*core.so; do
+            align="$(readelf -lW "$f" | awk '/^  LOAD/{print $NF; exit}')"
+            if [ $(( align % 16384 )) -ne 0 ]; then
+              echo "MISALIGNED ${f} (${align})"; bad=1
+            else
+              echo "ok         ${f} (${align})"
+            fi
+          done
+          [ "$bad" -eq 0 ] || {
+            echo "A core with sub-16 KB LOAD alignment cannot be mapped on a" >&2
+            echo "16 KB-page device: it dies before executing anything, silently." >&2
+            exit 1
+          }
 
       - name: Build production APK
         working-directory: olcbox
