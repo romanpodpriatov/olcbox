@@ -32,6 +32,14 @@ filters by protocol, and remembers the exit last used.
 Shipping. iOS is distributed through the App Store; every other platform is
 built by the release workflow and published on the Releases page.
 
+## Credits
+
+A fork of [alananisimov/olcbox](https://github.com/alananisimov/olcbox), which
+is where the Kotlin Multiplatform configurator this grew out of came from. The
+iOS packet tunnel, the sing-box and Xray transports, and the current interface
+were added here; the original copyright stands alongside ours in `LICENSE`, as
+MIT requires and as it should.
+
 ## Support
 
 Support options are not publicly listed. Contact the author if needed.
