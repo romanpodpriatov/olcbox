@@ -990,6 +990,22 @@ class OlcboxVpnService : VpnService() {
     private fun writeTun2socksConfig(): File {
         val file = File(filesDir, TUN2SOCKS_CONFIG_FILE_NAME)
 
+        // Only olcRTC's local proxy asks for a login; the cores listen open — the
+        // same rule verifyTunnel() already follows, stated there in as many words.
+        //
+        // Sending credentials to a core makes hev offer username/password as its
+        // only SOCKS method, and a sing-box or Xray inbound is built with no `auth`
+        // at all, so it answers "no matching auth method" and closes. Nothing about
+        // that is visible from here: the core's SOCKS port opens before it has
+        // touched the server, so the transport reports ready, the tunnel is
+        // established, and not one packet crosses.
+        val socksAuth = if (activeCorePort != null) {
+            ""
+        } else {
+            "\n              username: '$socksUsername'" +
+                "\n              password: '$socksPassword'"
+        }
+
         file.writeText(
             """
             tunnel:
@@ -1002,9 +1018,7 @@ class OlcboxVpnService : VpnService() {
               address: ${socksConnectHost()}
               port: ${activeCorePort ?: socksListenPort}
               udp: 'tcp'
-              pipeline: false
-              username: '$socksUsername'
-              password: '$socksPassword'
+              pipeline: false$socksAuth
 
             mapdns:
               address: $MAPDNS_ADDRESS
