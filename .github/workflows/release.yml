@@ -827,28 +827,37 @@ jobs:
       # shipped that way to x86_64 in the same release that fixed sing-box.
       #
       # Building all three from GOOS=android removes the substitution rather than
-      # patching around it, and -R makes the result ours instead of a per-GOOS
-      # default that can move under us. CGO_ENABLED=0 and no build tags are XTLS's
-      # own release settings.
+      # patching around it, and max-page-size makes the result ours instead of a
+      # per-architecture default that can move under us. No build tags: that is
+      # XTLS's own release setting.
+      #
+      # Through the NDK, unlike XTLS's own CGO_ENABLED=0 — because
+      # `android/arm requires external (cgo) linking, but cgo is not enabled`.
+      # That is also why they publish an android asset for arm64 and none for
+      # arm32: without an NDK there is nothing to link it with. The toolchain is
+      # already here for gomobile and for sing-box, so the same shape serves both
+      # cores and there is one way this job builds a core rather than two.
       - name: Build Xray for Android with 16 KB page alignment
         run: |
           set -euo pipefail
           git clone --depth 1 --branch "v${XRAY_VERSION}" \
             https://github.com/XTLS/Xray-core.git "${RUNNER_TEMP}/xray"
           cd "${RUNNER_TEMP}/xray"
+          NDK_BIN="${ANDROID_HOME}/ndk/${ANDROID_NDK_VERSION}/toolchains/llvm/prebuilt/linux-x86_64/bin"
           OUT="${GITHUB_WORKSPACE}/olcbox/androidApp/jniLibs"
 
-          build_xray() {      # $1 = GOARCH, $2 = android ABI
-            mkdir -p "${OUT}/$2"
-            CGO_ENABLED=0 GOOS=android GOARCH="$1" GOARM=7 \
-            go build -v -trimpath -buildvcs=false -o "${OUT}/$2/libxraycore.so" \
-              -ldflags "-X github.com/xtls/xray-core/core.build=v${XRAY_VERSION} -s -w -buildid= -R 0x4000" \
+          build_xray() {      # $1 = GOARCH, $2 = NDK triple, $3 = android ABI
+            mkdir -p "${OUT}/$3"
+            CGO_ENABLED=1 GOOS=android GOARCH="$1" GOARM=7 \
+            CC="${NDK_BIN}/$2-clang" CXX="${NDK_BIN}/$2-clang++" \
+            go build -v -trimpath -buildvcs=false -o "${OUT}/$3/libxraycore.so" \
+              -ldflags "-X github.com/xtls/xray-core/core.build=v${XRAY_VERSION} -s -w -buildid= -extldflags=-Wl,-z,max-page-size=16384" \
               ./main
           }
 
-          build_xray arm64 arm64-v8a
-          build_xray arm   armeabi-v7a
-          build_xray amd64 x86_64
+          build_xray arm64 aarch64-linux-android23    arm64-v8a
+          build_xray arm   armv7a-linux-androideabi23 armeabi-v7a
+          build_xray amd64 x86_64-linux-android23     x86_64
 
           echo "== staged cores =="
           ls -la "${OUT}"/*/
