@@ -223,6 +223,41 @@ jobs:
           go-version: 'stable'
           cache-dependency-path: olcrtc/go.sum
 
+      # Same omission the Android and Linux jobs had. Named with `.exe` here, and
+      # only here: makeExecutable() is a no-op on Windows, so the extension is the
+      # only thing that makes the file runnable — DesktopNativeAssets asks for
+      # `native/sing-box.exe` on this platform and `native/sing-box` on the others.
+      - name: Bundle sing-box + Xray cores into the app
+        shell: pwsh
+        working-directory: olcbox
+        env:
+          SINGBOX_VERSION: "1.13.14"
+          XRAY_VERSION: "25.3.6"
+        run: |
+          $ErrorActionPreference = "Stop"
+          $dest = "desktopApp/src/main/resources/native"
+          New-Item -ItemType Directory -Force $dest | Out-Null
+
+          $sb = "https://github.com/SagerNet/sing-box/releases/download/v$env:SINGBOX_VERSION/sing-box-$env:SINGBOX_VERSION-windows-amd64.zip"
+          Invoke-WebRequest -Uri $sb -OutFile sb.zip
+          Remove-Item -Recurse -Force sb-x -ErrorAction SilentlyContinue
+          Expand-Archive sb.zip -DestinationPath sb-x
+          Copy-Item (Get-ChildItem sb-x -Recurse -Filter "sing-box.exe" | Select-Object -First 1).FullName "$dest/sing-box.exe"
+
+          $xr = "https://github.com/XTLS/Xray-core/releases/download/v$env:XRAY_VERSION/Xray-windows-64.zip"
+          Invoke-WebRequest -Uri $xr -OutFile xray.zip
+          Remove-Item -Recurse -Force xr-x -ErrorAction SilentlyContinue
+          Expand-Archive xray.zip -DestinationPath xr-x
+          Copy-Item (Get-ChildItem xr-x -Recurse -Filter "xray.exe" | Select-Object -First 1).FullName "$dest/xray.exe"
+
+          Write-Host "== bundled cores =="
+          Get-ChildItem $dest
+          # Runs them, because "the file is present" is the half of this that was
+          # never in doubt. If Windows will not execute what we packaged, it says so
+          # here and not on a user's machine.
+          & "$dest/sing-box.exe" version | Select-Object -First 1
+          & "$dest/xray.exe" version | Select-Object -First 1
+
       - name: Build Windows installers and portable zip
         shell: pwsh
         working-directory: olcbox
@@ -550,6 +585,32 @@ jobs:
             https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
           chmod +x /tmp/appimagetool.AppImage
 
+      # Same omission the Android job had: only build-macos fetched these, so the
+      # Linux AppImage shipped olcRTC and nothing else and every Reality,
+      # Hysteria2 and XHTTP location died at connect on
+      # "Bundled native binary is missing: native/sing-box".
+      - name: Bundle sing-box + Xray cores into the app
+        working-directory: olcbox
+        env:
+          SINGBOX_VERSION: "1.13.14"
+          XRAY_VERSION: "25.3.6"
+        run: |
+          set -euo pipefail
+          dest="desktopApp/src/main/resources/native"
+          mkdir -p "$dest"
+
+          curl -fsSL "https://github.com/SagerNet/sing-box/releases/download/v${SINGBOX_VERSION}/sing-box-${SINGBOX_VERSION}-linux-amd64.tar.gz" -o sb.tgz
+          rm -rf sb-x && mkdir sb-x && tar xzf sb.tgz -C sb-x
+          install -m 0755 "$(find sb-x -type f -name sing-box | head -1)" "$dest/sing-box"
+
+          curl -fsSL "https://github.com/XTLS/Xray-core/releases/download/v${XRAY_VERSION}/Xray-linux-64.zip" -o xray.zip
+          rm -rf xr-x && mkdir xr-x && (cd xr-x && unzip -oq ../xray.zip)
+          install -m 0755 "$(find xr-x -type f -name xray | head -1)" "$dest/xray"
+
+          echo "== bundled cores =="; ls -la "$dest"
+          "$dest/sing-box" version | head -1
+          "$dest/xray" version | head -1
+
       - name: Build Linux AppImage
         working-directory: olcbox
         run: |
@@ -563,6 +624,40 @@ jobs:
         run: |
           mkdir -p dist
           cp desktopApp/build/compose/binaries/main-release/appimage/*.AppImage "dist/ProofKit-${OLCBOX_VERSION}-linux-amd64.AppImage"
+
+      # Against the finished AppImage, not the staging directory. The files being
+      # absent is one way to lose them; a packaging rule dropping them on the way
+      # in is another, and only the artifact can show that.
+      - name: Verify cores packaged in the AppImage
+        working-directory: olcbox
+        run: |
+          set -euo pipefail
+          img="dist/ProofKit-${OLCBOX_VERSION}-linux-amd64.AppImage"
+          chmod +x "$img"
+          rm -rf squashfs-root && "./$img" --appimage-extract >/dev/null
+
+          # Compose packs `resources.srcDir` into the app jar rather than leaving
+          # the files loose, so look in both places — a check that only knew about
+          # one would pass or fail for the wrong reason.
+          entries=$(mktemp)
+          find squashfs-root -type f -printf '%P\n' >>"$entries"
+          find squashfs-root -type f -name '*.jar' -print0 \
+            | xargs -0 -r -I{} unzip -Z1 {} 2>/dev/null >>"$entries" || true
+
+          missing=0
+          for core in sing-box xray; do
+            if grep -qE "(^|/)native/${core}$" "$entries"; then
+              echo "ok      native/$core"
+            else
+              echo "MISSING native/$core"; missing=1
+            fi
+          done
+          rm -rf squashfs-root "$entries"
+          [ "$missing" -eq 0 ] || {
+            echo "Cores are missing from the AppImage — every Reality/Hysteria2/" >&2
+            echo "XHTTP location would fail to start. Refusing to publish." >&2
+            exit 1
+          }
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7

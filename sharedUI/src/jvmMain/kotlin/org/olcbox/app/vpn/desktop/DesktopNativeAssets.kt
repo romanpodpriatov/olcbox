@@ -85,22 +85,43 @@ internal object DesktopNativeAssets {
     }
 
     /**
+     * The bundled core binaries carry `.exe` on Windows and nothing elsewhere.
+     *
+     * Everything else here is already platform-named — [windowsTun2SocksFileName]
+     * has always been `tun2socks-windows-amd64.exe` — and these two were the
+     * exception. Whether Windows will execute an extension-less PE depends on how
+     * `CreateProcess` is reached and is not worth depending on when the extension
+     * costs nothing; [makeExecutable] is a no-op there, so the name is the only
+     * thing making the file runnable.
+     */
+    fun singBoxFileName(): String = coreFileName("sing-box")
+
+    fun xrayFileName(): String = coreFileName("xray")
+
+    private fun coreFileName(base: String): String =
+        if (DesktopPaths.os == DesktopOs.Windows) "$base.exe" else base
+
+    /**
      * Resolve the bundled `sing-box` core binary. Honors the `OLCBOX_SINGBOX_BINARY`
      * env override (tests / dev) before falling back to the bundled resource.
      */
     fun resolveSingBoxBinary(): Path =
-        resolveExternalCore("sing-box", "OLCBOX_SINGBOX_BINARY", "native/sing-box")
+        resolveExternalCore(singBoxFileName(), "OLCBOX_SINGBOX_BINARY")
 
     /**
      * Resolve the bundled `xray` core binary (used for xhttp locations). Honors the
      * `OLCBOX_XRAY_BINARY` env override before falling back to the bundled resource.
      */
     fun resolveXrayBinary(): Path =
-        resolveExternalCore("xray", "OLCBOX_XRAY_BINARY", "native/xray")
+        resolveExternalCore(xrayFileName(), "OLCBOX_XRAY_BINARY")
 
-    private fun resolveExternalCore(fileName: String, envVar: String, resourceName: String): Path {
+    private fun resolveExternalCore(fileName: String, envVar: String): Path {
         System.getenv(envVar)?.takeIf { it.isNotBlank() }?.let { return Path(it) }
-        return resolveBinary(fileName = fileName, resourceName = resourceName, candidates = emptyList())
+        return resolveBinary(
+            fileName = fileName,
+            resourceName = "native/$fileName",
+            candidates = emptyList()
+        )
     }
 
     private fun resolveBinary(
