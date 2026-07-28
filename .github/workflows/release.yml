@@ -581,6 +581,10 @@ jobs:
       OLCBOX_VERSION: ${{ needs.release_version.outputs.version }}
       OLCBOX_VERSION_CODE: ${{ needs.release_version.outputs.version_code }}
       ANDROID_NDK_VERSION: "28.2.13676358"
+      # Same pins as the desktop job and singbox-verify.yml. All three have to
+      # move together: a config this app writes is validated against one schema.
+      SINGBOX_VERSION: "1.13.14"
+      XRAY_VERSION: "25.3.6"
       ANDROID_RELEASE_KEYSTORE_BASE64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 }}
       ANDROID_RELEASE_STORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_STORE_PASSWORD }}
       ANDROID_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
@@ -667,6 +671,52 @@ jobs:
           EOF
           fi
 
+      # Without this the APK ships olcRTC and nothing else. sing-box and Xray run
+      # as child processes on Android, exec'd out of the app's native library
+      # directory, so each core has to be packaged as a `lib*.so` per ABI — that
+      # is the only place an installed app is allowed to execute from.
+      #
+      # It was missing until 1.0.234, and the failure it produced pointed away
+      # from itself: the app imported subscriptions fine and reported
+      # "Cannot run program .../libsingboxcore.so: No such file or directory" only
+      # on connect, so every Reality, Hysteria2 and XHTTP location was dead in
+      # every release APK ever published while olcRTC kept working.
+      #
+      # singbox-verify.yml has staged these all along, which is why that workflow
+      # stayed green over a release that could not connect.
+      - name: Bundle sing-box + Xray cores into jniLibs
+        working-directory: olcbox
+        run: |
+          set -euo pipefail
+
+          fetch_singbox() {   # $1 = sing-box arch, $2 = android ABI
+            curl -fsSL "https://github.com/SagerNet/sing-box/releases/download/v${SINGBOX_VERSION}/sing-box-${SINGBOX_VERSION}-android-$1.tar.gz" -o sb.tgz
+            rm -rf sb-x && mkdir sb-x && tar xzf sb.tgz -C sb-x
+            install -D -m 0755 "$(find sb-x -type f -name sing-box | head -1)" \
+              "androidApp/jniLibs/$2/libsingboxcore.so"
+          }
+
+          fetch_xray() {      # $1 = Xray asset, $2 = android ABI
+            curl -fsSL "https://github.com/XTLS/Xray-core/releases/download/v${XRAY_VERSION}/$1" -o xray.zip
+            rm -rf xr-x && mkdir xr-x && (cd xr-x && unzip -oq ../xray.zip)
+            install -D -m 0755 "$(find xr-x -type f -name xray | head -1)" \
+              "androidApp/jniLibs/$2/libxraycore.so"
+          }
+
+          fetch_singbox arm64 arm64-v8a
+          fetch_singbox arm   armeabi-v7a
+          fetch_singbox amd64 x86_64
+
+          # Xray publishes one Android asset. The rest of its builds are static Go
+          # binaries and Android is Linux, so the matching linux/<arch> build runs
+          # unchanged — the same substitution x86_64 has used since it was added.
+          fetch_xray Xray-android-arm64-v8a.zip arm64-v8a
+          fetch_xray Xray-linux-arm32-v7a.zip   armeabi-v7a
+          fetch_xray Xray-linux-64.zip          x86_64
+
+          echo "== staged cores =="
+          ls -la androidApp/jniLibs/*/
+
       - name: Build production APK
         working-directory: olcbox
         run: |
@@ -686,6 +736,31 @@ jobs:
           fi
           cp "${release_apk}" "dist/ProofKit-${OLCBOX_VERSION}-android-release.apk"
 
+      # Asserted against the finished artifact, not against the staging directory.
+      # The bug this catches was not a download that failed — the files were never
+      # fetched — but the next one could as easily be an ABI filter or a packaging
+      # rule that drops them on the way in, and only the APK can show that.
+      - name: Verify cores packaged in the universal APK
+        working-directory: olcbox
+        run: |
+          set -euo pipefail
+          apk="dist/ProofKit-${OLCBOX_VERSION}-android-release.apk"
+          missing=0
+          for abi in arm64-v8a armeabi-v7a x86_64; do
+            for core in libsingboxcore.so libxraycore.so; do
+              if unzip -l "$apk" | grep -q "lib/${abi}/${core}"; then
+                echo "ok   ${abi}/${core}"
+              else
+                echo "MISSING ${abi}/${core}"; missing=1
+              fi
+            done
+          done
+          [ "$missing" -eq 0 ] || {
+            echo "Cores are missing from the APK — every Reality/Hysteria2/XHTTP" >&2
+            echo "location would fail to start. Refusing to publish." >&2
+            exit 1
+          }
+
       - name: Build armeabi-v7a production APK
         working-directory: olcbox
         run: |
@@ -703,6 +778,17 @@ jobs:
             exit 1
           fi
           cp "${release_apk}" "dist/ProofKit-${OLCBOX_VERSION}-android-armeabi-v7a-release.apk"
+
+      - name: Verify cores packaged in the armeabi-v7a APK
+        working-directory: olcbox
+        run: |
+          set -euo pipefail
+          apk="dist/ProofKit-${OLCBOX_VERSION}-android-armeabi-v7a-release.apk"
+          for core in libsingboxcore.so libxraycore.so; do
+            unzip -l "$apk" | grep -q "lib/armeabi-v7a/${core}" \
+              || { echo "MISSING armeabi-v7a/${core}" >&2; exit 1; }
+            echo "ok   armeabi-v7a/${core}"
+          done
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
