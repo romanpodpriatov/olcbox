@@ -41,7 +41,18 @@ import org.olcbox.app.ui.theme.LocalPkPalette
 /** Single source of in-UI brand strings (GeneratedAppInfo.NAME stays "olcbox"). */
 object PkBrand {
     const val name = "ProofKit"
-    const val tagline = "decentralized VPN · olcrtc / reality / hy2"
+
+    /**
+     * Short on purpose. This sits in a centre-aligned app bar, whose title slot
+     * is whatever is left after the navigation and action icons — narrow enough
+     * that the protocol list used to wrap onto a second line at some widths and
+     * not others.
+     *
+     * The protocols were the part that wrapped, and they are the part already on
+     * screen: the filter chips directly below name them and count them, which
+     * this line could not do. What is left is the thing nothing else says.
+     */
+    const val tagline = "decentralized VPN"
 
     /** Where a user with no subscription is sent to get one. */
     const val siteUrl = "https://proofkit.org"

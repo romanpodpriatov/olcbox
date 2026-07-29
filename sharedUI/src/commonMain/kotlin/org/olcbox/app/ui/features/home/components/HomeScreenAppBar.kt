@@ -20,6 +20,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextOverflow
 import org.olcbox.app.ui.icons.PkIcons
 import org.olcbox.app.admin.AdminState
 import org.olcbox.app.ui.components.AdminPasswordDialog
@@ -60,7 +61,12 @@ fun HomeScreenAppBar(
                 Text(
                     text = PkBrand.tagline,
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    // Belt for the short tagline: the slot narrows with every
+                    // action icon a platform adds, so a line that fits today can
+                    // wrap on a build nobody thought was touching this screen.
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
         },
