@@ -23,6 +23,9 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import org.olcbox.app.data.model.LocationConfig
+import org.olcbox.app.net.LinkParser
+import org.olcbox.app.net.LocationKind
+import org.olcbox.app.net.PathLatency
 import org.olcbox.app.data.datasource.LocationsDataSourceImpl
 import org.olcbox.app.data.identity.PersistentDeviceIdentityProvider
 import org.olcbox.app.data.repository.SubscriptionFetchProxy
@@ -249,7 +252,33 @@ class AndroidVpnManager(private val context: Context) : VpnManager {
         context.startService(intent)
     }
 
+    /**
+     * olcRTC is addressed by a room on somebody else's SFU and has no host to
+     * reach, so its own prober is the only measurement. Everything else names a
+     * server in its link, and [PathLatency] can measure the route to it.
+     *
+     * Until this existed the base implementation answered for olcRTC alone, and
+     * a subscription of Reality and Hysteria2 met "Nothing here can be measured"
+     * — true of the old code and of nothing else.
+     */
+    override fun canPing(locationConfig: LocationConfig): Boolean {
+        val config = locationConfig.normalized()
+        if (!config.isComplete()) return false
+        return config.kind == LocationKind.Olcrtc || serverEndpoint(config) != null
+    }
+
+    private fun serverEndpoint(config: LocationConfig): Pair<String, Int>? =
+        config.rawLink
+            ?.let { LinkParser.parse(it) }
+            ?.takeIf { it.host.isNotBlank() }
+            ?.let { it.host to it.port }
+
     override suspend fun ping(locationConfig: LocationConfig): Long? {
+        val config = locationConfig.normalized()
+        if (config.kind != LocationKind.Olcrtc) {
+            val (host, port) = serverEndpoint(config) ?: return null
+            return withContext(Dispatchers.IO) { PathLatency.measure(host, port) }
+        }
         return OlcRtcConnectionChecker.ping(
             locationConfig = locationConfig,
             deviceId = deviceIdentityProvider.hwid()

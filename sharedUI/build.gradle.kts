@@ -204,6 +204,16 @@ kotlin {
             kotlin.srcDir(generateAppInfo)
         }
 
+        // The two JVM targets share one implementation of anything that is
+        // plain java.* — path latency, so far. Written twice it would be two
+        // measurements that drift, and the desktop one would be the one nobody
+        // notices has stopped agreeing with the phone.
+        val jvmAndroidMain by creating {
+            dependsOn(commonMain.get())
+        }
+        jvmMain.get().dependsOn(jvmAndroidMain)
+        androidMain.get().dependsOn(jvmAndroidMain)
+
         commonMain.dependencies {
             api(libs.compose.runtime)
             api(libs.compose.ui)
