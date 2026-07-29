@@ -497,6 +497,21 @@ class LocationsRepositoryImpl(
         }
     }
 
+    override suspend fun isVpnDisclosureAccepted(): Boolean =
+        getBundle().vpnDisclosureAcceptedAt != null
+
+    override suspend fun acceptVpnDisclosure(atMillis: Long) {
+        mutationMutex.withLock {
+            val bundle = getBundleUnlocked()
+            // Never overwritten once set: the value that matters is when consent
+            // was first given, and re-accepting on a later screen would quietly
+            // move it forward.
+            if (bundle.vpnDisclosureAcceptedAt == null) {
+                saveBundleUnlocked(bundle.copy(vpnDisclosureAcceptedAt = atMillis))
+            }
+        }
+    }
+
     private suspend fun resolveParsedImport(
         text: String,
         fallbackSubscriptionInterval: Int? = null,

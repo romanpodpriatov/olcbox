@@ -42,6 +42,17 @@ interface LocationsRepository {
     /** How subscriptions behave. Persisted with the bundle, so one copy per device. */
     suspend fun getSubscriptionSettings(): SubscriptionSettings
     suspend fun saveSubscriptionSettings(settings: SubscriptionSettings)
+
+    /**
+     * Whether the VPN disclosure has been accepted on this device.
+     *
+     * Google Play requires an in-app screen, shown in the ordinary course of
+     * using the app, that says what the VpnService API does here and is accepted
+     * by a deliberate action — not a privacy policy, not a line in the store
+     * listing, and not bundled with any other consent.
+     */
+    suspend fun isVpnDisclosureAccepted(): Boolean
+    suspend fun acceptVpnDisclosure(atMillis: Long)
 }
 
 data class SubscriptionFetchProxy(

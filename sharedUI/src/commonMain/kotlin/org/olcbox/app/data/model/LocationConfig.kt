@@ -538,7 +538,17 @@ data class LocationBundleV4(
      * already persisted identically on every platform — a settings store of its
      * own would be three implementations and three chances to disagree.
      */
-    val settings: SubscriptionSettings = SubscriptionSettings()
+    val settings: SubscriptionSettings = SubscriptionSettings(),
+    /**
+     * When the user accepted the VPN disclosure, in epoch millis; null until they
+     * have. A timestamp rather than a flag because the question Play asks is when
+     * consent was given, and a boolean cannot answer it afterwards.
+     *
+     * Kept beside [settings] for the reason stated there: this bundle is the one
+     * thing already persisted identically on every platform.
+     */
+    @SerialName("vpn_disclosure_accepted_at")
+    val vpnDisclosureAcceptedAt: Long? = null
 ) {
     fun normalized(): LocationBundleV4 {
         val normalizedLocations = locations

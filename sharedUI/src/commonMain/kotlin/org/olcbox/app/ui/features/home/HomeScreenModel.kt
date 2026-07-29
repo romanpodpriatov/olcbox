@@ -18,6 +18,7 @@ import org.olcbox.app.data.exporter.LogExporter
 import org.olcbox.app.data.importer.ConfigImporter
 import org.olcbox.app.data.model.LocationConfig
 import org.olcbox.app.data.model.SubscriptionSettings
+import org.olcbox.app.util.nowMillis
 import org.olcbox.app.data.repository.LocationsRepository
 import org.olcbox.app.data.repository.SubscriptionRefreshReport
 import org.olcbox.app.ui.features.locations.LocationItem
@@ -84,11 +85,27 @@ class HomeScreenViewModel(
         viewModelScope.launch { locationsRepository.saveSubscriptionSettings(normalized) }
     }
 
+    /**
+     * Whether the VPN disclosure has been accepted. Starts false and is only
+     * raised by the stored value, so the worst a slow load can do is ask again —
+     * the opposite mistake would connect without ever having asked.
+     */
+    private val _vpnDisclosureAccepted = MutableStateFlow(false)
+    val vpnDisclosureAccepted = _vpnDisclosureAccepted.asStateFlow()
+
+    fun acceptVpnDisclosure() {
+        _vpnDisclosureAccepted.value = true
+        viewModelScope.launch { locationsRepository.acceptVpnDisclosure(nowMillis()) }
+    }
+
     init {
         loadCurrentConfig()
         viewModelScope.launch {
             _subscriptionSettings.value = locationsRepository.getSubscriptionSettings()
             _subscriptionSettingsLoaded.value = true
+        }
+        viewModelScope.launch {
+            _vpnDisclosureAccepted.value = locationsRepository.isVpnDisclosureAccepted()
         }
         startSubscriptionAutoRefresh()
 

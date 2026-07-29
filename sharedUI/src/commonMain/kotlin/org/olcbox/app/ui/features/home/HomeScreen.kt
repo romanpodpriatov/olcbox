@@ -30,6 +30,7 @@ import org.olcbox.app.admin.AdminState
 import org.olcbox.app.net.TransportGroup
 import org.olcbox.app.net.transportKind
 import org.olcbox.app.ui.components.StartButton
+import org.olcbox.app.ui.components.VpnDisclosureScreen
 import org.olcbox.app.ui.components.kit.PkVersionFooter
 import org.olcbox.app.ui.components.kit.pkScreenBackground
 import org.olcbox.app.ui.features.home.components.AddConfigurationSheet
@@ -95,6 +96,23 @@ fun HomeScreen(
         requiresSetup -> "SETUP"
         state.isVpnLoading || state.isVpnConnected -> "STOP"
         else -> "START"
+    }
+
+    val vpnDisclosureAccepted by viewModel.vpnDisclosureAccepted.collectAsState()
+    var showVpnDisclosure by remember { mutableStateOf(false) }
+
+    if (showVpnDisclosure) {
+        VpnDisclosureScreen(
+            onAccept = {
+                showVpnDisclosure = false
+                viewModel.acceptVpnDisclosure()
+                onToggleClick()
+            },
+            // Declining leaves the app exactly as it was, connecting nothing.
+            // Pressing START again brings the screen back, which is the half of
+            // the flow the Play declaration video has to show.
+            onDecline = { showVpnDisclosure = false }
+        )
     }
 
     fun refreshSubscriptions() {
@@ -247,6 +265,12 @@ fun HomeScreen(
                     onClick = {
                         if (requiresSetup) {
                             isAddSheetOpen = true
+                        } else if (!vpnDisclosureAccepted && !state.isVpnConnected) {
+                            // Only on the way up, and before the system's own VPN
+                            // dialog: the disclosure has to be what explains that
+                            // prompt, not something the user meets after granting
+                            // it. Stopping never asks.
+                            showVpnDisclosure = true
                         } else {
                             onToggleClick()
                         }
