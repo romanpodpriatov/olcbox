@@ -918,7 +918,7 @@ jobs:
           export OLCRTC_REPO="${{ github.workspace }}/olcrtc"
           export ANDROID_NDK_HOME="${ANDROID_HOME}/ndk/${ANDROID_NDK_VERSION}"
           export ANDROID_NDK_ROOT="${ANDROID_NDK_HOME}"
-          ./gradlew -Polcbox.version="${OLCBOX_VERSION}" -Polcbox.versionCode="${OLCBOX_VERSION_CODE}" :sharedUI:jvmTest :androidApp:assembleRelease --stacktrace
+          ./gradlew -Polcbox.version="${OLCBOX_VERSION}" -Polcbox.versionCode="${OLCBOX_VERSION_CODE}" :sharedUI:jvmTest :androidApp:assembleRelease :androidApp:bundleRelease --stacktrace
 
       - name: Prepare universal Android release asset
         working-directory: olcbox
@@ -930,6 +930,22 @@ jobs:
             exit 1
           fi
           cp "${release_apk}" "dist/ProofKit-${OLCBOX_VERSION}-android-release.apk"
+
+      # Beside the APKs, never instead of them. Play does not accept an APK for a
+      # new app, and the APKs are the channel nobody can revoke — clients for
+      # circumventing blocks do get pulled from stores, and the day that happens
+      # is the wrong day to discover the other channel was dropped to make room.
+      - name: Prepare Android App Bundle for Google Play
+        working-directory: olcbox
+        run: |
+          set -euo pipefail
+          bundle="$(find androidApp/build/outputs/bundle -type f -name '*.aab' | sort | head -n 1)"
+          if [ -z "${bundle}" ]; then
+            echo "Android App Bundle was not found" >&2
+            exit 1
+          fi
+          cp "${bundle}" "dist/ProofKit-${OLCBOX_VERSION}-android.aab"
+          ls -la dist/
 
       # Asserted against the finished artifact, not against the staging directory.
       # The bug this catches was not a download that failed — the files were never
@@ -992,6 +1008,7 @@ jobs:
           path: |
             olcbox/dist/ProofKit-*-android-release.apk
             olcbox/dist/ProofKit-*-android-armeabi-v7a-release.apk
+            olcbox/dist/ProofKit-*-android.aab
 
   build-ios:
     needs: [release_version, plan]
