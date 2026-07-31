@@ -16,10 +16,25 @@
 	<string>$(PRODUCT_NAME)</string>
 	<key>CFBundlePackageType</key>
 	<string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
+	<!--
+		Taken from the build settings rather than written here.
+
+		They used to be the literals 1.0.0 and 1, which quietly outranked the
+		Version and Build fields in Xcode's General tab: changing those writes
+		MARKETING_VERSION and CURRENT_PROJECT_VERSION, and this file overrode
+		both. So an archive made after bumping the build number came out as
+		1.0.0 (1) again, and App Store Connect refuses a build number it has
+		already seen.
+
+		The PacketTunnel target never had this problem — its Info.plist is
+		generated, so it has always read the settings. Which is worse than both
+		being wrong: the app and its extension must carry the same version, and
+		only one of them was moving.
+	-->
 	<key>CFBundleShortVersionString</key>
-	<string>1.0.0</string>
+	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
-	<string>1</string>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>LSRequiresIPhoneOS</key>
