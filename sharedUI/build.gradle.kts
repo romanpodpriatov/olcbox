@@ -199,6 +199,13 @@ kotlin {
     iosArm64()
     iosSimulatorArm64()
 
+    // Declaring any dependsOn by hand switches the default hierarchy template
+    // off, and it takes appleMain/iosMain with it — every expect in commonMain
+    // loses its iOS actual at once, which reads as the actuals having vanished
+    // rather than as the tree they hang from having been unplugged. Re-applying
+    // it explicitly is the documented way to keep both.
+    applyDefaultHierarchyTemplate()
+
     sourceSets {
         commonMain {
             kotlin.srcDir(generateAppInfo)
