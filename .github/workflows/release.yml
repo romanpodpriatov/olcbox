@@ -8,10 +8,12 @@ on:
         type: choice
         default: 'test-macos'
         options:
-          - test-macos   # Apple Silicon DMG only — the usual "give me something to try"
-          - desktop      # macOS arm64 + Windows + Linux
-          - mobile       # Android only
-          - all          # every platform, and publish the release
+          - test-macos   # Apple Silicon DMG only — the usual "give me something to try"  [10x]
+          - android      # Android APKs + AAB. Free runner
+          - ios          # unsigned IPA only — the one to pick when testing an iOS change  [10x]
+          - mobile       # Android and iOS together  [10x]
+          - desktop      # macOS arm64 + Windows + Linux  [10x]
+          - all          # every platform, and publish the release  [10x]
 
 permissions:
   contents: read
@@ -112,8 +114,18 @@ jobs:
               mac_arm=true; mac_intel=true; win=true; lin=true; andr=true; ios=true; pub=true ;;
             desktop)
               mac_arm=true; win=true; lin=true ;;
+            # `mobile` used to mean Android only, which read as "the mobile
+            # builds" and quietly left iOS out — the one platform whose build is
+            # hardest to reproduce locally. It now means both, and either half
+            # can be asked for on its own: an iOS change should not have to pay
+            # for an Android build, and an Android change should not touch a 10x
+            # runner at all.
             mobile)
+              andr=true; ios=true ;;
+            android)
               andr=true ;;
+            ios)
+              ios=true ;;
             *)
               mac_arm=true ;;
           esac
