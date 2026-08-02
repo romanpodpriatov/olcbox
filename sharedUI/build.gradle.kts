@@ -81,6 +81,10 @@ abstract class GenerateAppInfoTask : DefaultTask() {
     @get:Input
     abstract val resolverBase: Property<String>
 
+    /** True for an Xcode Release build — an archive headed for the App Store. */
+    @get:Input
+    abstract val shippingBuild: Property<Boolean>
+
     @get:OutputDirectory
     abstract val outputDir: DirectoryProperty
 
@@ -93,6 +97,25 @@ abstract class GenerateAppInfoTask : DefaultTask() {
                 (if (cryptKeyV1.get().isBlank()) "OFF (no key — crypt1 links will not import)" else "ON") +
                 ", admin gate " + (if (adminPassSha256.get().isBlank()) "OFF" else "ON")
         )
+
+        // A line in a build log is enough for a debug build and not nearly enough
+        // for an archive: Xcode buries it, nobody reads it, and the app ships with
+        // a feature quietly missing. release.yml already refuses to build without
+        // these; an Xcode archive is the same release by another route, so it
+        // refuses too. Debug builds stay permissive — a simulator run needs
+        // neither.
+        if (shippingBuild.get()) {
+            val missing = buildList {
+                if (cryptKeyV1.get().isBlank()) add("olcbox.cryptKeyV1 (crypt1 links will not import)")
+                if (adminPassSha256.get().isBlank()) add("olcbox.adminPassSha256 (no admin gate: the 7-tap unlock does nothing)")
+            }
+            require(missing.isEmpty()) {
+                "Release build is missing: ${missing.joinToString("; ")}. " +
+                    "Put them in local.properties (gitignored) or export " +
+                    "OLCBOX_CRYPT_KEY_V1 / OLCBOX_ADMIN_PASS_SHA256 — the same values " +
+                    "release.yml requires."
+            }
+        }
         val packageDir = outputDir.get().asFile.resolve("org/olcbox/app")
         packageDir.mkdirs()
         fun esc(s: String) = s.replace("\\", "\\\\").replace("\"", "\\\"")
@@ -112,11 +135,19 @@ abstract class GenerateAppInfoTask : DefaultTask() {
     }
 }
 
+// Xcode exports CONFIGURATION into the build phase that calls Gradle, so this is
+// how an archive announces itself. Absent (a plain `./gradlew` run) is not an
+// archive, and neither is Debug.
+val xcodeIsReleaseBuild = providers.environmentVariable("CONFIGURATION")
+    .map { it.equals("Release", ignoreCase = true) }
+    .orElse(false)
+
 val generateAppInfo by tasks.registering(GenerateAppInfoTask::class) {
     version.set(olcboxVersionValue)
     cryptKeyV1.set(olcboxCryptKeyV1)
     adminPassSha256.set(olcboxAdminPassSha256)
     resolverBase.set(olcboxResolverBase)
+    shippingBuild.set(xcodeIsReleaseBuild)
     outputDir.set(generatedAppInfoDir)
 }
 
