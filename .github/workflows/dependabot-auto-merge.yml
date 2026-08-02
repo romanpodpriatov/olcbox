@@ -1,9 +1,22 @@
 name: Dependabot auto-merge
 
+# Merges only once PR Checks has passed.
+#
+# This used to run on `pull_request` and call `gh pr merge --auto`, which waits
+# for *required* status checks — and with no branch protection there are none, so
+# it merged at once. PR Checks existed and ran; nothing was waiting for it. That
+# is how nine dependency updates, one of them a Compose Multiplatform beta bump,
+# reached main with nothing having built them.
+#
+# Making those checks required in branch protection would fix it and also block
+# every direct push to main, which is how this repository is actually worked on.
+# So the wait lives here instead: this runs after PR Checks concludes, and merges
+# only if it concluded successfully.
 on:
-  pull_request:
-    branches:
-      - main
+  workflow_run:
+    workflows: ["PR Checks"]
+    types:
+      - completed
 
 permissions:
   contents: write
@@ -13,12 +26,33 @@ jobs:
   dependabot:
     runs-on: ubuntu-latest
 
-    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    # Dependabot's own pull requests, and only those whose checks went green. A
+    # failed run leaves the PR open, which is the point: an update that does not
+    # build should be looked at, not landed.
+    if: >
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.actor.login == 'dependabot[bot]'
 
     steps:
-      - name: Enable auto-merge
+      - name: Merge the pull request this run belongs to
         env:
-          PR_URL: ${{ github.event.pull_request.html_url }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          REPO: ${{ github.repository }}
         run: |
-          gh pr merge --auto --squash --delete-branch "$PR_URL"
+          set -euo pipefail
+
+          # workflow_run does not carry the pull request, so it is found by the
+          # commit the run was for. --auto is deliberately not used here: the
+          # wait it would perform is the one that did not happen before.
+          number="$(gh pr list --repo "$REPO" --state open --json number,headRefOid \
+            --jq ".[] | select(.headRefOid == \"${HEAD_SHA}\") | .number" | head -n 1)"
+
+          if [ -z "${number}" ]; then
+            echo "No open pull request at ${HEAD_SHA}; nothing to merge."
+            exit 0
+          fi
+
+          echo "PR Checks passed for #${number} — merging."
+          gh pr merge --repo "$REPO" --squash --delete-branch "${number}"

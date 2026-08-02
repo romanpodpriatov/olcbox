@@ -6,6 +6,21 @@ updates:
     schedule:
       interval: "weekly"
       day: "saturday"
+    # The toolchain is pinned by hand and stays that way.
+    #
+    # Compose Multiplatform, material3 and Kotlin are on alpha and beta versions
+    # on purpose, and the versions that work together were found rather than
+    # chosen. A weekly step forward on any of them breaks the build or moves the
+    # layout quietly, and it arrives on a Saturday in a pull request nobody
+    # reads. Moving them is a deliberate act with a build behind it.
+    #
+    # Everything else — AndroidX, ktor, serialisation, test libraries — is
+    # ordinary and still updates on its own.
+    ignore:
+      - dependency-name: "org.jetbrains.compose*"
+      - dependency-name: "org.jetbrains.kotlin*"
+      - dependency-name: "androidx.compose*"
+      - dependency-name: "com.android.tools.build:gradle"
     groups:
       gradle-dependencies:
         patterns:
