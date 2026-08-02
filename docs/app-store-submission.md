@@ -30,11 +30,15 @@ person to attempt a submission does not rediscover the same six things.
 
 ## Decisions that are yours, not the code's
 
-- **Export compliance.** No `ITSAppUsesNonExemptEncryption` key is set, so App
-  Store Connect asks on every upload. Setting it is a legal declaration about
-  what this app does, and a VPN carrying a custom transport is not obviously the
-  same case as an app that only speaks TLS. Answer it once, deliberately, then
-  bake the key to stop being asked.
+- **Export compliance.** Answered: `ITSAppUsesNonExemptEncryption = false` is in
+  `Info.plist`, on the publicly-available-source route of EAR §742.15(b) — see
+  `app-store-listing.md`. **That route has a precondition that is not yet met:**
+  the notification email to `crypt@bis.doc.gov` and `enc@nsa.gov` has not been
+  sent, and until it is, the `false` is a false declaration on a customs
+  question. The template is in `app-store-listing.md` and needs only a real
+  contact name, email and telephone. The claim it makes — that the corresponding
+  source is public — holds: `romanpodpriatov/olcbox` and `romanpodpriatov/olcrtc`
+  both answer to an unauthenticated request, and they must stay that way.
 - **The signing identity.** Guideline 5.4 requires VPN apps to come from an
   organisation account, which Team `3QJG3J7L66` (Globvent inc) is.
 - **Privacy policy URL** and support URL, both required by the listing.
@@ -50,6 +54,56 @@ person to attempt a submission does not rediscover the same six things.
 4. TestFlight first. The tunnel behaves differently under a store-signed
    provisioning profile than under a development one, and the first place to
    discover that is not review.
+
+## Where the submission stands (2026-08-02)
+
+Submitted as **1.0.0 (1)** and rejected under **2.1.0 App Completeness** — not on
+substance, but an automated request for the VPN answers: what user information
+the app collects, for what purpose, and whether it is shared with third parties.
+Answered in App Review Information and by replying to the message; the same
+binary was resubmitted, no new build needed.
+
+- **Availability** excludes China, UAE, Oman and Turkey (VPN licensing).
+- **Distribution must stay Public.** It was briefly set to Private, which would
+  have kept the app out of the public App Store entirely, and approval is the
+  last moment at which that can be changed.
+- **Privacy policy: `https://proofkit.org/privacy-policy`** — the full slug. The
+  site answered 200 to any unknown path, so a listing pointing at `/privacy`
+  rendered the landing page and looked fine to whoever pasted it while Apple and
+  every user following it missed the policy. Since 2026-08-02 `/privacy` (and
+  `/terms`, `/tos`, `/cookies`, `/refunds`, `/dmca`, `/aup`) redirect to the real
+  page.
+
+## For the next version
+
+1. **Bump the version in Xcode's General tab** (`MARKETING_VERSION` /
+   `CURRENT_PROJECT_VERSION`). This works only since `8bb32ab`: `Info.plist`
+   carried the literals `1.0.0` and `1`, which silently outranked the build
+   settings, so an archive taken after a bump came out `1.0.0 (1)` again.
+
+   > That change then broke the iOS release build, because
+   > `CURRENT_PROJECT_VERSION` was set on the PacketTunnel target and *not* on
+   > the app target. **Xcode omits an `Info.plist` key whose `$(BUILD_SETTING)`
+   > is undefined**, so `CFBundleVersion` disappeared from the built app and CI
+   > failed on `Set: Entry, ":CFBundleVersion", Does Not Exist`. Both targets now
+   > carry it, and the packaging step checks both keys exist and says why if they
+   > do not. A local archive would have failed the same way, at upload.
+2. **Ship the VPN disclosure screen.** `VpnDisclosureScreen` is on `main`
+   (`85cf9dc`) and shown before the first connection, but it is *not* in the
+   submitted build. It is what Guideline 5.4 and Play's prominent-disclosure rule
+   ask for.
+3. **Send the BIS/NSA notification first** if it has not gone yet — see
+   "Decisions that are yours" above. It is a precondition of the export answer
+   already baked into every upload.
+4. **The two version numbers still disagree.** The store says `1.0.0`; the app
+   shows `1.0.24x` from `GeneratedAppInfo` (Gradle `olcbox.version`). Align them
+   after approval, ideally by taking the number from the same source Android
+   does.
+
+An Xcode **Release** build now fails outright when `olcbox.cryptKeyV1` or
+`olcbox.adminPassSha256` is missing, rather than logging one line into a
+transcript nobody reads and shipping without crypt1 link import or the admin
+gate. Debug builds are unaffected.
 
 ## Known and deliberate
 

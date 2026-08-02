@@ -23,11 +23,14 @@ object AdminState {
     val gateEnabled: Boolean get() = gate.enabled
 
     /**
-     * Whether the full configurator UI (settings/location/logs/custom-location)
-     * is visible. Fail-safe: when NO admin hash is baked, the gate is off and the
-     * app behaves like a normal olcbox (everything visible). Only a build WITH a
-     * hash hides the UI until [unlocked]. This guarantees a build that ships
-     * without the secret never traps users in a hidden-settings state.
+     * Whether the configurator affordances that are merely advanced — today the
+     * SOCKS5 proxy row — are visible. Fail-safe: when NO admin hash is baked, the
+     * gate is off and the app behaves like a normal olcbox (visible). Only a build
+     * WITH a hash hides them until [unlocked], so a build shipped without the
+     * secret never traps users in a hidden-settings state.
+     *
+     * Note what this does NOT cover: the per-location editor and "create custom
+     * location" answer to [plumbingVisible], which fails the other way.
      */
     val configuratorVisible: Boolean get() = !gate.enabled || unlocked
 

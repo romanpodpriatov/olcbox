@@ -102,9 +102,10 @@ fun OlcboxAppContent(
             }
 
             is AppScreen.LocationSettings -> {
-                // Defense-in-depth: even if something routes here, the settings
-                // screen is admin-only in a gated build. In locked user mode,
-                // bounce back home. (Ungated builds show it normally.)
+                // Defense-in-depth: even if something routes here, the per-location
+                // settings screen is plumbing — an operator's edge address, SNI and
+                // certificate pin — so it needs a gate that is open. Anything else,
+                // including a build with no admin hash baked at all, bounces home.
                 if (!AdminState.plumbingVisible) {
                     onNavigate(AppScreen.Home)
                 } else {
