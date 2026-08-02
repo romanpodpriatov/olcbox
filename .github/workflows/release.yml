@@ -1089,6 +1089,17 @@ jobs:
             exit 1
           fi
 
+          # Xcode omits an Info.plist key entirely when the $(BUILD_SETTING) it
+          # refers to is undefined, and PlistBuddy then fails with a bare "Entry,
+          # Does Not Exist" that names neither the setting nor the target. Say
+          # which key and why, because the answer is never in this file.
+          for key in CFBundleShortVersionString CFBundleVersion; do
+            if ! /usr/libexec/PlistBuddy -c "Print :$key" "$app_path/Info.plist" >/dev/null 2>&1; then
+              echo "::error::$key is missing from the built Info.plist. Info.plist reads it from a build setting, and Xcode drops the key when that setting is undefined — check MARKETING_VERSION and CURRENT_PROJECT_VERSION are set on the iosApp target, not only on PacketTunnel." >&2
+              exit 1
+            fi
+          done
+
           /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${OLCBOX_VERSION}" "$app_path/Info.plist"
           /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${OLCBOX_VERSION_CODE}" "$app_path/Info.plist"
 
