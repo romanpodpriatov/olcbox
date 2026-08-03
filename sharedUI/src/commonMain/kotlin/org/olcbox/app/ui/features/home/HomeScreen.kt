@@ -61,6 +61,7 @@ fun HomeScreen(
     onOpenLocationSettings: (String?) -> Unit,
     onAddLocation: () -> Unit,
     onGetSubscriptionClick: () -> Unit = {},
+    showGetSubscription: Boolean = true,
     /** Opens a provider's support or web link. Platform-supplied. */
     onOpenExternalUrl: (String) -> Unit = {}
 ) {
@@ -297,6 +298,7 @@ fun HomeScreen(
                 ) {
                     LocationSelectorScreen(
                         onGetSubscriptionClick = onGetSubscriptionClick,
+                        showGetSubscription = showGetSubscription,
                         onRefreshClick = { targetIds ->
                             refreshHttpPings(targetIds)
                         },
@@ -435,6 +437,7 @@ fun HomeScreen(
                     isAddSheetOpen = false
                     onGetSubscriptionClick()
                 },
+                showGetSubscription = showGetSubscription,
                 showCustomLocation = admin
             )
         }

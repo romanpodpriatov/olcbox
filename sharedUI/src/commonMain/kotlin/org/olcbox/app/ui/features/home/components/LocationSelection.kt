@@ -63,6 +63,7 @@ import org.olcbox.app.ui.features.locations.components.SubscriptionRefreshButton
 @Composable
 fun LocationSelectorScreen(
     onGetSubscriptionClick: () -> Unit = {},
+    showGetSubscription: Boolean = true,
     modifier: Modifier = Modifier,
     onRefreshClick: (targetLocationIds: List<String>) -> Unit,
     /** Re-fetch this subscription from its URL. Nothing to do with latency. */
@@ -165,6 +166,7 @@ fun LocationSelectorScreen(
         if (locations.isEmpty()) {
             RelaySetupCard(
                 onGetSubscriptionClick = onGetSubscriptionClick,
+                showGetSubscription = showGetSubscription,
                 onAddSubscriptionClick = onAddSubscriptionClick,
                 onAddLocationClick = onAddLocationClick,
                 showCustomLocation = showCustomLocation
@@ -376,6 +378,7 @@ private fun RelaySetupCard(
     onAddSubscriptionClick: () -> Unit,
     onAddLocationClick: () -> Unit,
     onGetSubscriptionClick: () -> Unit = {},
+    showGetSubscription: Boolean = true,
     showCustomLocation: Boolean = true
 ) {
     Column(
@@ -386,13 +389,17 @@ private fun RelaySetupCard(
             PkSectionLabel("Add relay setup")
         }
 
-        SetupActionRow(
-            title = "Get a subscription",
-            subtitle = "Open ${PkBrand.name} to create one",
-            icon = PkIcons.OpenInNew,
-            prominent = true,
-            onClick = onGetSubscriptionClick
-        )
+        // Absent, not disabled, where a build may not point at a purchase —
+        // see showGetSubscription in AddConfigurationSheet for why.
+        if (showGetSubscription) {
+            SetupActionRow(
+                title = "Get a subscription",
+                subtitle = "Open ${PkBrand.name} to create one",
+                icon = PkIcons.OpenInNew,
+                prominent = true,
+                onClick = onGetSubscriptionClick
+            )
+        }
 
         SetupActionRow(
             title = "Add subscription",
