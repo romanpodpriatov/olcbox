@@ -26,6 +26,19 @@ LIBXRAY_VERSION="${LIBXRAY_VERSION:-v1.260711.0}"
 # datagram died inside the extension, DNS first among them.
 OLCRTC_VERSION="${OLCRTC_VERSION:-v0.0.0-20260717184831-c83717e7e900}"
 
+# Bumped when the framework's *shape* changes while its pins do not — adding the
+# macOS slice being the first case. The versions alone cannot express that: they
+# are identical before and after, so the tag would be identical too, and every
+# consumer keyed on it — the destination stamp, the local cache, the published
+# release — would hand back an iOS-only framework as though it were the one this
+# build asked for. That is the same failure the header above describes, arriving
+# by a different door.
+CORES_BUILD="${CORES_BUILD:-2}"
+
 # The revision rather than the whole pseudo-version: the tag stays readable and
 # still changes whenever olcRTC does.
-CORES_TAG="ios-cores-sb${SINGBOX_VERSION}-lx${LIBXRAY_VERSION}-rtc${OLCRTC_VERSION##*-}"
+#
+# The `ios-` prefix is now a misnomer — the framework carries a macOS slice too —
+# but it is an identifier, not a description. Renaming it would orphan every
+# published release and cache entry to buy nothing.
+CORES_TAG="ios-cores-sb${SINGBOX_VERSION}-lx${LIBXRAY_VERSION}-rtc${OLCRTC_VERSION##*-}-b${CORES_BUILD}"

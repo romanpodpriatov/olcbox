@@ -154,8 +154,17 @@ export PATH="$GOBIN:$PATH"
 gomobile init
 
 echo "== bind, all three packages in one framework =="
+# Two platforms, one bind. macOS is here because the Mac app's tunnel will be a
+# NetworkExtension exactly like the iOS one — outside the App Store it has to be
+# a *system* extension, but it links the same Go cores through the same generated
+# API. Binding it separately would produce a second copy of the cgo bootstrap and
+# the seq layer, which is the duplicate-symbol wall described at the top of this
+# file; the platform axis of an xcframework is precisely what avoids that.
+#
+# gomobile builds the macOS slice for both architectures, which the desktop app
+# needs: release.yml ships an arm64 DMG and an Intel one.
 gomobile bind -v \
-  -target=ios \
+  -target=ios,macos \
   -tags "with_gvisor,with_quic,with_utls,with_clash_api" \
   -ldflags "-s -w" \
   -o "$OUT/Cores.xcframework" \
@@ -168,16 +177,34 @@ ls -1 "$OUT/Cores.xcframework"
 test -d "$OUT/Cores.xcframework/ios-arm64" \
   || { echo "no device slice — the bind did not target iOS properly"; exit 1; }
 
-# The whole point of the exercise: every API, one framework. A bind that
-# silently dropped one package would otherwise only fail much later, in Xcode.
+# Matched by glob: gomobile names the macOS slice after the architectures it
+# actually built (macos-arm64_amd64 today), and pinning that string here would
+# turn a change in what we get into a failure that reads like a missing slice.
+#
+# `-print -quit` rather than a pipe into `head`: this script runs under
+# `set -o pipefail`, where the reader closing the pipe first sends find a SIGPIPE
+# and fails the whole command — reporting a missing slice that is sitting there.
+macos_slice="$(find "$OUT/Cores.xcframework" -maxdepth 1 -type d -name 'macos*' -print -quit)"
+test -n "$macos_slice" \
+  || { echo "no macOS slice — the bind did not target macOS properly"; exit 1; }
+echo "== macOS slice: $(basename "$macos_slice") =="
+
+# The whole point of the exercise: every API, one framework. A bind that silently
+# dropped one package would otherwise only fail much later, in Xcode — and now it
+# could drop it from one platform and not the other, which is worse, because the
+# build that catches it is the one nobody runs until the Mac app is being wired
+# up. Check both slices.
 headers="$OUT/Cores.xcframework/ios-arm64/Cores.framework/Headers"
-test -f "$headers/Libbox.objc.h" \
-  || { echo "no Libbox header — sing-box was not bound"; exit 1; }
-test -f "$headers/LibXray.objc.h" \
-  || { echo "no LibXray header — Xray was not bound"; exit 1; }
-test -f "$headers/Mobile.objc.h" \
-  || { echo "no Mobile header — olcrtc was not bound"; exit 1; }
-echo "== all three APIs present =="
+for slice in "$OUT/Cores.xcframework/ios-arm64" "$macos_slice"; do
+  slice_headers="$slice/Cores.framework/Headers"
+  test -f "$slice_headers/Libbox.objc.h" \
+    || { echo "no Libbox header in $(basename "$slice") — sing-box was not bound"; exit 1; }
+  test -f "$slice_headers/LibXray.objc.h" \
+    || { echo "no LibXray header in $(basename "$slice") — Xray was not bound"; exit 1; }
+  test -f "$slice_headers/Mobile.objc.h" \
+    || { echo "no Mobile header in $(basename "$slice") — olcrtc was not bound"; exit 1; }
+done
+echo "== all three APIs present on both platforms =="
 
 # Say which pins this framework came from, next to the framework itself.
 #

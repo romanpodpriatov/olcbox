@@ -82,6 +82,11 @@ unzip -q -o "${work}/${ASSET}" -d "${DEST}"
 
 test -d "${DEST}/Cores.xcframework/ios-arm64" \
     || { echo "downloaded archive has no ios-arm64 slice"; exit 1; }
+# Checked here as well as at build time: a release published before the macOS
+# slice existed can still be fetched under a tag that promises it, and the next
+# thing to notice would be a linker looking for a Mac binary that is not there.
+test -n "$(find "${DEST}/Cores.xcframework" -maxdepth 1 -type d -name 'macos*' -print -quit)" \
+    || { echo "downloaded archive has no macOS slice — it predates ${TAG}"; exit 1; }
 
 # Cache what was just downloaded, so the next sweep of the build directory is a
 # copy rather than a download.

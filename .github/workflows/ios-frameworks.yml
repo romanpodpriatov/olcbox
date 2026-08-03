@@ -74,7 +74,11 @@ jobs:
         uses: actions/cache@v4
         with:
           path: dist/frameworks
-          key: ios-cores-sb${{ env.SINGBOX_VERSION }}-lx${{ env.LIBXRAY_VERSION }}-rtc${{ env.OLCRTC_VERSION }}-${{ hashFiles('scripts/build-cores-ios.sh') }}
+          # cores-pins.sh is in the hash because the tag now carries a build
+          # revision for shape changes — a macOS slice arriving under unchanged
+          # versions — and a key made only of versions would restore the framework
+          # from before it.
+          key: ios-cores-sb${{ env.SINGBOX_VERSION }}-lx${{ env.LIBXRAY_VERSION }}-rtc${{ env.OLCRTC_VERSION }}-${{ hashFiles('scripts/build-cores-ios.sh', 'scripts/cores-pins.sh') }}
 
       - name: Build Cores
         if: steps.cache.outputs.cache-hit != 'true'
@@ -82,9 +86,12 @@ jobs:
 
       - name: Report what was produced
         run: |
-          echo "### iOS cores" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Cores (iOS + macOS)" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           du -sh dist/frameworks/* 2>/dev/null >> "$GITHUB_STEP_SUMMARY" || echo "nothing built" >> "$GITHUB_STEP_SUMMARY"
+          # Which slices came out, not just which headers: the macOS one arriving
+          # is the thing worth seeing at a glance.
+          ls -1 dist/frameworks/Cores.xcframework >> "$GITHUB_STEP_SUMMARY" || true
           ls -1 dist/frameworks/Cores.xcframework/ios-arm64/Cores.framework/Headers >> "$GITHUB_STEP_SUMMARY" || true
           echo '```' >> "$GITHUB_STEP_SUMMARY"
 
@@ -107,9 +114,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # The revision, not the whole pseudo-version: the tag stays readable
-          # and still changes whenever olcrtc does.
-          tag="ios-cores-sb${SINGBOX_VERSION}-lx${LIBXRAY_VERSION}-rtc${OLCRTC_VERSION##*-}"
+          # Sourced rather than re-derived. This formula used to live here as
+          # well as in cores-pins.sh, and two copies of a tag is the exact shape
+          # of the bug that file was written to end: fetch-cores-ios.sh looks for
+          # what cores-pins.sh computes, so anything published under a tag spelled
+          # here instead is published where nothing will look for it.
+          # shellcheck source=scripts/cores-pins.sh
+          . scripts/cores-pins.sh
+          tag="${CORES_TAG}"
           gh release view "$tag" >/dev/null 2>&1 || \
-            gh release create "$tag" --prerelease --notes "sing-box ${SINGBOX_VERSION} + libXray ${LIBXRAY_VERSION} + olcrtc ${OLCRTC_VERSION} bound into one framework for the iOS NetworkExtension."
+            gh release create "$tag" --prerelease --notes "sing-box ${SINGBOX_VERSION} + libXray ${LIBXRAY_VERSION} + olcrtc ${OLCRTC_VERSION} bound into one framework, iOS and macOS slices, for the NetworkExtension on both."
           gh release upload "$tag" dist/*.zip --clobber
