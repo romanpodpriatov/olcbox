@@ -19,7 +19,6 @@ import org.olcbox.app.data.model.LocationConfig
 import org.olcbox.app.data.share.ConfigShareService
 import org.olcbox.app.data.share.SubscriptionShareItem
 import org.olcbox.app.ui.OlcboxAppContent
-import org.olcbox.app.ui.components.kit.PkBrand
 import org.olcbox.app.ui.components.ApplicationSettingsSheet
 import org.olcbox.app.ui.features.home.HomeScreenViewModel
 import org.olcbox.app.ui.features.locations.LocationItem
@@ -203,7 +202,16 @@ private fun IosApp(
                     )
                 },
                 showAppSettingsButton = true,
-                onGetSubscriptionClick = { platformBridge.openUrl(PkBrand.siteUrl) },
+                // Guideline 3.1.1. This used to open proofkit.org, where the
+                // service is bought, and that is a call to action for a purchase
+                // outside In-App Purchase however it is worded — which is what
+                // the 2026-08-03 rejection named. The app is unchanged
+                // otherwise: a subscription link still arrives by QR, paste or
+                // file, exactly as it does in every other client.
+                //
+                // Nothing here is disabled or greyed out. The row is gone, so
+                // there is nothing to explain and nothing to tap.
+                showGetSubscription = false,
                 onOpenExternalUrl = { url -> platformBridge.openUrl(url) },
                 showSplitTunnelingButton = false,
                 canScanQr = true,
