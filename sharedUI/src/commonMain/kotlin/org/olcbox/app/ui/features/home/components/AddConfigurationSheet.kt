@@ -48,6 +48,16 @@ fun AddConfigurationSheet(
     onUpdateSubscriptionsClick: () -> Unit,
     onAddCustomLocationClick: () -> Unit,
     onGetSubscriptionClick: () -> Unit = {},
+    /**
+     * False in a build that may not point anyone at a purchase.
+     *
+     * App Store guideline 3.1.1: a call to action inside the app that sends a
+     * user to buy digital content outside In-App Purchase is not allowed, and
+     * this row is exactly that — it opens the site where the service is sold.
+     * The app works the same without it; a subscription link arrives by QR,
+     * paste or file like any other client's.
+     */
+    showGetSubscription: Boolean = true,
     showCustomLocation: Boolean = true
 ) {
     // rememberModalBottomSheetState is deprecated in favour of
@@ -77,7 +87,7 @@ fun AddConfigurationSheet(
             Spacer(Modifier.height(20.dp))
 
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                if (!hasSubscriptions) {
+                if (!hasSubscriptions && showGetSubscription) {
                     // Someone with nothing yet needs a source before any of the
                     // import actions below mean anything.
                     AddSheetAction(
