@@ -682,27 +682,23 @@ if (currentBuildOs.isLinux) {
 }
 
 // ---------------------------------------------------------------------------
-// macOS: the packet-tunnel system extension, and the bridge the JVM calls it
-// through.
+// macOS: embedding the packet-tunnel system extension.
 //
-// Built with swiftc from Gradle rather than by adding an Xcode project. The
-// desktop app has no Xcode project and one bundle does not justify a second way
-// to build things; a system extension is an ordinary bundle — Info.plist, a
-// binary, a signature — and Gradle already builds and signs native artifacts
-// here.
+// Built with swiftc from Gradle rather than by adding an Xcode project: the
+// desktop app has no Xcode project, one bundle does not justify a second way to
+// build things, and a system extension is an ordinary bundle.
 //
-// The ordering below is the part that is easy to get wrong. Compose signs the
-// .app inside `createReleaseDistributable`, so anything added afterwards
-// invalidates that signature: adding a bundle to a signed bundle does not
-// re-sign the outer one, and the failure appears at launch as a broken app
-// rather than as a signing error. Hence sign inner-out and re-sign the app
-// itself last, with --force. `--deep` would be the short way and is the wrong
-// one: it re-signs nested code with the *outer* entitlements, which would give
-// the extension the app's and strip its NetworkExtension entitlement.
+// Everything here is conditional on a provisioning profile, and that is the
+// lesson of the build that reached a Mac and would not start at all.
+// `com.apple.developer.system-extension.install` is a *restricted* entitlement:
+// signing with it and embedding no profile to authorise it passes codesign,
+// passes the build, and then AMFI kills the process the moment it launches, with
+// macOS saying only "cannot be opened". So a build without profiles signs with
+// the plain entitlements and carries no extension — a working app that cannot
+// install a tunnel, rather than an app that cannot run.
 // ---------------------------------------------------------------------------
 if (currentBuildOs.isMacOsX) {
     val sysextSourceDir = layout.projectDirectory.dir("systemextension")
-    val bridgeSourceDir = layout.projectDirectory.dir("nativebridge")
     val appImageDir = layout.buildDirectory.dir("compose/binaries/main-release/app/$desktopPackageName.app")
     val sysextStageDir = layout.buildDirectory.dir("macos/systemextension")
     val packageVersion = desktopPackageVersion
@@ -713,7 +709,6 @@ if (currentBuildOs.isMacOsX) {
 
         dependsOn("createReleaseDistributable")
         inputs.dir(sysextSourceDir)
-        inputs.dir(bridgeSourceDir)
         outputs.dir(sysextStageDir)
 
         commandLine(
@@ -724,26 +719,40 @@ if (currentBuildOs.isMacOsX) {
 
             app_dir="${'$'}1"
             sysext_src="${'$'}2"
-            bridge_src="${'$'}3"
-            stage="${'$'}4"
-            version="${'$'}5"
-            app_entitlements="${'$'}6"
+            stage="${'$'}3"
+            version="${'$'}4"
+            plain_entitlements="${'$'}5"
+            sysext_entitlements="${'$'}6"
+
+            identity="${'$'}{MACOS_SIGN_IDENTITY:-}"
+            app_profile="${'$'}{MACOS_APP_PROVISION_PROFILE_BASE64:-}"
+            sysext_profile="${'$'}{MACOS_SYSEXT_PROVISION_PROFILE_BASE64:-}"
+
+            if [ -z "${'$'}identity" ] || [ -z "${'$'}app_profile" ] || [ -z "${'$'}sysext_profile" ]; then
+                echo "No signing identity or no provisioning profiles — building without the system extension."
+                echo "  identity:       ${'$'}( [ -n "${'$'}identity" ] && echo present || echo MISSING )"
+                echo "  app profile:    ${'$'}( [ -n "${'$'}app_profile" ] && echo present || echo MISSING )"
+                echo "  sysext profile: ${'$'}( [ -n "${'$'}sysext_profile" ] && echo present || echo MISSING )"
+                echo "The app keeps the entitlements it can run with; the tunnel extension needs"
+                echo "a Developer ID profile carrying the System Extension and Network Extension"
+                echo "capabilities, or macOS refuses to launch the app at all."
+                mkdir -p "${'$'}stage"
+                exit 0
+            fi
+
+            if [ ! -d "${'$'}app_dir" ]; then
+                echo "no app image at ${'$'}app_dir — this task ran against the wrong output" >&2
+                exit 1
+            fi
 
             # Each macOS runner builds the DMG for its own architecture, so the
-            # extension has to match the app it is going inside. Hardcoding one
-            # puts an arm64 binary in an Intel bundle, where it fails to load with
-            # an error about the extension rather than about the architecture.
-            arch="$(uname -m)"
-            swift_target="${'$'}arch-apple-macos13.0"
-
-            bundle_id="org.olcbox.app.desktopApp.PacketTunnel"
+            # extension has to match the app it is going inside.
+            swift_target="${'$'}(uname -m)-apple-macos13.0"
             sysext="${'$'}stage/PacketTunnel.systemextension"
 
             rm -rf "${'$'}stage"
             mkdir -p "${'$'}sysext/Contents/MacOS"
 
-            # The provider. Linked against NetworkExtension; no cores yet — this
-            # slice only has to prove macOS will load it from inside this app.
             swiftc -O -target "${'$'}swift_target" \
                 -framework NetworkExtension -framework Foundation \
                 -o "${'$'}sysext/Contents/MacOS/PacketTunnel" \
@@ -753,40 +762,30 @@ if (currentBuildOs.isMacOsX) {
                 -e "s/__BUILD_VERSION__/${'$'}version/" \
                 "${'$'}sysext_src/Info.plist" > "${'$'}sysext/Contents/Info.plist"
 
-            # The bridge is NOT built here — it is a generated native resource
-            # (buildMacosNeBridgeLibrary), extracted at runtime like the olcRTC
-            # library. A dylib dropped into Contents/MacOS is not on
-            # jna.library.path inside a packaged .app and never loads.
+            # The profile is what authorises the restricted entitlements. It goes
+            # in before the signature, because the signature seals it.
+            printf '%s' "${'$'}sysext_profile" | tr -d '[:space:]' | base64 --decode \
+                > "${'$'}sysext/Contents/embedded.provisionprofile"
+            printf '%s' "${'$'}app_profile" | tr -d '[:space:]' | base64 --decode \
+                > "${'$'}app_dir/Contents/embedded.provisionprofile"
 
-            identity="${'$'}{MACOS_SIGN_IDENTITY:-}"
-            if [ -n "${'$'}identity" ]; then
-                codesign --force --timestamp --options runtime \
-                    --entitlements "${'$'}sysext_src/PacketTunnel.entitlements" \
-                    --sign "${'$'}identity" "${'$'}sysext"
-            else
-                echo "MACOS_SIGN_IDENTITY unset — embedding unsigned; macOS will refuse to install this extension."
-            fi
-
-            if [ ! -d "${'$'}app_dir" ]; then
-                echo "no app image at ${'$'}app_dir — this task ran against the wrong output" >&2
-                exit 1
-            fi
+            codesign --force --timestamp --options runtime \
+                --entitlements "${'$'}sysext_src/PacketTunnel.entitlements" \
+                --sign "${'$'}identity" "${'$'}sysext"
 
             mkdir -p "${'$'}app_dir/Contents/Library/SystemExtensions"
             rm -rf "${'$'}app_dir/Contents/Library/SystemExtensions/PacketTunnel.systemextension"
             cp -R "${'$'}sysext" "${'$'}app_dir/Contents/Library/SystemExtensions/"
 
-            if [ -n "${'$'}identity" ]; then
-                codesign --force --timestamp --options runtime \
-                    --entitlements "${'$'}app_entitlements" \
-                    --sign "${'$'}identity" "${'$'}app_dir"
-                codesign --verify --deep --strict --verbose=2 "${'$'}app_dir"
-            fi
+            # Re-sign the app last and with --force, because adding a bundle to a
+            # signed bundle invalidates the outer signature. Never --deep: it
+            # re-signs nested code with the outer entitlements, which would hand
+            # the extension the app's and strip its NetworkExtension one.
+            codesign --force --timestamp --options runtime \
+                --entitlements "${'$'}sysext_entitlements" \
+                --sign "${'$'}identity" "${'$'}app_dir"
+            codesign --verify --deep --strict --verbose=2 "${'$'}app_dir"
 
-            # The check that was missing, and whose absence cost a 10x build, a
-            # download and an install to discover: say whether the extension is
-            # in the bundle, here, rather than letting "Success" mean "jpackage
-            # did not object".
             embedded="${'$'}app_dir/Contents/Library/SystemExtensions/PacketTunnel.systemextension"
             if [ ! -x "${'$'}embedded/Contents/MacOS/PacketTunnel" ]; then
                 echo "the system extension is not in the app image at ${'$'}embedded" >&2
@@ -797,14 +796,13 @@ if (currentBuildOs.isMacOsX) {
             "bash",
             appImageDir.get().asFile.absolutePath,
             sysextSourceDir.asFile.absolutePath,
-            bridgeSourceDir.asFile.absolutePath,
             sysextStageDir.get().asFile.absolutePath,
             packageVersion,
-            layout.projectDirectory.file("macos-entitlements.plist").asFile.absolutePath
+            layout.projectDirectory.file("macos-entitlements.plist").asFile.absolutePath,
+            layout.projectDirectory.file("macos-entitlements-systemextension.plist").asFile.absolutePath
         )
     }
 
-    // The DMG must contain the app *after* the extension went in, not before.
     tasks.matching { it.name == "packageReleaseDmg" }.configureEach {
         dependsOn(embedMacosSystemExtension)
     }

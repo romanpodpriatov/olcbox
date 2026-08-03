@@ -486,6 +486,11 @@ jobs:
         working-directory: olcbox
         env:
           MACOS_SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+          # Absent ⇒ the app is built without the packet-tunnel system extension,
+          # deliberately: a restricted entitlement with no profile to authorise it
+          # produces an app macOS will not launch.
+          MACOS_APP_PROVISION_PROFILE_BASE64: ${{ secrets.MACOS_APP_PROVISION_PROFILE_BASE64 }}
+          MACOS_SYSEXT_PROVISION_PROFILE_BASE64: ${{ secrets.MACOS_SYSEXT_PROVISION_PROFILE_BASE64 }}
         run: |
           export OLCRTC_REPO="${{ github.workspace }}/olcrtc"
           ./gradlew -Polcbox.version="${OLCBOX_VERSION}" :desktopApp:packageReleaseDmg --stacktrace
@@ -508,15 +513,6 @@ jobs:
         run: |
           set -euo pipefail
           dmg="dist/ProofKit-${OLCBOX_VERSION}-macos-${ARCH}.dmg"
-
-          if [ "${PUBLISH:-false}" != "true" ]; then
-            # Apple notarises a specific binary, so every build would be its own
-            # submission — and their queue has run to forty minutes. A build you
-            # open yourself only needs the signature; right-click → Open once and
-            # it runs. Only what reaches users is worth the wait.
-            echo "Not a published build; signed but not notarised."
-            exit 0
-          fi
 
           if [ -z "${MACOS_NOTARY_KEY_BASE64:-}" ]; then
             echo "No notary credentials; publishing a signed-but-not-notarised DMG."
@@ -1131,7 +1127,13 @@ jobs:
   notarise-wait:
     name: Wait for Apple (1x runner)
     needs: [plan, build-macos]
-    if: needs.plan.outputs.macos_any == 'true' && needs.plan.outputs.publish == 'true'
+    # Every macOS build, not only published ones. The old rule — "a build you
+    # open yourself only needs the signature, right-click → Open once and it
+    # runs" — stopped being true when the app gained a system extension: macOS
+    # will not install one from an app that is not notarised, and no gesture in
+    # the Finder gets round it. This job is on a 1x runner; the wait is cheap and
+    # a test build that cannot be tested is not.
+    if: needs.plan.outputs.macos_any == 'true'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -1159,7 +1161,7 @@ jobs:
   staple-macos:
     name: Staple the ticket
     needs: [plan, release_version, notarise-wait]
-    if: needs.plan.outputs.macos_any == 'true' && needs.plan.outputs.publish == 'true'
+    if: needs.plan.outputs.macos_any == 'true'
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(needs.plan.outputs.macos_matrix) }}

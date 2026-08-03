@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  The app's entitlements PLUS the one that lets it install the packet-tunnel
+  system extension. Used only when a provisioning profile authorising that
+  capability is embedded in the bundle.
+
+  Kept separate because `com.apple.developer.system-extension.install` is a
+  restricted entitlement: signing with it and shipping no profile to authorise it
+  does not fail the build, does not fail the signature, and does not fail
+  notarisation — it fails at launch, where AMFI kills the process outright and
+  macOS says only "cannot be opened". That is how the 2026-08-03 build reached a
+  Mac as an app that would not start at all.
+
+  So the restricted key lives here, this file is used only alongside a profile,
+  and a build without one signs with the plain entitlements and simply carries no
+  extension.
+-->
+<plist version="1.0">
+<dict>
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+    <key>com.apple.security.cs.allow-dyld-environment-variables</key>
+    <true/>
+    <key>com.apple.developer.system-extension.install</key>
+    <true/>
+</dict>
+</plist>
