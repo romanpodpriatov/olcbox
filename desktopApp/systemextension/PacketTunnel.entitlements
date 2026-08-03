@@ -11,19 +11,16 @@
   extension installs and then fails to start a tunnel — which reads as a bug in
   the tunnel rather than in the signature.
 
-  The app group is how the extension and the app share state. It is listed here
-  and in the app so a later slice can pass configuration across without inventing
-  a second channel; nothing uses it yet.
+  Nothing else is declared. An entitlement that nothing uses is not free: each one
+  has to be enabled on the App ID and present in the provisioning profile, and a
+  profile missing one fails the signature or the launch — so an unused app group
+  would have been a portal step and a failure mode bought for nothing.
 -->
 <plist version="1.0">
 <dict>
     <key>com.apple.developer.networking.networkextension</key>
     <array>
         <string>packet-tunnel-provider-systemextension</string>
-    </array>
-    <key>com.apple.security.application-groups</key>
-    <array>
-        <string>3QJG3J7L66.org.olcbox.app.desktopApp</string>
     </array>
 </dict>
 </plist>
