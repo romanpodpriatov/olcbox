@@ -107,6 +107,7 @@ import org.olcbox.app.update.shouldShowOffer
 import org.olcbox.app.vpn.DesktopSocksProxySettings
 import org.olcbox.app.vpn.DesktopVpnManager
 import org.olcbox.app.vpn.JvmDesktopSocksProxySettingsStore
+import org.olcbox.app.vpn.desktop.MacOsSystemExtension
 
 private class DesktopAppDependencies {
     private val locationsDataSource = JvmLocationsDataSourceImpl()
@@ -157,6 +158,8 @@ fun main(args: Array<String>) = application {
     var updateOffer by remember { mutableStateOf<AppUpdateInfo?>(null) }
     var sharePayload by remember { mutableStateOf<Pair<String, String>?>(null) }
     var desktopNotice by remember { mutableStateOf<String?>(null) }
+    // Null on every platform but macOS, and the settings row is then absent.
+    var tunnelExtensionSummary by remember { mutableStateOf(MacOsSystemExtension.settingsSummary()) }
     val scope = rememberCoroutineScope()
     val trayState = rememberTrayState()
     val trayHomeState by dependencies.homeViewModel.state.collectAsState()
@@ -242,6 +245,17 @@ fun main(args: Array<String>) = application {
             dependencies.homeViewModel.loadCurrentConfig {
                 dependencies.homeViewModel.ToggleVpn()
             }
+        }
+    }
+
+    // The extension's state changes without us: the user approves it in System
+    // Settings, in another application, and macOS finishes the installation
+    // afterwards. Polling while the sheet is open is what stops the row from
+    // still reading "Approve in System Settings" once they have.
+    LaunchedEffect(showDesktopSettings) {
+        while (showDesktopSettings) {
+            tunnelExtensionSummary = MacOsSystemExtension.settingsSummary()
+            delay(1_000)
         }
     }
 
@@ -389,6 +403,17 @@ fun main(args: Array<String>) = application {
                             "PAC Target" to "SOCKS5 ${socksProxySettings.host}:${socksProxySettings.port}"
                         ),
                         socksProxySettings = socksProxySettings.toApplicationSocksProxySettings(),
+                        tunnelExtensionSummary = tunnelExtensionSummary,
+                        onTunnelExtensionClick = {
+                            MacOsSystemExtension.activate()
+                            tunnelExtensionSummary = MacOsSystemExtension.settingsSummary()
+                            // Verbatim, not a paraphrase: the OSSystemExtensionError
+                            // is the only thing that tells "not in /Applications"
+                            // from "wrong signature" from "the user declined", and
+                            // every one of those looks like the others once
+                            // summarised.
+                            desktopNotice = MacOsSystemExtension.message().ifBlank { null }
+                        },
                         isConnectionActive = homeState.isVpnConnected,
                         subscriptionSettings = subscriptionSettings,
                         onSubscriptionSettingsChanged =

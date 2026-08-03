@@ -61,4 +61,15 @@ class MacOsSystemExtensionTest {
         assertEquals(Status.Unavailable, MacOsSystemExtension.activate())
         assertTrue(MacOsSystemExtension.message().isNotBlank())
     }
+
+    /**
+     * The settings row is driven entirely by this being null. A Linux or Windows
+     * desktop has no system extension and must not be shown a row offering to
+     * install one — which is what a non-null summary would produce.
+     */
+    @Test
+    fun thereIsNoSettingsRowOffMacOs() {
+        if (System.getProperty("os.name").orEmpty().contains("Mac")) return
+        assertEquals(null, MacOsSystemExtension.settingsSummary())
+    }
 }

@@ -2,6 +2,8 @@ package org.olcbox.app.vpn.desktop
 
 import com.sun.jna.Library
 import com.sun.jna.Native
+import org.olcbox.app.desktop.DesktopOs
+import org.olcbox.app.desktop.DesktopPaths
 
 /**
  * Asks macOS to install the packet-tunnel system extension, and reports where
@@ -19,7 +21,7 @@ import com.sun.jna.Native
  * marshalling one into the other is a class of crash worth more than an integer
  * read once a second.
  */
-internal object MacOsSystemExtension {
+object MacOsSystemExtension {
 
     /**
      * Must be prefixed by the host app's identifier or macOS refuses the request,
@@ -78,6 +80,29 @@ internal object MacOsSystemExtension {
 
     fun status(): Status =
         bridge?.let { Status.from(it.olcbox_ne_status()) } ?: Status.Unavailable
+
+    /**
+     * One line for the settings row, or null on a platform with no such
+     * component — which is every platform but macOS, and macOS builds made
+     * before the extension was embedded.
+     *
+     * The wording says what the person reading it has to do next, because for
+     * most of these states that is the only useful thing to say: macOS asks the
+     * user to approve the extension, and an app that reports "failed" without
+     * mentioning where the approval lives has told them nothing.
+     */
+    fun settingsSummary(): String? {
+        if (DesktopPaths.os != DesktopOs.MacOS) return null
+        return when (status()) {
+            Status.Unavailable -> null
+            Status.Idle -> "Not installed — tap to install"
+            Status.Requested -> "Installing…"
+            Status.NeedsUserApproval -> "Approve in System Settings › General › Login Items & Extensions"
+            Status.Activated -> "Installed"
+            Status.NotInApplications -> "Move ProofKit to /Applications first"
+            Status.Failed -> "Failed — tap to retry"
+        }
+    }
 
     /** The last thing the native side had to say — an Apple error, verbatim. */
     fun message(): String {

@@ -120,6 +120,15 @@ fun ApplicationSettingsSheet(
      */
     connectionModeTitle: String = "Proxy",
     connectionModeSummary: String = "Local SOCKS5 proxy",
+    /**
+     * How the platform's own tunnel component is doing, when it has one — today
+     * the macOS system extension, which the user installs and approves rather
+     * than receiving with the app. Null everywhere else, and the row is then
+     * absent rather than disabled: a platform with no such component has nothing
+     * to say about it.
+     */
+    tunnelExtensionSummary: String? = null,
+    onTunnelExtensionClick: () -> Unit = {},
     /** How subscriptions behave. See [SubscriptionSettings]. */
     subscriptionSettings: SubscriptionSettings = SubscriptionSettings(),
     onSubscriptionSettingsChanged: (SubscriptionSettings) -> Unit = {},
@@ -209,8 +218,10 @@ fun ApplicationSettingsSheet(
                     details = connectionDetails,
                     modeSummary = connectionModeSummary,
                     socksProxySettings = socksProxySettings,
+                    tunnelExtensionSummary = tunnelExtensionSummary,
                     onConnectionModeClick = { route = SharedSettingsRoute.ConnectionMode },
                     onSocksProxyClick = { route = SharedSettingsRoute.SocksProxy },
+                    onTunnelExtensionClick = onTunnelExtensionClick,
                     onBack = { route = SharedSettingsRoute.Hub }
                 )
 
@@ -351,8 +362,10 @@ private fun SharedConnectionSettingsContent(
     details: List<Pair<String, String>>,
     modeSummary: String,
     socksProxySettings: ApplicationSocksProxySettings?,
+    tunnelExtensionSummary: String?,
     onConnectionModeClick: () -> Unit,
     onSocksProxyClick: () -> Unit,
+    onTunnelExtensionClick: () -> Unit,
     onBack: () -> Unit
 ) {
     Column(
@@ -376,6 +389,20 @@ private fun SharedConnectionSettingsContent(
                 icon = PkIcons.Public,
                 onClick = onConnectionModeClick
             )
+
+            // Not behind the admin gate. Installing the system extension is
+            // something the person using the app has to do — macOS asks *them* to
+            // approve it in System Settings — so hiding the only way to start
+            // that behind seven taps would hide the app's own instructions from
+            // the only person who can follow them.
+            if (tunnelExtensionSummary != null) {
+                SharedNavigationRow(
+                    title = "Tunnel Extension",
+                    value = tunnelExtensionSummary,
+                    icon = PkIcons.Public,
+                    onClick = onTunnelExtensionClick
+                )
+            }
 
             // Editing the local proxy credentials/port is plumbing: admin-only.
             if (socksProxySettings != null && AdminState.configuratorVisible) {
