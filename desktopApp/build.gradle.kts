@@ -756,7 +756,7 @@ if (currentBuildOs.isMacOsX) {
             swiftc -O -target "${'$'}swift_target" \
                 -framework NetworkExtension -framework Foundation \
                 -o "${'$'}sysext/Contents/MacOS/PacketTunnel" \
-                "${'$'}sysext_src/PacketTunnelProvider.swift"
+                "${'$'}sysext_src/main.swift" "${'$'}sysext_src/PacketTunnelProvider.swift"
 
             sed -e "s/__MARKETING_VERSION__/${'$'}version/" \
                 -e "s/__BUILD_VERSION__/${'$'}version/" \
@@ -789,6 +789,17 @@ if (currentBuildOs.isMacOsX) {
             embedded="${'$'}app_dir/Contents/Library/SystemExtensions/PacketTunnel.systemextension"
             if [ ! -x "${'$'}embedded/Contents/MacOS/PacketTunnel" ]; then
                 echo "the system extension is not in the app image at ${'$'}embedded" >&2
+                exit 1
+            fi
+
+            # Present and well-formed is not the same as functional. Without a
+            # call to startSystemExtensionMode the binary registers no provider,
+            # and macOS reports the extension as *not found* — about a bundle
+            # sitting right there. Every other check here would still pass.
+            if ! nm -u "${'$'}embedded/Contents/MacOS/PacketTunnel" 2>/dev/null \
+                 | grep -q "startSystemExtensionMode"; then
+                echo "the extension binary never calls NEProvider.startSystemExtensionMode()" >&2
+                echo "macOS would scan this bundle and report OSSystemExtensionError code 4." >&2
                 exit 1
             fi
             echo "embedded: ${'$'}embedded"
