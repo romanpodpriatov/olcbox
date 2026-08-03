@@ -123,9 +123,17 @@ object MacOsSystemExtension {
             Status.NeedsUserApproval -> "Approve in System Settings › General › Login Items & Extensions"
             Status.Activated -> "Installed"
             Status.NotInApplications -> "Move ProofKit to /Applications first"
-            Status.Failed -> "Failed — tap to retry"
+            // The reason, not the fact. "Failed — tap to retry" sent a person to
+            // the system log to find out what the app already knew, and the
+            // verbatim OSSystemExtensionError is the only thing that separates a
+            // bad signature from a missing extension from a declined approval.
+            // It is long, so it is cut here and printed in full to the notice.
+            Status.Failed -> "Failed — ${message().take(MAX_SUMMARY_REASON)}"
         }
     }
+
+    /** Long enough to carry an OSSystemExtensionError domain and code. */
+    private const val MAX_SUMMARY_REASON = 120
 
     /** The last thing the native side had to say — an Apple error, verbatim. */
     fun message(): String {
