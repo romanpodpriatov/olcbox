@@ -178,8 +178,9 @@ test -d "$OUT/Cores.xcframework/ios-arm64" \
   || { echo "no device slice — the bind did not target iOS properly"; exit 1; }
 
 # Matched by glob: gomobile names the macOS slice after the architectures it
-# actually built (macos-arm64_amd64 today), and pinning that string here would
-# turn a change in what we get into a failure that reads like a missing slice.
+# actually built — `macos-arm64_x86_64` as of the first run, note the Mach-O
+# spelling rather than Go's `amd64` — and pinning that string here would turn a
+# change in what we get into a failure that reads like a missing slice.
 #
 # `-print -quit` rather than a pipe into `head`: this script runs under
 # `set -o pipefail`, where the reader closing the pipe first sends find a SIGPIPE
