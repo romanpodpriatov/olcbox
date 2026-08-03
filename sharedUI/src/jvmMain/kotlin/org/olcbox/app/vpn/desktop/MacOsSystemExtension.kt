@@ -133,7 +133,7 @@ object MacOsSystemExtension {
     }
 
     /** Long enough to carry an OSSystemExtensionError domain and code. */
-    private const val MAX_SUMMARY_REASON = 120
+    private const val MAX_SUMMARY_REASON = 200
 
     /** The last thing the native side had to say — an Apple error, verbatim. */
     fun message(): String {

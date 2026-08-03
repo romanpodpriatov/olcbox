@@ -76,11 +76,21 @@ private final class ActivationDelegate: NSObject, OSSystemExtensionRequestDelega
     }
 
     func request(_ request: OSSystemExtensionRequest, didFailWithError error: Error) {
-        // The error is kept verbatim. OSSystemExtensionError codes are the only
-        // thing that distinguishes "you are not in /Applications" from "your
-        // signature is wrong" from "the user said no", and paraphrasing them has
-        // sent people to look at the wrong layer more than once.
-        set(.failed, "\(error)")
+        // The code first, then where this process thinks it lives.
+        //
+        // OSSystemExtensionError codes are the only thing that distinguishes "you
+        // are not in /Applications" (3) from "no such extension" (4) from "bad
+        // signature" (8) from "system policy" (10), and sysextd's own log says
+        // none of them — it prints one generic line about /Applications whatever
+        // the reason. The bundle path is here beside it because that generic line
+        // was emitted for an app that was demonstrably in /Applications, and the
+        // two claims cannot both be checked from outside the process.
+        let ns = error as NSError
+        set(
+            .failed,
+            "\(ns.domain) code \(ns.code): \(ns.localizedDescription) " +
+                "[bundle: \(Bundle.main.bundlePath)]"
+        )
     }
 }
 
