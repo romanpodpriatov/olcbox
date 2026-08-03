@@ -1,15 +1,29 @@
 name: PR Checks
 
+# Pull requests, and every push to a branch that is not main.
+#
+# On pull_request alone, work pushed to a branch was compiled by nothing until
+# somebody opened a PR — so a branch could sit for a day looking finished while
+# not building at all. This is the cheap half of the pipeline (one ubuntu
+# runner), and the expensive half stays where it is: `Build ProofKit Releases`
+# is workflow_dispatch only, on purpose, because macOS minutes bill at 10x.
+#
+# main is excluded because a push there is a merge of something already checked.
 on:
   pull_request:
     branches:
+      - main
+  push:
+    branches-ignore:
       - main
 
 permissions:
   contents: read
 
 concurrency:
-  group: pr-checks-${{ github.event.pull_request.number }}
+  # A push carries no PR number, and without the ref every branch would share
+  # one group and cancel the others' runs.
+  group: pr-checks-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
