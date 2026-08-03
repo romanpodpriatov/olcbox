@@ -384,6 +384,56 @@ if (currentBuildOs.isLinux) {
     hostDesktopNativeAssetTasks.add(buildHevSocks5TunnelLinux)
 }
 
+if (currentBuildOs.isMacOsX) {
+    // The bridge the JVM calls to ask macOS for the packet-tunnel system
+    // extension. Built as a *resource*, like every other native library here,
+    // and extracted at runtime — not dropped into Contents/MacOS and looked up
+    // by name. `jna.library.path` points at `user.dir/native`, which in a
+    // packaged .app is not where anything of ours lives, so a library placed by
+    // hand loads on a developer's machine and silently fails to load in the
+    // bundle. The settings row then simply never appears, which is the least
+    // debuggable failure available.
+    val buildMacosNeBridge = tasks.register<Exec>("buildMacosNeBridgeLibrary") {
+        val outputFile = generatedNativeResources.map { it.file("native/libolcboxne.dylib") }
+        val source = layout.projectDirectory.file("nativebridge/OlcboxSystemExtension.swift")
+
+        inputs.file(source)
+        outputs.file(outputFile)
+        commandLine(
+            "bash", "-c",
+            """
+            set -euo pipefail
+            out="${'$'}1"; src="${'$'}2"
+            mkdir -p "${'$'}(dirname "${'$'}out")"
+            # Built for the host: each macOS runner packages its own architecture.
+            swiftc -O -target "${'$'}(uname -m)-apple-macos13.0" -emit-library \
+                -framework SystemExtensions -framework Foundation \
+                -o "${'$'}out" "${'$'}src"
+            """.trimIndent(),
+            "bash",
+            outputFile.get().asFile.absolutePath,
+            source.asFile.absolutePath
+        )
+
+        // Same reason as the olcrtc library above: notarisation scans inside the
+        // jar and wants a Developer ID signature on every Mach-O it finds.
+        val signTarget = outputFile.map { it.asFile.absolutePath }
+        val entitlementsPath = layout.projectDirectory.file("macos-entitlements.plist").asFile.absolutePath
+        doLast {
+            val identity = System.getenv("MACOS_SIGN_IDENTITY")
+            if (!identity.isNullOrBlank()) {
+                val exit = ProcessBuilder(
+                    "codesign", "--force", "--timestamp", "--options", "runtime",
+                    "--entitlements", entitlementsPath,
+                    "--sign", identity, signTarget.get()
+                ).inheritIO().start().waitFor()
+                check(exit == 0) { "codesign failed for ${signTarget.get()}" }
+            }
+        }
+    }
+    hostDesktopNativeAssetTasks.add(buildMacosNeBridge)
+}
+
 if (currentBuildOs.isWindows) {
     val tun2SocksWindowsOutput = generatedNativeResources.map {
         it.file("native/tun2socks-windows-amd64.exe")
@@ -427,6 +477,7 @@ fun requiredHostNativeResourcePaths(): List<String> = buildList {
         currentBuildOs.isMacOsX -> {
             add("native/olcrtc-darwin-$hostDesktopArch")
             add("native/libolcrtc-darwin-$hostDesktopArch.dylib")
+            add("native/libolcboxne.dylib")
         }
         currentBuildOs.isWindows -> {
             add("native/olcrtc-windows-amd64.exe")
@@ -702,29 +753,28 @@ if (currentBuildOs.isMacOsX) {
                 -e "s/__BUILD_VERSION__/${'$'}version/" \
                 "${'$'}sysext_src/Info.plist" > "${'$'}sysext/Contents/Info.plist"
 
-            # The bridge, a plain dylib the JVM opens with JNA.
-            mkdir -p "${'$'}stage/lib"
-            swiftc -O -target "${'$'}swift_target" -emit-library \
-                -framework SystemExtensions -framework Foundation \
-                -o "${'$'}stage/lib/libolcboxne.dylib" \
-                "${'$'}bridge_src/OlcboxSystemExtension.swift"
+            # The bridge is NOT built here — it is a generated native resource
+            # (buildMacosNeBridgeLibrary), extracted at runtime like the olcRTC
+            # library. A dylib dropped into Contents/MacOS is not on
+            # jna.library.path inside a packaged .app and never loads.
 
             identity="${'$'}{MACOS_SIGN_IDENTITY:-}"
             if [ -n "${'$'}identity" ]; then
-                # Inner-out, each with its own entitlements.
                 codesign --force --timestamp --options runtime \
                     --entitlements "${'$'}sysext_src/PacketTunnel.entitlements" \
                     --sign "${'$'}identity" "${'$'}sysext"
-                codesign --force --timestamp --options runtime \
-                    --sign "${'$'}identity" "${'$'}stage/lib/libolcboxne.dylib"
             else
                 echo "MACOS_SIGN_IDENTITY unset — embedding unsigned; macOS will refuse to install this extension."
+            fi
+
+            if [ ! -d "${'$'}app_dir" ]; then
+                echo "no app image at ${'$'}app_dir — this task ran against the wrong output" >&2
+                exit 1
             fi
 
             mkdir -p "${'$'}app_dir/Contents/Library/SystemExtensions"
             rm -rf "${'$'}app_dir/Contents/Library/SystemExtensions/PacketTunnel.systemextension"
             cp -R "${'$'}sysext" "${'$'}app_dir/Contents/Library/SystemExtensions/"
-            cp "${'$'}stage/lib/libolcboxne.dylib" "${'$'}app_dir/Contents/MacOS/"
 
             if [ -n "${'$'}identity" ]; then
                 codesign --force --timestamp --options runtime \
@@ -732,6 +782,17 @@ if (currentBuildOs.isMacOsX) {
                     --sign "${'$'}identity" "${'$'}app_dir"
                 codesign --verify --deep --strict --verbose=2 "${'$'}app_dir"
             fi
+
+            # The check that was missing, and whose absence cost a 10x build, a
+            # download and an install to discover: say whether the extension is
+            # in the bundle, here, rather than letting "Success" mean "jpackage
+            # did not object".
+            embedded="${'$'}app_dir/Contents/Library/SystemExtensions/PacketTunnel.systemextension"
+            if [ ! -x "${'$'}embedded/Contents/MacOS/PacketTunnel" ]; then
+                echo "the system extension is not in the app image at ${'$'}embedded" >&2
+                exit 1
+            fi
+            echo "embedded: ${'$'}embedded"
             """.trimIndent(),
             "bash",
             appImageDir.get().asFile.absolutePath,

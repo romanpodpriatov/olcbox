@@ -4,6 +4,8 @@ import com.sun.jna.Library
 import com.sun.jna.Native
 import org.olcbox.app.desktop.DesktopOs
 import org.olcbox.app.desktop.DesktopPaths
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 
 /**
  * Asks macOS to install the packet-tunnel system extension, and reports where
@@ -64,10 +66,31 @@ object MacOsSystemExtension {
 
     private const val MESSAGE_CAPACITY = 1024
 
-    // Absent is a normal state, not an error: every non-macOS desktop build has
-    // no such library, and this object is reachable from shared code.
+    private const val LIBRARY_RESOURCE = "native/libolcboxne.dylib"
+
+    /**
+     * Extracted from resources and loaded by absolute path, the way the olcRTC
+     * library already is.
+     *
+     * Not `Native.load("olcboxne")`: that searches `jna.library.path`, which this
+     * app points at `user.dir/native` — a directory that exists on a developer's
+     * machine and not inside a packaged `.app`. A library found by name in the
+     * one place and not the other fails by making the settings row quietly not
+     * appear, with nothing anywhere saying why.
+     *
+     * Absent is a normal state, not an error: every non-macOS desktop build has
+     * no such library, and this object is reachable from shared code.
+     */
     private val bridge: Bridge? by lazy {
-        runCatching { Native.load("olcboxne", Bridge::class.java) }.getOrNull()
+        runCatching {
+            val stream = MacOsSystemExtension::class.java.classLoader
+                ?.getResourceAsStream(LIBRARY_RESOURCE)
+                ?: return@runCatching null
+            val temp = Files.createTempFile("olcboxne-", ".dylib")
+            temp.toFile().deleteOnExit()
+            stream.use { Files.copy(it, temp, StandardCopyOption.REPLACE_EXISTING) }
+            Native.load(temp.toAbsolutePath().toString(), Bridge::class.java)
+        }.getOrNull()
     }
 
     val available: Boolean get() = bridge != null
