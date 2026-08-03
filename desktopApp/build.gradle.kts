@@ -676,6 +676,14 @@ if (currentBuildOs.isMacOsX) {
             bridge_src="${'$'}3"
             stage="${'$'}4"
             version="${'$'}5"
+            app_entitlements="${'$'}6"
+
+            # Each macOS runner builds the DMG for its own architecture, so the
+            # extension has to match the app it is going inside. Hardcoding one
+            # puts an arm64 binary in an Intel bundle, where it fails to load with
+            # an error about the extension rather than about the architecture.
+            arch="$(uname -m)"
+            swift_target="${'$'}arch-apple-macos13.0"
 
             bundle_id="org.olcbox.app.desktopApp.PacketTunnel"
             sysext="${'$'}stage/PacketTunnel.systemextension"
@@ -685,7 +693,7 @@ if (currentBuildOs.isMacOsX) {
 
             # The provider. Linked against NetworkExtension; no cores yet — this
             # slice only has to prove macOS will load it from inside this app.
-            swiftc -O -target arm64-apple-macos13.0 \
+            swiftc -O -target "${'$'}swift_target" \
                 -framework NetworkExtension -framework Foundation \
                 -o "${'$'}sysext/Contents/MacOS/PacketTunnel" \
                 "${'$'}sysext_src/PacketTunnelProvider.swift"
@@ -696,7 +704,7 @@ if (currentBuildOs.isMacOsX) {
 
             # The bridge, a plain dylib the JVM opens with JNA.
             mkdir -p "${'$'}stage/lib"
-            swiftc -O -target arm64-apple-macos13.0 -emit-library \
+            swiftc -O -target "${'$'}swift_target" -emit-library \
                 -framework SystemExtensions -framework Foundation \
                 -o "${'$'}stage/lib/libolcboxne.dylib" \
                 "${'$'}bridge_src/OlcboxSystemExtension.swift"
@@ -720,7 +728,7 @@ if (currentBuildOs.isMacOsX) {
 
             if [ -n "${'$'}identity" ]; then
                 codesign --force --timestamp --options runtime \
-                    --entitlements "${'$'}{PWD}/macos-entitlements.plist" \
+                    --entitlements "${'$'}app_entitlements" \
                     --sign "${'$'}identity" "${'$'}app_dir"
                 codesign --verify --deep --strict --verbose=2 "${'$'}app_dir"
             fi
@@ -730,7 +738,8 @@ if (currentBuildOs.isMacOsX) {
             sysextSourceDir.asFile.absolutePath,
             bridgeSourceDir.asFile.absolutePath,
             sysextStageDir.get().asFile.absolutePath,
-            packageVersion
+            packageVersion,
+            layout.projectDirectory.file("macos-entitlements.plist").asFile.absolutePath
         )
     }
 
