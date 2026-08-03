@@ -796,8 +796,19 @@ if (currentBuildOs.isMacOsX) {
             # call to startSystemExtensionMode the binary registers no provider,
             # and macOS reports the extension as *not found* — about a bundle
             # sitting right there. Every other check here would still pass.
-            if ! nm -u "${'$'}embedded/Contents/MacOS/PacketTunnel" 2>/dev/null \
-                 | grep -q "startSystemExtensionMode"; then
+            #
+            # The evidence is an Objective-C selector, not a symbol.
+            # `NEProvider.startSystemExtensionMode()` compiles to an objc_msgSend,
+            # so the name lives in the ObjC metadata and never appears in `nm -u`,
+            # which lists undefined symbols — the first version of this check
+            # looked in the wrong table and failed every binary it examined.
+            #
+            # Written through a file rather than piped into `grep -q`: under
+            # `set -o pipefail` the reader closing first is a SIGPIPE for the
+            # writer, and the check would report "missing" for a binary that has
+            # it. That trap has already been sprung once in this file.
+            strings -a "${'$'}embedded/Contents/MacOS/PacketTunnel" > "${'$'}stage/binary-strings.txt" 2>/dev/null || true
+            if ! grep -q "startSystemExtensionMode" "${'$'}stage/binary-strings.txt"; then
                 echo "the extension binary never calls NEProvider.startSystemExtensionMode()" >&2
                 echo "macOS would scan this bundle and report OSSystemExtensionError code 4." >&2
                 exit 1
