@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Entitlements for the extension itself. Distinct from the app's, and the
+  difference is the whole reason this file exists.
+
+  `packet-tunnel-provider-systemextension`, not `packet-tunnel-provider`. The
+  plain spelling is what a development-signed build uses and what every iOS
+  example shows; a Developer ID build needs the -systemextension variant, and
+  Xcode does not make the substitution for you. Signed with the wrong one, the
+  extension installs and then fails to start a tunnel — which reads as a bug in
+  the tunnel rather than in the signature.
+
+  The app group is how the extension and the app share state. It is listed here
+  and in the app so a later slice can pass configuration across without inventing
+  a second channel; nothing uses it yet.
+-->
+<plist version="1.0">
+<dict>
+    <key>com.apple.developer.networking.networkextension</key>
+    <array>
+        <string>packet-tunnel-provider-systemextension</string>
+    </array>
+    <key>com.apple.security.application-groups</key>
+    <array>
+        <string>3QJG3J7L66.org.olcbox.app.desktopApp</string>
+    </array>
+</dict>
+</plist>

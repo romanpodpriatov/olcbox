@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  The packet-tunnel system extension's own Info.plist.
+
+  Three values here are load-bearing and easy to get subtly wrong:
+
+  * CFBundleIdentifier must be prefixed by the host app's
+    (org.olcbox.app.desktopApp). macOS refuses to install an extension whose
+    identifier is not a child of the app requesting it, and the refusal names
+    neither rule nor value.
+
+  * NEMachServiceName must begin with the Team ID. It is how the app's
+    NETunnelProviderManager reaches the provider; a wrong value fails only when a
+    connection is started, not when the extension is installed.
+
+  * NEProviderClasses maps the provider type to an Objective-C class name, not a
+    Swift one. PacketTunnelProvider.swift declares @objc(PacketTunnelProvider)
+    precisely so the two agree without a module prefix — remove that attribute
+    and the value here becomes wrong while still looking right.
+
+  Versions are substituted by the Gradle task that assembles this bundle, from
+  the same olcbox.version the rest of the build uses, so the extension and the
+  app that installs it can never claim different versions.
+-->
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
+    <key>CFBundleDisplayName</key>
+    <string>ProofKit Tunnel</string>
+    <key>CFBundleExecutable</key>
+    <string>PacketTunnel</string>
+    <key>CFBundleIdentifier</key>
+    <string>org.olcbox.app.desktopApp.PacketTunnel</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>PacketTunnel</string>
+    <key>CFBundlePackageType</key>
+    <string>SYSX</string>
+    <key>CFBundleShortVersionString</key>
+    <string>__MARKETING_VERSION__</string>
+    <key>CFBundleVersion</key>
+    <string>__BUILD_VERSION__</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>13.0</string>
+    <key>NetworkExtension</key>
+    <dict>
+        <key>NEMachServiceName</key>
+        <string>3QJG3J7L66.org.olcbox.app.desktopApp.PacketTunnel</string>
+        <key>NEProviderClasses</key>
+        <dict>
+            <key>com.apple.networkextension.packet-tunnel</key>
+            <string>PacketTunnelProvider</string>
+        </dict>
+    </dict>
+</dict>
+</plist>

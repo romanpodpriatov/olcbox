@@ -22,5 +22,22 @@
          whole purpose, so they are declared rather than discovered at runtime. -->
     <key>com.apple.security.cs.allow-dyld-environment-variables</key>
     <true/>
+    <!--
+      Lets the app ask macOS to install the packet-tunnel system extension that
+      gives it a real tun device instead of a system SOCKS proxy.
+
+      Outside the App Store a NetworkExtension provider has to be a *system*
+      extension rather than an app extension, and installing one is a request the
+      host app makes at runtime (OSSystemExtensionRequest) which the user then
+      approves in System Settings. Two conditions come with it and are not
+      negotiable: the app must be running from /Applications, and the extension's
+      bundle identifier must be prefixed by the app's own.
+
+      Note this entitlement is about *installing*. The extension itself carries
+      the NetworkExtension entitlement, in its own file, with the
+      `-systemextension` spelling that Developer ID signing requires.
+    -->
+    <key>com.apple.developer.system-extension.install</key>
+    <true/>
 </dict>
 </plist>

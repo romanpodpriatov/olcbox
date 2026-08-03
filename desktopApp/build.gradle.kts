@@ -629,3 +629,113 @@ if (currentBuildOs.isLinux) {
         dependsOn(packageReleaseLinuxAppImage)
     }
 }
+
+// ---------------------------------------------------------------------------
+// macOS: the packet-tunnel system extension, and the bridge the JVM calls it
+// through.
+//
+// Built with swiftc from Gradle rather than by adding an Xcode project. The
+// desktop app has no Xcode project and one bundle does not justify a second way
+// to build things; a system extension is an ordinary bundle — Info.plist, a
+// binary, a signature — and Gradle already builds and signs native artifacts
+// here.
+//
+// The ordering below is the part that is easy to get wrong. Compose signs the
+// .app inside `createReleaseDistributable`, so anything added afterwards
+// invalidates that signature: adding a bundle to a signed bundle does not
+// re-sign the outer one, and the failure appears at launch as a broken app
+// rather than as a signing error. Hence sign inner-out and re-sign the app
+// itself last, with --force. `--deep` would be the short way and is the wrong
+// one: it re-signs nested code with the *outer* entitlements, which would give
+// the extension the app's and strip its NetworkExtension entitlement.
+// ---------------------------------------------------------------------------
+if (currentBuildOs.isMacOsX) {
+    val sysextSourceDir = layout.projectDirectory.dir("systemextension")
+    val bridgeSourceDir = layout.projectDirectory.dir("nativebridge")
+    val appImageDir = layout.buildDirectory.dir("compose/binaries/main-release/app/$desktopPackageName.app")
+    val sysextStageDir = layout.buildDirectory.dir("macos/systemextension")
+    val packageVersion = desktopPackageVersion
+
+    val embedMacosSystemExtension = tasks.register<Exec>("embedMacosSystemExtension") {
+        group = "distribution"
+        description = "Builds, signs and embeds the packet-tunnel system extension into the .app."
+
+        dependsOn("createReleaseDistributable")
+        inputs.dir(sysextSourceDir)
+        inputs.dir(bridgeSourceDir)
+        outputs.dir(sysextStageDir)
+
+        commandLine(
+            "bash",
+            "-c",
+            """
+            set -euo pipefail
+
+            app_dir="${'$'}1"
+            sysext_src="${'$'}2"
+            bridge_src="${'$'}3"
+            stage="${'$'}4"
+            version="${'$'}5"
+
+            bundle_id="org.olcbox.app.desktopApp.PacketTunnel"
+            sysext="${'$'}stage/PacketTunnel.systemextension"
+
+            rm -rf "${'$'}stage"
+            mkdir -p "${'$'}sysext/Contents/MacOS"
+
+            # The provider. Linked against NetworkExtension; no cores yet — this
+            # slice only has to prove macOS will load it from inside this app.
+            swiftc -O -target arm64-apple-macos13.0 \
+                -framework NetworkExtension -framework Foundation \
+                -o "${'$'}sysext/Contents/MacOS/PacketTunnel" \
+                "${'$'}sysext_src/PacketTunnelProvider.swift"
+
+            sed -e "s/__MARKETING_VERSION__/${'$'}version/" \
+                -e "s/__BUILD_VERSION__/${'$'}version/" \
+                "${'$'}sysext_src/Info.plist" > "${'$'}sysext/Contents/Info.plist"
+
+            # The bridge, a plain dylib the JVM opens with JNA.
+            mkdir -p "${'$'}stage/lib"
+            swiftc -O -target arm64-apple-macos13.0 -emit-library \
+                -framework SystemExtensions -framework Foundation \
+                -o "${'$'}stage/lib/libolcboxne.dylib" \
+                "${'$'}bridge_src/OlcboxSystemExtension.swift"
+
+            identity="${'$'}{MACOS_SIGN_IDENTITY:-}"
+            if [ -n "${'$'}identity" ]; then
+                # Inner-out, each with its own entitlements.
+                codesign --force --timestamp --options runtime \
+                    --entitlements "${'$'}sysext_src/PacketTunnel.entitlements" \
+                    --sign "${'$'}identity" "${'$'}sysext"
+                codesign --force --timestamp --options runtime \
+                    --sign "${'$'}identity" "${'$'}stage/lib/libolcboxne.dylib"
+            else
+                echo "MACOS_SIGN_IDENTITY unset — embedding unsigned; macOS will refuse to install this extension."
+            fi
+
+            mkdir -p "${'$'}app_dir/Contents/Library/SystemExtensions"
+            rm -rf "${'$'}app_dir/Contents/Library/SystemExtensions/PacketTunnel.systemextension"
+            cp -R "${'$'}sysext" "${'$'}app_dir/Contents/Library/SystemExtensions/"
+            cp "${'$'}stage/lib/libolcboxne.dylib" "${'$'}app_dir/Contents/MacOS/"
+
+            if [ -n "${'$'}identity" ]; then
+                codesign --force --timestamp --options runtime \
+                    --entitlements "${'$'}{PWD}/macos-entitlements.plist" \
+                    --sign "${'$'}identity" "${'$'}app_dir"
+                codesign --verify --deep --strict --verbose=2 "${'$'}app_dir"
+            fi
+            """.trimIndent(),
+            "bash",
+            appImageDir.get().asFile.absolutePath,
+            sysextSourceDir.asFile.absolutePath,
+            bridgeSourceDir.asFile.absolutePath,
+            sysextStageDir.get().asFile.absolutePath,
+            packageVersion
+        )
+    }
+
+    // The DMG must contain the app *after* the extension went in, not before.
+    tasks.matching { it.name == "packageReleaseDmg" }.configureEach {
+        dependsOn(embedMacosSystemExtension)
+    }
+}
