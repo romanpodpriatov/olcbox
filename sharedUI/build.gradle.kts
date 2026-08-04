@@ -105,15 +105,30 @@ abstract class GenerateAppInfoTask : DefaultTask() {
         // refuses too. Debug builds stay permissive — a simulator run needs
         // neither.
         if (shippingBuild.get()) {
-            val missing = buildList {
-                if (cryptKeyV1.get().isBlank()) add("olcbox.cryptKeyV1 (crypt1 links will not import)")
-                if (adminPassSha256.get().isBlank()) add("olcbox.adminPassSha256 (no admin gate: the 7-tap unlock does nothing)")
+            // Only the crypt key stops a release. Without it, a crypt1 link
+            // reports "No valid ProofKit config found" — a feature that looks
+            // broken rather than absent, and nothing in the app says why.
+            require(cryptKeyV1.get().isNotBlank()) {
+                "Release build is missing olcbox.cryptKeyV1 — crypt1 links would not " +
+                    "import, and the app would give no reason. Put it in " +
+                    "local.properties (gitignored) or export OLCBOX_CRYPT_KEY_V1."
             }
-            require(missing.isEmpty()) {
-                "Release build is missing: ${missing.joinToString("; ")}. " +
-                    "Put them in local.properties (gitignored) or export " +
-                    "OLCBOX_CRYPT_KEY_V1 / OLCBOX_ADMIN_PASS_SHA256 — the same values " +
-                    "release.yml requires."
+
+            // The admin hash is a warning, not a failure.
+            //
+            // It reads like the more dangerous omission and is the opposite:
+            // `plumbingVisible` is `gate.enabled && unlocked`, so a build with no
+            // hash hides the per-location editor and "create custom location"
+            // permanently rather than until seven taps. What an ungated build
+            // actually exposes is the SOCKS5 proxy row. Refusing to build over
+            // that stopped a release for a configuration that is stricter than
+            // the one it was insisting on.
+            if (adminPassSha256.get().isBlank()) {
+                logger.warn(
+                    "olcbox: release build with no admin gate. The 7-tap unlock does " +
+                        "nothing; the per-location configurator stays hidden, and the " +
+                        "SOCKS5 proxy row is visible. Set olcbox.adminPassSha256 to gate it."
+                )
             }
         }
         val packageDir = outputDir.get().asFile.resolve("org/olcbox/app")
