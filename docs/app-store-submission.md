@@ -115,3 +115,48 @@ gate. Debug builds are unaffected.
 - **`rememberModalBottomSheetState` is deprecated and suppressed** at four call
   sites. Its replacement is itself alpha in the pinned material3; migrate all
   four together, deliberately, not during a release.
+
+## The 3.1.1 rejection, and the reply
+
+Second rejection, 2026-08-03, submission `06686da6`, reviewed on an iPad Air:
+**Guideline 3.1.1 — the app "accesses digital content purchased outside the app…
+but that content isn't available to purchase using In-App Purchase."**
+
+What they tapped was "Get a subscription — Open ProofKit to create one", in the
+add-configuration sheet and on the setup screen, which on iOS opened
+proofkit.org. However it is worded, that is a call to action for a purchase
+outside IAP. It is gone from the iOS build (`showGetSubscription = false`); the
+other platforms keep it, because this is Apple's rule and not a change of
+product.
+
+The alternatives were weighed: In-App Purchase would put Apple between us and
+per-gigabyte billing denominated in TON, and the US external-link entitlement
+buys one storefront while every other still requires IAP. Both are decisions
+about the business; removing a button is not.
+
+**Reply to send in App Store Connect.** Every line was checked against the
+source — `siteUrl` had exactly one use on iOS and this was it, and the app has no
+account, balance, prices or wallet anywhere:
+
+> The app does not sell anything and contains no button, link, or other call to
+> action for any purchase. The control you identified — "Get a subscription",
+> which opened our website — has been removed and is not present in this build.
+>
+> ProofKit is a VPN client. It connects using configuration the user already
+> has: a subscription URL, a QR code, or a pasted server link, imported the same
+> way as in other VPN client apps. The app contains no account, no sign-in, no
+> balance, no prices, and no wallet, and it unlocks no functionality upon any
+> purchase — every feature is available to anyone who supplies a server
+> configuration, including servers we do not operate.
+>
+> We are not requesting an exception under 3.1.3(b); we are removing the purchase
+> pointer entirely.
+
+Deliberately not argued: whether access to our service is "paid digital content"
+at all. It might be arguable and it costs a review round, which usually ends in
+"then add IAP". Removing the pointer costs nothing.
+
+The build to send is `1.0.0 (2)` — the version numbers are already bumped in the
+project, so the archive carries it without anyone editing Xcode. It also carries
+`VpnDisclosureScreen`, which Guideline 5.4 asks for and which the submitted
+`1.0.0 (1)` did not have.
