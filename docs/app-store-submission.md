@@ -46,9 +46,15 @@ person to attempt a submission does not rediscover the same six things.
 
 ## Before the first upload
 
-1. Build with the admin hash set, and verify on a device that seven taps on the
-   title are needed before the configurator appears. An ungated build is not a
-   build to ship.
+1. Build with the admin hash set if you want the gate, and verify on a device
+   that seven taps on the title are needed before the configurator appears.
+   Revised 2026-08-04: an ungated build is no longer refused. It reads like the
+   more dangerous option and is the opposite — `plumbingVisible` requires the
+   gate to exist *and* be open, so no hash means the per-location editor and
+   "create custom location" are hidden permanently. What an ungated build shows
+   that a gated one hides is the SOCKS5 proxy row. The build still refuses
+   without `olcbox.cryptKeyV1`, because that one breaks crypt1 link import while
+   looking like a bug.
 2. Confirm `PrivacyInfo.xcprivacy` is in the app target's Copy Bundle Resources.
 3. Bump `CFBundleVersion` for every upload; App Store Connect rejects a repeat.
 4. TestFlight first. The tunnel behaves differently under a store-signed
