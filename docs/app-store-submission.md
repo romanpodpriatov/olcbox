@@ -156,7 +156,7 @@ Deliberately not argued: whether access to our service is "paid digital content"
 at all. It might be arguable and it costs a review round, which usually ends in
 "then add IAP". Removing the pointer costs nothing.
 
-The build to send is `1.0.0 (2)` — the version numbers are already bumped in the
+The build to send is `1.0.0 (3)` — the version numbers are already bumped in the
 project, so the archive carries it without anyone editing Xcode. It also carries
 `VpnDisclosureScreen`, which Guideline 5.4 asks for and which the submitted
 `1.0.0 (1)` did not have.
