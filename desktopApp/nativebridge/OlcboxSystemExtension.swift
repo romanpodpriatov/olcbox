@@ -22,7 +22,7 @@ import os
 /// the bundle path — reached a person as "Extension not found in App …". A log
 /// entry cannot be truncated by a layout:
 ///
-///     log show --last 10m --predicate 'subsystem == "org.olcbox.app.desktopApp.ne"' --style compact
+///     log show --last 10m --info --predicate 'subsystem == "org.olcbox.app.desktopApp.ne"' --style compact
 private let log = Logger(subsystem: "org.olcbox.app.desktopApp.ne", category: "bridge")
 
 /// Mirrored in the Kotlin side; see MacOsSystemExtension.Status.
