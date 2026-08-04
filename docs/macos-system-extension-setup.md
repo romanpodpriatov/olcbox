@@ -83,3 +83,105 @@ The app shows Apple's error verbatim rather than a summary of it, because
 `OSSystemExtensionError` is the only thing that distinguishes "not in
 /Applications" from "wrong signature" from "the user declined", and all three read
 the same once paraphrased.
+
+---
+
+# Where this stands, 2026-08-04
+
+The extension is built, signed, notarised, embedded and installed on a Mac, and
+macOS refuses to activate it. Everything checkable has been checked; the block is
+not yet understood. This section exists so the next attempt starts here instead
+of at the beginning.
+
+## The symptom
+
+App side, from the app's own log
+(`log show --last 10m --info --predicate 'subsystem == "org.olcbox.app.desktopApp.ne"'`
+— **`--info` is required**, without it the output is empty):
+
+    requesting org.olcbox.app.desktopApp.PacketTunnel from /Applications/ProofKit.app;
+      SystemExtensions contains PacketTunnel.systemextension
+    status 4: OSSystemExtensionErrorDomain code 4: Extension not found in App bundle.
+      Unable to find any matched extension with identifier:
+      org.olcbox.app.desktopApp.PacketTunnel [bundle: /Applications/ProofKit.app]
+
+System side (`log show --last 5m --info --predicate 'process == "sysextd"'`):
+
+    client activation request for org.olcbox.app.desktopApp.PacketTunnel
+    attempting to realize extension with identifier org.olcbox.app.desktopApp.PacketTunnel
+    ...SecKeyVerifySignature / SecTrustEvaluateIfNecessary...   <- no complaint
+    no policy, cannot allow apps outside /Applications
+
+So sysextd receives the request, finds the extension by identifier, checks the
+signature without objecting, and then refuses on what it calls a location policy.
+The client turns that into "extension not found", which is what sent four rounds
+of investigation at the bundle.
+
+## Checked and excluded
+
+Every one of these was verified on the machine, not assumed:
+
+| | |
+|---|---|
+| app runs from `/Applications/ProofKit.app` | `ps`, and the app's own `Bundle.main.bundlePath` |
+| LaunchServices agrees | `lsappinfo list` → `bundle path="/Applications/ProofKit.app"` |
+| no stray copies winning the lookup | eight mounted `Olcbox*` DMG volumes were detached; no change |
+| LaunchServices registration is fresh | `lsregister -f` re-run after each install |
+| app carries the install entitlement | `codesign -d --entitlements -` → `system-extension.install = true` |
+| app's profile authorises it | `ProvisionsAllDevices = true`, Developer ID, entitlement present |
+| extension identifier matches the request | Info.plist and `codesign -d` both `…desktopApp.PacketTunnel` |
+| extension is a child of the app's identifier | `org.olcbox.app.desktopApp` + `.PacketTunnel` |
+| extension declares itself properly | `CFBundlePackageType = SYSX`, `NetworkExtension` dict, `CFBundleSupportedPlatforms` |
+| extension binary registers a provider | build asserts the `startSystemExtensionMode` selector is in the binary |
+| extension signed and authorised | Developer ID, hardened runtime, own profile with `packet-tunnel-provider-systemextension` |
+| DMG notarised and stapled | `spctl -a` → accepted, Notarized Developer ID |
+| not a quarantine problem | flags `01c3` (assessed), and the DMG carried no quarantine at all |
+| not a stale sysextd/LS cache | survives detach + re-register + reinstall |
+
+`systemextensionsctl developer on` could not be used: it refuses while SIP is
+enabled, and SIP stays enabled.
+
+## The one remaining structural difference
+
+The host is a **JVM app produced by jpackage** — `lsappinfo` reports
+`creator="java"` and a coalition of two processes. Every working system extension
+this was modelled on lives inside a native app.
+
+**The experiment that decides it**, and the thing to do first next time: build a
+minimal *native* macOS app bundle with swiftc (no window needed — an entry point
+and an Info.plist), sign it with the same Developer ID and the same app profile,
+embed the *same* extension, put it in `/Applications`, and request activation
+from there.
+
+- It works → the JVM host is the problem, and the answer is a small native host
+  bundle that owns the extension and talks to the Compose app.
+- Same code 4 → the extension is the problem, and the next step is a reference
+  extension built by Xcode, compared bundle to bundle.
+
+Either way the answer is one build away, which is not where four rounds of
+reasoning got us.
+
+## Traps already paid for
+
+Each of these was a real defect, fixed, and **none of them was the cause** — they
+are listed so nobody pays twice:
+
+- **A restricted entitlement with no profile** kills the app at launch. AMFI
+  sends SIGKILL, macOS says only "cannot be opened", and codesign, the build and
+  notarisation all pass. `Killed: 9` from a terminal is the tell.
+- **Notarisation was gated on publishing.** A system extension will not install
+  from an app that is not notarised, so every macOS build notarises now.
+- **The bridge library was loaded by name.** `jna.library.path` points at
+  `user.dir/native`, which does not exist inside a packaged `.app`; it is a
+  generated native resource now, extracted at runtime like the olcRTC library.
+- **The extension binary had no entry point.** A NetworkExtension system
+  extension must call `NEProvider.startSystemExtensionMode()`; swiftc happily
+  produced a binary whose `main` returned immediately, and macOS reported the
+  extension as missing.
+- **`nm -u` cannot see an Objective-C selector.** The check written to catch the
+  above looked in the undefined-symbol table and would have failed every binary;
+  it reads the ObjC metadata now.
+- **`log show` hides `info` level** unless `--info` is passed. An empty table
+  looks exactly like a bridge that never ran.
+- **`strings | grep -q` under `set -o pipefail`** reports "missing" for something
+  present, because the reader closing first is a SIGPIPE for the writer.
