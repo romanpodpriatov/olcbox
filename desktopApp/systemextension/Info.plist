@@ -45,6 +45,17 @@
     <string>__BUILD_VERSION__</string>
     <key>LSMinimumSystemVersion</key>
     <string>13.0</string>
+    <!--
+      Xcode emits this for every bundle it builds and a hand-assembled one has to
+      say it too. A bundle that does not declare the platform it is for is a
+      bundle a scanner may decline to consider — which is indistinguishable, from
+      the outside, from a bundle that is not there: OSSystemExtensionError code 4,
+      "extension not found", about a directory you can list.
+    -->
+    <key>CFBundleSupportedPlatforms</key>
+    <array>
+        <string>MacOSX</string>
+    </array>
     <key>NetworkExtension</key>
     <dict>
         <key>NEMachServiceName</key>
