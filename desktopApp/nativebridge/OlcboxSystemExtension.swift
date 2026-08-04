@@ -132,9 +132,11 @@ public func olcbox_ne_activate(_ identifier: UnsafePointer<CChar>) -> Int32 {
     let sysextDir = Bundle.main.bundleURL
         .appendingPathComponent("Contents/Library/SystemExtensions")
     let found = (try? FileManager.default.contentsOfDirectory(atPath: sysextDir.path)) ?? []
+    // One literal, not two joined with `+`: Logger takes an OSLogMessage rather
+    // than a String, and two of those cannot be concatenated at all.
+    let contents = found.joined(separator: ", ")
     log.info(
-        "requesting \(bundleId, privacy: .public) from \(Bundle.main.bundlePath, privacy: .public); "
-            + "SystemExtensions contains \(found.joined(separator: ", "), privacy: .public)"
+        "requesting \(bundleId, privacy: .public) from \(Bundle.main.bundlePath, privacy: .public); SystemExtensions contains \(contents, privacy: .public)"
     )
 
     ActivationDelegate.shared.set(.requested, "submitted")
