@@ -13,6 +13,17 @@
 // cost far more than a status integer read once a second.
 import Foundation
 import SystemExtensions
+import os
+
+/// Everything this bridge learns also goes to the unified log.
+///
+/// The settings row is one line and elides what does not fit, which is how an
+/// error carrying the bundle path — added precisely to settle an argument about
+/// the bundle path — reached a person as "Extension not found in App …". A log
+/// entry cannot be truncated by a layout:
+///
+///     log show --last 10m --predicate 'subsystem == "org.olcbox.app.desktopApp.ne"' --style compact
+private let log = Logger(subsystem: "org.olcbox.app.desktopApp.ne", category: "bridge")
 
 /// Mirrored in the Kotlin side; see MacOsSystemExtension.Status.
 @objc private enum BridgeStatus: Int32 {
@@ -34,9 +45,12 @@ private final class ActivationDelegate: NSObject, OSSystemExtensionRequestDelega
 
     func set(_ status: BridgeStatus, _ message: String) {
         lock.lock()
-        defer { lock.unlock() }
         self.status = status
         self.message = message
+        lock.unlock()
+        // Outside the lock: os_log takes its own, and holding two in a fixed
+        // order is a habit worth keeping even where nothing else contends.
+        log.info("status \(status.rawValue, privacy: .public): \(message, privacy: .public)")
     }
 
     func read() -> (BridgeStatus, String) {
@@ -111,6 +125,18 @@ public func olcbox_ne_activate(_ identifier: UnsafePointer<CChar>) -> Int32 {
     }
 
     let bundleId = String(cString: identifier)
+
+    // What we can see from in here, said out loud before asking the system.
+    // macOS answers "extension not found" without saying where it looked, so the
+    // one useful thing this process can add is what *is* on disk beside it.
+    let sysextDir = Bundle.main.bundleURL
+        .appendingPathComponent("Contents/Library/SystemExtensions")
+    let found = (try? FileManager.default.contentsOfDirectory(atPath: sysextDir.path)) ?? []
+    log.info(
+        "requesting \(bundleId, privacy: .public) from \(Bundle.main.bundlePath, privacy: .public); "
+            + "SystemExtensions contains \(found.joined(separator: ", "), privacy: .public)"
+    )
+
     ActivationDelegate.shared.set(.requested, "submitted")
     let request = OSSystemExtensionRequest.activationRequest(
         forExtensionWithIdentifier: bundleId,

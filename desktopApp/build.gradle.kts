@@ -580,6 +580,17 @@ compose.desktop {
                 iconFile.set(project.file("appIcons/MacosIcon.icns"))
                 bundleID = "org.olcbox.app.desktopApp"
 
+                // What macOS shows the person it is asking to approve the tunnel
+                // extension. jpackage writes none of this, and an app asking to
+                // install a system extension without saying what for is a gap we
+                // control and Apple does not fill in.
+                infoPlist {
+                    extraKeysRawXml = """
+                        <key>NSSystemExtensionUsageDescription</key>
+                        <string>ProofKit installs a network extension so it can carry your traffic through an encrypted tunnel. Without it the app can only configure a local proxy.</string>
+                    """.trimIndent()
+                }
+
                 // Signed only when CI has the Developer ID identity in its
                 // keychain; a developer without it still gets a build, exactly
                 // like the Windows job behaves without its certificate.
