@@ -152,6 +152,23 @@ fun main(args: Array<String>) = application {
     )
 
     val dependencies = remember { DesktopAppDependencies() }
+
+    // Cmd+Q reaches none of the handlers below.
+    //
+    // Closing the window only hides it while a tray exists, the tray's own Quit
+    // item calls close(), and onDispose covers an orderly teardown — but the
+    // standard macOS quit terminates the JVM without visiting any of them. The
+    // cores die with the process and the tunnel daemon, by design, does not, so
+    // what is left is a tun with nothing behind it and a Mac with no internet.
+    //
+    // A shutdown hook is the one place every exit passes through, SIGTERM and
+    // logout included. It cannot help against SIGKILL — that is what the
+    // daemon's own watchdog is for.
+    DisposableEffect(dependencies) {
+        val hook = Thread({ runCatching { dependencies.close() } }, "olcbox-shutdown")
+        Runtime.getRuntime().addShutdownHook(hook)
+        onDispose { runCatching { Runtime.getRuntime().removeShutdownHook(hook) } }
+    }
     var currentScreen by remember { mutableStateOf<AppScreen>(AppScreen.Home) }
     var showDesktopSettings by remember { mutableStateOf(false) }
     var isWindowVisible by remember { mutableStateOf(true) }
