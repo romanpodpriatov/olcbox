@@ -42,4 +42,23 @@ class SingBoxConfigDumpTest {
         dump("olcrtc-socks", SingBoxConfig.buildOlcrtcSocks(olcrtcPort = 10808))
         assertTrue(File(outDir, "olcrtc-socks.json").exists())
     }
+
+    /**
+     * The shape the macOS root daemon runs. Everything unique to it — the route
+     * exclusion, the direct-DNS rule, the second inbound — is schema the other
+     * dumps never exercise, and all of it is 1.12+ syntax.
+     */
+    @Test fun dumpDesktopTun() {
+        dump(
+            "desktop-tun",
+            SingBoxConfig.buildDesktopTun(
+                corePort = 10810,
+                verifyPort = 10811,
+                excludeAddresses = listOf("203.0.113.7/32"),
+                directDnsDomains = listOf("de1.example.org"),
+                upstreamUdpIsLossy = true
+            )
+        )
+        assertTrue(File(outDir, "desktop-tun.json").exists())
+    }
 }

@@ -5,6 +5,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
+import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
@@ -225,5 +226,61 @@ class SingBoxConfigTest {
 
         assertNull(tls["reality"])
         assertEquals("tls.example.org", tls["server_name"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun desktopTunExcludesTheServerSoTheCoreDoesNotRouteThroughItself() {
+        val json = SingBoxConfig.buildDesktopTun(
+            corePort = 10810,
+            verifyPort = 10811,
+            excludeAddresses = listOf("203.0.113.7/32", "2001:db8::1/128")
+        )
+        assertContains(json, "\"route_exclude_address\"")
+        assertContains(json, "203.0.113.7/32")
+        assertContains(json, "2001:db8::1/128")
+    }
+
+    @Test
+    fun desktopTunSendsTheServerDomainToTheSystemResolverDirect() {
+        // The core redials while the tun is up. Its DNS query for the server's
+        // own hostname enters the tun like everything else, and answering it
+        // through the tunnel needs the tunnel that is being redialled.
+        val json = SingBoxConfig.buildDesktopTun(
+            corePort = 10810,
+            verifyPort = 10811,
+            directDnsDomains = listOf("de1.example.org")
+        )
+        assertContains(json, "\"type\":\"local\"")
+        assertContains(json, "\"tag\":\"dns-direct\"")
+        assertContains(json, "de1.example.org")
+    }
+
+    @Test
+    fun desktopTunOffersALocalSocksSoTheVerifierProvesTheWholeChain() {
+        val json = SingBoxConfig.buildDesktopTun(corePort = 10810, verifyPort = 10811)
+        assertContains(json, "\"tag\":\"verify-in\"")
+        assertContains(json, "\"listen_port\":10811")
+        assertContains(json, "\"listen\":\"127.0.0.1\"")
+    }
+
+    @Test
+    fun desktopTunCarriesSocksCredentialsOnlyWhenTheCoreAskedForThem() {
+        val bare = SingBoxConfig.buildDesktopTun(corePort = 10810, verifyPort = 10811)
+        assertTrue("\"username\"" !in bare)
+
+        val authed = SingBoxConfig.buildDesktopTun(
+            corePort = 10810, verifyPort = 10811, username = "u", password = "p"
+        )
+        assertContains(authed, "\"username\":\"u\"")
+        assertContains(authed, "\"password\":\"p\"")
+    }
+
+    @Test
+    fun desktopTunMtuIsNotTheIosOne() {
+        // iOS rejects 9000 outright; a utun on macOS is no place to find out.
+        assertContains(
+            SingBoxConfig.buildDesktopTun(corePort = 10810, verifyPort = 10811),
+            "\"mtu\":1500"
+        )
     }
 }
