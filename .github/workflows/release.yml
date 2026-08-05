@@ -500,7 +500,6 @@ jobs:
         id: notarise
         working-directory: olcbox
         env:
-          PUBLISH: ${{ needs.plan.outputs.publish }}
           MACOS_NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
           MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
           MACOS_NOTARY_KEY_BASE64: ${{ secrets.MACOS_NOTARY_KEY_BASE64 }}
@@ -509,15 +508,20 @@ jobs:
           set -euo pipefail
           dmg="dist/ProofKit-${OLCBOX_VERSION}-macos-${ARCH}.dmg"
 
-          if [ "${PUBLISH:-false}" != "true" ]; then
-            # Apple notarises a specific binary, so every build would be its own
-            # submission — and their queue has run to forty minutes. A build you
-            # open yourself only needs the signature; right-click → Open once and
-            # it runs. Only what reaches users is worth the wait.
-            echo "Not a published build; signed but not notarised."
-            exit 0
-          fi
-
+          # Every macOS build is notarised, published or not.
+          #
+          # It used to be published builds only, and that was the right trade
+          # while a test build's worst case was one right-click → Open. It stopped
+          # being right when the app grew a root daemon: the user is now asked to
+          # authorise a background item that runs as root, and asking that of an
+          # app macOS has just called unverified is a bad way to earn it. Whether
+          # SMAppService outright refuses to register from an un-notarised bundle
+          # is not documented either way — and finding out costs a session on a
+          # real Mac, which is more expensive than the queue.
+          #
+          # The queue itself is not paid for on a 10x runner: this step submits
+          # and leaves, a 1x runner polls for the verdict, and this machine comes
+          # back only for the seconds stapling takes.
           if [ -z "${MACOS_NOTARY_KEY_BASE64:-}" ]; then
             echo "No notary credentials; publishing a signed-but-not-notarised DMG."
             exit 0
@@ -1131,7 +1135,10 @@ jobs:
   notarise-wait:
     name: Wait for Apple (1x runner)
     needs: [plan, build-macos]
-    if: needs.plan.outputs.macos_any == 'true' && needs.plan.outputs.publish == 'true'
+    # Not gated on publishing any more — see the submit step for why. This job is
+    # a 1x runner sleeping, so running it for test builds too costs almost
+    # nothing; the expensive machine was released before it started.
+    if: needs.plan.outputs.macos_any == 'true'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -1159,7 +1166,7 @@ jobs:
   staple-macos:
     name: Staple the ticket
     needs: [plan, release_version, notarise-wait]
-    if: needs.plan.outputs.macos_any == 'true' && needs.plan.outputs.publish == 'true'
+    if: needs.plan.outputs.macos_any == 'true'
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(needs.plan.outputs.macos_matrix) }}

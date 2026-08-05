@@ -52,6 +52,11 @@ Deleting ProofKit.app removes the daemon with it: the launchd plist points into
 the bundle (`BundleProgram`), so there is nothing left in `/Library` to clean up
 afterwards.
 
+Every macOS build is notarised now, test builds included. Whether `SMAppService`
+refuses to register from an un-notarised bundle is not documented either way, and
+asking someone to authorise a root background item inside an app macOS has just
+called unverified is a bad way to earn that authorisation.
+
 ## Where things live
 
 | | |
