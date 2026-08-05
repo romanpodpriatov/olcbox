@@ -83,6 +83,41 @@ That last command is the whole point of this work. `curl` never reads the system
 proxy settings the old mode set, so an exit IP there is the system-wide tunnel and
 could not have been produced by the mode it replaces.
 
+## What has been verified on a real Mac
+
+2026-08-05, Apple Silicon, a direct hysteria2 link to a Japanese origin — so the
+native shape of the config (`upstreamUdpIsLossy = false`: no DNS hijack, DNS
+riding the tun as UDP), which is the one `desktop-tun-native.json` schema-checks
+in CI.
+
+- **The tunnel carries traffic.** `curl https://api.ipify.org` from a plain
+  shell, with no proxy set anywhere, went from the machine's own address to the
+  origin's egress. That command is the point of this work: it never read the
+  system proxy settings the old mode wrote, so it could not have produced this
+  answer before.
+- **The server exclusion is installed, and the routing table says so directly.**
+  `auto_route` did not lay down `0.0.0.0/1 + 128.0.0.0/1`; it laid down
+  `1`, `2/7`, `4/6`, `8/5`, `16/4`, `32/3`, `64/9`, `64.128/11`, `64.160/12`,
+  `64.176/19`, `64.176.32/20`, … — the complement of the whole address space
+  minus one address, splitting exactly around the origin's /32. That shape is
+  what `route_exclude_address` produces and nothing else does.
+- **A QUIC transport survives it.** hysteria2 is UDP, and its socket to the
+  origin kept working after `auto_route` took the default route — so the
+  exclusion holds for more than a TCP connection that happened to be established
+  before the tun came up.
+- **`SMAppService` registers from a signed-but-un-notarised build.** That
+  question was open when this was written; the first successful run answered it.
+  Notarisation stays on for Gatekeeper's sake, but it is not load-bearing here.
+- **It coexists with another VPN**, and loses to it only where the other one is
+  more specific. On the test machine another tunnel held a host route for
+  `1.1.1.1`, which beats our `1.0.0.0/8` by longest-prefix match — so the
+  system's DNS went there. Worth knowing before it reads as a leak in this app:
+  it is the other tunnel's route, on a machine with two.
+
+Not yet exercised on hardware: stopping from the UI and its route cleanup,
+`kill -9` of the app mid-tunnel (the fail-closed claim below), and the
+adopt-and-stop path on the next launch.
+
 ## Who is allowed to command it
 
 The socket is reachable by any local process and root is behind it, so the daemon
