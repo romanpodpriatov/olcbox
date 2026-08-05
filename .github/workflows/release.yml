@@ -490,6 +490,20 @@ jobs:
           export OLCRTC_REPO="${{ github.workspace }}/olcrtc"
           ./gradlew -Polcbox.version="${OLCBOX_VERSION}" :desktopApp:packageReleaseDmg --stacktrace
 
+      # Compose runs codesign itself and, on failure, prints the command and the
+      # *path* to the error — never the error. A build once failed here with
+      # nothing to go on but "Exit code: 1" and a filename on a runner that no
+      # longer exists. Whatever codesign actually said is worth the four lines.
+      - name: Why codesign failed
+        if: failure()
+        working-directory: olcbox
+        run: |
+          for log in desktopApp/build/compose/logs/**/*.txt desktopApp/build/compose/logs/*/*; do
+            [ -f "$log" ] || continue
+            echo "=== $log"
+            tail -40 "$log"
+          done
+
       - name: Prepare asset
         working-directory: olcbox
         run: |
