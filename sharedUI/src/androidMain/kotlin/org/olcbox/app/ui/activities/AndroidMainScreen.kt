@@ -382,6 +382,12 @@ fun AndroidMainScreen(
                 Toast.makeText(context, "No browser available", Toast.LENGTH_SHORT).show()
             }
         },
+        // The call to action to go and buy a subscription is gone from every
+        // platform, not only the one that was made to remove it. It went first on
+        // iOS because App Review 3.1.1 required it there; leaving it standing on
+        // Android and desktop meant the same app asked for money in two places
+        // and not in a third, which is a difference nobody chose.
+        showGetSubscription = false,
         showSplitTunnelingButton = false,
         canScanQr = true,
         onAppSettingsClick = {

@@ -72,12 +72,20 @@ called unverified is a bad way to earn that authorisation.
 ```bash
 sudo launchctl print system/org.olcbox.app.desktopApp.tunneld | head -20
 log show --last 10m --info --predicate 'process == "ProofKitTunnelDaemon"'
-sudo nc -U /var/run/org.olcbox.app.tunneld.sock <<< '{"verb":"status"}'
 
-ifconfig | grep -A3 utun        # a utun holding 172.19.0.1
-netstat -rn | head -20          # default via that utun, the server IP via the LAN gateway
-curl -s https://api.ipify.org   # from a plain shell that knows nothing about a proxy
+ifconfig | grep -A3 utun            # a utun holding 172.19.0.1
+netstat -rn | head -20              # default via that utun, the server IP via the LAN gateway
+netstat -rn -f inet6 | head -20     # and the IPv6 half, via fdfe:dcba:9876::1
+curl -4 -s https://api.ipify.org    # from a plain shell that knows nothing about a proxy
+curl -6 -s https://ifconfig.co      # expected: nothing at all — IPv6 is refused, see below
 ```
+
+**The socket does not answer `nc`, and that is the design working.** `nc -U … <<<
+'{"verb":"status"}'` returns `{"error":"unauthorized"}` even under `sudo`,
+because the daemon authenticates the *code signature* of its peer, not its uid.
+Being root buys nothing here; being the signed app is the only thing that does.
+An earlier version of this document suggested that command, which was wrong.
+The status a person can actually read is the one in the app's own log.
 
 That last command is the whole point of this work. `curl` never reads the system
 proxy settings the old mode set, so an exit IP there is the system-wide tunnel and
@@ -176,6 +184,12 @@ it would hang instead — the same outcome, bought with a timeout.
 The Linux and Windows tun controllers have the same IPv4-only shape and so the
 same leak. Not fixed here — this branch is macOS — but recorded so it is not
 rediscovered as a macOS quirk.
+
+Verified on the Mac: `netstat -rn -f inet6` shows `100::/8`, `200::/7`, `400::/6`,
+`800::/5` … via `fdfe:dcba:9876::1` — the same complement form the IPv4 half
+takes — and `curl -6 https://ifconfig.co` returns nothing at all. Before the fix
+the browser reported the machine's real mobile IPv6 address and it did not change
+no matter which exit was chosen.
 
 ## Known limits, stated plainly
 
