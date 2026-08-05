@@ -348,6 +348,43 @@ class DesktopProxyModeTest {
     }
 
     @Test
+    fun linuxTunScriptsBlackholeIpv6SoItCannotGoRoundTheTunnel() {
+        // Found on macOS and identical here: claiming IPv4 alone leaves the IPv6
+        // default route on the physical interface, and a browser — which prefers
+        // IPv6 — reaches every dual-stack site at the machine's real address while
+        // the tunnel looks perfectly connected.
+        //
+        // A blackhole rather than a relay: whether the far end has working IPv6 is
+        // a property of the operator's node, and an unreachable answer arrives at
+        // once where a forwarded one would hang. Root still goes direct, exactly
+        // as it does for IPv4, or the core could not reach a v6 server at all.
+        val up = LinuxTunController.upScriptContent()
+        val down = LinuxTunController.downScriptContent()
+
+        assertContains(up, "ip -6 rule add uidrange 0-0 lookup main pref 10")
+        assertContains(up, "ip -6 route add blackhole default table 51820")
+        assertContains(up, "ip -6 rule add lookup 51820 pref 20")
+        assertContains(down, "ip -6 rule del uidrange 0-0 lookup main pref 10")
+        assertContains(down, "ip -6 rule del lookup 51820 pref 20")
+        assertContains(down, "ip -6 route flush table 51820")
+    }
+
+    @Test
+    fun windowsTunRoutesClaimIpv6AsWellAsIpv4() {
+        // Same leak, same shape: without an IPv6 address on the adapter, Windows
+        // keeps its IPv6 default on the physical NIC. `::/1` and `8000::/1` beat
+        // `::/0` by longest prefix, the way the IPv4 halves already do.
+        val install = WindowsTunController.installRoutesScript()
+        val remove = WindowsTunController.removeRoutesScript()
+
+        assertContains(install, "-AddressFamily IPv6")
+        assertContains(install, "'::/1'")
+        assertContains(install, "'8000::/1'")
+        assertContains(remove, "'::/1'")
+        assertContains(remove, "'8000::/1'")
+    }
+
+    @Test
     fun linuxDnsResolverUsesActiveUpstreamInsteadOfSystemdStub() {
         val dns = DesktopDnsResolver.selectLinuxDnsServer(
             resolvectlOutput = "Link 3 (wlan0): 192.168.43.1 2a00:1234::53",

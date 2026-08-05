@@ -245,6 +245,30 @@ internal class LinuxTunController(
             }.trimEnd()
         }
 
+        /**
+         * IPv6 is claimed and blackholed, not carried.
+         *
+         * Claimed because installing IPv4 rules alone leaves the machine's IPv6
+         * default route on the physical interface, and a browser — which prefers
+         * IPv6 — then reaches every dual-stack site outside the tunnel at the
+         * real address, while the tunnel looks perfectly connected and a check
+         * against an IPv4-only service keeps reporting the exit. That is not a
+         * theory: it is what macOS did until it was fixed, on the same shape.
+         *
+         * Blackholed rather than relayed because whether the far end has working
+         * IPv6 is a property of each operator's node, not of this script. A
+         * blackhole answers "unreachable" at once and the caller falls back to
+         * IPv4 in milliseconds; relaying into a node without IPv6 would hang for
+         * a timeout and arrive at the same place.
+         *
+         * Root keeps its direct path for IPv6 as it does for IPv4 — the core runs
+         * as root here, and without that rule it could not reach a server that
+         * only answers over IPv6.
+         *
+         * Every `ip -6` line tolerates failure: a kernel built without IPv6 has
+         * no such tables, and refusing to bring the tunnel up over that would
+         * trade a leak nobody has for a tunnel nobody gets.
+         */
         fun upScriptContent(
             rpFilterStatePath: String = "/tmp/olcbox-rp-filter.state"
         ): String {
@@ -268,6 +292,12 @@ internal class LinuxTunController(
                 ip rule add uidrange 0-0 lookup main pref $ROOT_BYPASS_RULE_PREF
                 ip route add default dev $TUN_NAME table $ROUTE_TABLE
                 ip rule add lookup $ROUTE_TABLE pref $TUN_RULE_PREF
+                ip -6 rule del uidrange 0-0 lookup main pref $ROOT_BYPASS_RULE_PREF 2>/dev/null || true
+                ip -6 rule del lookup $ROUTE_TABLE pref $TUN_RULE_PREF 2>/dev/null || true
+                ip -6 route flush table $ROUTE_TABLE 2>/dev/null || true
+                ip -6 rule add uidrange 0-0 lookup main pref $ROOT_BYPASS_RULE_PREF 2>/dev/null || true
+                ip -6 route add blackhole default table $ROUTE_TABLE 2>/dev/null || true
+                ip -6 rule add lookup $ROUTE_TABLE pref $TUN_RULE_PREF 2>/dev/null || true
                 if command -v resolvectl >/dev/null 2>&1; then
                   resolvectl dns $TUN_NAME $MAPDNS_ADDRESS >/dev/null 2>&1 || true
                   resolvectl domain $TUN_NAME '~.' >/dev/null 2>&1 || true
@@ -286,6 +316,9 @@ internal class LinuxTunController(
                 ip rule del uidrange 0-0 lookup main pref $ROOT_BYPASS_RULE_PREF 2>/dev/null || true
                 ip rule del lookup $ROUTE_TABLE pref $TUN_RULE_PREF 2>/dev/null || true
                 ip route flush table $ROUTE_TABLE 2>/dev/null || true
+                ip -6 rule del uidrange 0-0 lookup main pref $ROOT_BYPASS_RULE_PREF 2>/dev/null || true
+                ip -6 rule del lookup $ROUTE_TABLE pref $TUN_RULE_PREF 2>/dev/null || true
+                ip -6 route flush table $ROUTE_TABLE 2>/dev/null || true
                 if command -v resolvectl >/dev/null 2>&1; then
                   resolvectl revert $TUN_NAME >/dev/null 2>&1 || true
                 fi
