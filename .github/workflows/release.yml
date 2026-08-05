@@ -1139,8 +1139,24 @@ jobs:
             fi
           done
 
-          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${OLCBOX_VERSION}" "$app_path/Info.plist"
-          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${OLCBOX_VERSION_CODE}" "$app_path/Info.plist"
+          # Checked, not set. xcodebuild is handed MARKETING_VERSION and
+          # CURRENT_PROJECT_VERSION above, so every target already carries them;
+          # writing them again afterwards only papered over a broken build and,
+          # worse, papered over it *for the app alone* — this used to Set the
+          # app's Info.plist and never touch the extension's, which is how a
+          # 1.0.0 appex could ride inside a 1.0.26x app. That mismatch fails the
+          # install on a device, not the build, so it surfaces late and looks
+          # like anything but a version.
+          for plist in "$app_path/Info.plist" "$app_path"/PlugIns/*.appex/Info.plist; do
+            [ -f "$plist" ] || continue
+            short="$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$plist")"
+            build_number="$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$plist")"
+            echo "$plist: $short ($build_number)"
+            if [ "$short" != "${OLCBOX_VERSION}" ] || [ "$build_number" != "${OLCBOX_VERSION_CODE}" ]; then
+              echo "::error::$plist says $short ($build_number), expected ${OLCBOX_VERSION} (${OLCBOX_VERSION_CODE}). The app and every extension inside it must agree." >&2
+              exit 1
+            fi
+          done
 
           rm -rf build/ios-ipa/package dist
           mkdir -p build/ios-ipa/package/Payload dist
