@@ -344,7 +344,13 @@ fun HomeScreen(
                         sort = subscriptionSettings.sort,
                         collapsible = subscriptionSettings.collapsible,
                         showSettings = admin,
-                        showCustomLocation = admin
+                        // Adding one by hand is the same act as importing a link
+                        // or scanning a QR code, and neither of those is gated.
+                        // Gating only this one made the app refuse in a dialog
+                        // what it accepted from a clipboard, and left the person
+                        // who had just deleted a custom location with no way to
+                        // put it back.
+                        showCustomLocation = true
                     )
 
                     Spacer(modifier = Modifier.height(24.dp))

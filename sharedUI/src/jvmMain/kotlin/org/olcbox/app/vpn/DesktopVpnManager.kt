@@ -88,6 +88,7 @@ class DesktopVpnManager private constructor(
     private var tunLogJob: Job? = null
     private var processWatchJob: Job? = null
     private var tunProcessWatchJob: Job? = null
+    private var macTunWatchJob: Job? = null
     private var process: Process? = null
     private var tunProcess: Process? = null
     private var olcRtcConfigPath: Path? = null
@@ -369,6 +370,10 @@ class DesktopVpnManager private constructor(
                 )
             } else if (!singBoxCore.isRunning() && !xrayCore.isRunning()) {
                 error("core exited before desktop proxy was enabled")
+            }
+
+            if (desktopMode == DesktopMode.MacTun) {
+                startMacTunWatcher(requestGeneration)
             }
 
             // Prove it before claiming it. Every failure in the field so far reported
@@ -712,6 +717,8 @@ class DesktopVpnManager private constructor(
     }
 
     private fun cancelProcessJobs() {
+        macTunWatchJob?.cancel()
+        macTunWatchJob = null
         processWatchJob?.cancel()
         processWatchJob = null
 
@@ -892,6 +899,57 @@ class DesktopVpnManager private constructor(
         }
     }
 
+    /**
+     * Notices when the daemon's sing-box dies.
+     *
+     * Linux and Windows own their tun process and learn of its death from the
+     * OS. Here the tun belongs to a root daemon, this process holds no handle on
+     * it, and without this the app would keep showing a green light over a
+     * tunnel that stopped carrying anything — the machine still routed into a
+     * tun with nothing behind it, which is silent rather than obviously broken.
+     *
+     * Asked rather than pushed, deliberately. A notification would mean a
+     * long-lived connection and the state to manage it inside the one component
+     * that runs as root, and that component is worth keeping as small as it is.
+     * A question every few seconds over a unix socket costs a few bytes and
+     * bounds the delay at one interval.
+     */
+    private fun startMacTunWatcher(requestGeneration: Long) {
+        macTunWatchJob?.cancel()
+        macTunWatchJob = scope.launch {
+            while (isActive) {
+                delay(MAC_TUN_WATCH_INTERVAL_MS)
+                if (requestGeneration != generation || !macTunActive) return@launch
+                if (macOsTunController.isRunning()) continue
+
+                // Asked twice, because "not running" also comes back when the
+                // daemon is busy or the socket blinked, and tearing a working
+                // tunnel down over one unanswered question is worse than
+                // noticing a real death a few seconds later.
+                delay(MAC_TUN_WATCH_INTERVAL_MS)
+                if (requestGeneration != generation || !macTunActive) return@launch
+                if (macOsTunController.isRunning()) continue
+
+                // In a coroutine of its own, exactly as the process watchers do
+                // it: the handler calls stopDesktopMode, stopDesktopMode cancels
+                // this job, and cleanup running inside the job being cancelled
+                // would stop at its first suspension point — with the tunnel
+                // still up and the status still wrong.
+                scope.launch {
+                    mutex.withLock {
+                        if (requestGeneration != generation) return@withLock
+                        handleUnexpectedProcessExit(
+                            logMessage = "the tunnel daemon is no longer running sing-box",
+                            errorMessage = "the system-wide tunnel stopped unexpectedly",
+                            requestGeneration = requestGeneration
+                        )
+                    }
+                }
+                return@launch
+            }
+        }
+    }
+
     private fun startTunExitWatcher(target: Process, requestGeneration: Long) {
         tunProcessWatchJob?.cancel()
         tunProcessWatchJob = scope.launch {
@@ -1052,6 +1110,8 @@ class DesktopVpnManager private constructor(
         const val READY_POLL_INTERVAL_MS = 200L
         const val TCP_CONNECT_TIMEOUT_MS = 250L
         const val PROCESS_STOP_TIMEOUT_MS = 3_000L
+        /** Two of these is the worst-case delay before a dead tunnel is reported. */
+        const val MAC_TUN_WATCH_INTERVAL_MS = 4_000L
         const val PROCESS_KILL_TIMEOUT_MS = 1_000L
         const val DEFAULT_LOCATION_PING_PARALLELISM = 4
 

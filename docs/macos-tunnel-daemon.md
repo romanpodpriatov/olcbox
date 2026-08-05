@@ -224,11 +224,13 @@ use `curl -6` — silence is the correct answer.
   through it — fail closed, no leak.
 - **macOS 13 or newer.** `SMAppService` does not exist below it; those Macs keep
   the SOCKS proxy.
-- **If the daemon's sing-box dies, the app does not notice until the next
-  command.** On Linux and Windows the tun process is a child of this JVM and its
-  exit is watched; here it belongs to the daemon, and nothing pushes that news
-  back. The status stays green over a tunnel that has gone. A notification from
-  the daemon is the fix; polling from the app would only be a slower guess.
+- **A dead tunnel is noticed within about eight seconds, not instantly.** On
+  Linux and Windows the tun process is a child of the JVM and the OS reports its
+  exit. Here it belongs to the daemon, so the app asks every four seconds and
+  asks a second time before believing the answer — a single unanswered question
+  is not worth tearing a working tunnel down for. Asked rather than pushed on
+  purpose: a notification would need a long-lived connection and the state to
+  manage it inside the one component that runs as root.
 - **olcRTC locations have no server host to exclude** — they are addressed by a
   room on someone else's SFU, so there is no endpoint to pin a route to. Their DNS
   still takes the reliable path (`hijack-dns` plus a TCP resolver through the
