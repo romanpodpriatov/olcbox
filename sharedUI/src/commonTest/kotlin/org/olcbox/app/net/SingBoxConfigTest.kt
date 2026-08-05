@@ -317,6 +317,32 @@ class SingBoxConfigTest {
     }
 
     @Test
+    fun desktopTunClaimsIpv6SoItCannotBeReachedAroundTheTunnel() {
+        // The bug this pins: with an IPv4 address alone, auto_route leaves the
+        // IPv6 default route on the physical interface, and a browser — which
+        // prefers IPv6 — reaches every dual-stack site at the machine's real
+        // address while `curl api.ipify.org`, an A record only, keeps reporting
+        // the tunnel. Found on a real Mac, not here.
+        for (lossy in listOf(true, false)) {
+            val json = SingBoxConfig.buildDesktopTun(
+                corePort = 10810, verifyPort = 10811, upstreamUdpIsLossy = lossy
+            )
+            assertContains(json, SingBoxConfig.DESKTOP_TUN_ADDRESS6)
+            assertContains(json, "\"action\":\"reject\",\"ip_version\":6")
+        }
+    }
+
+    @Test
+    fun desktopTunCatchesDnsBeforeItRefusesIpv6() {
+        // Order in a rule list is precedence: reject first and a query sent to a
+        // v6 resolver is refused instead of answered.
+        val json = SingBoxConfig.buildDesktopTun(
+            corePort = 10810, verifyPort = 10811, upstreamUdpIsLossy = true
+        )
+        assertTrue(json.indexOf("hijack-dns") < json.indexOf("\"reject\""))
+    }
+
+    @Test
     fun desktopTunMtuIsNotTheIosOne() {
         // iOS rejects 9000 outright; a utun on macOS is no place to find out.
         assertContains(

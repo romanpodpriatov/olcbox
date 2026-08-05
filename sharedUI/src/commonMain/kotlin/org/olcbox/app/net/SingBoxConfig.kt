@@ -53,6 +53,19 @@ object SingBoxConfig {
      * used.
      */
     const val DESKTOP_TUN_ADDRESS = "172.19.0.1/30"
+
+    /**
+     * The tun needs an IPv6 address even though no IPv6 is carried, because
+     * `auto_route` only claims the families the interface has one for.
+     *
+     * Without it the machine keeps its IPv6 default route on the physical
+     * interface and every dual-stack site is reached over IPv6, outside the
+     * tunnel, at the machine's real address. That is not a corner case: browsers
+     * prefer IPv6, so on a dual-stack network *the browser* leaks while
+     * `curl api.ipify.org` — an A record only — keeps reporting the tunnel and
+     * looking fine.
+     */
+    const val DESKTOP_TUN_ADDRESS6 = "fdfe:dcba:9876::1/126"
     const val DESKTOP_TUN_MTU = 1500
 
     /**
@@ -140,6 +153,7 @@ object SingBoxConfig {
         directDnsDomains: List<String> = emptyList(),
         upstreamUdpIsLossy: Boolean = false,
         address: String = DESKTOP_TUN_ADDRESS,
+        address6: String = DESKTOP_TUN_ADDRESS6,
         mtu: Int = DESKTOP_TUN_MTU,
     ): String {
         val obj = buildJsonObject {
@@ -170,7 +184,7 @@ object SingBoxConfig {
             putJsonArray("inbounds") {
                 addJsonObject {
                     put("type", "tun"); put("tag", "tun-in")
-                    putJsonArray("address") { add(address) }
+                    putJsonArray("address") { add(address); add(address6) }
                     put("mtu", mtu)
                     put("auto_route", true)
                     put("stack", "gvisor")
@@ -207,15 +221,31 @@ object SingBoxConfig {
                 // name, since its outbound is 127.0.0.1 — so the local resolver is
                 // both correct and inert here.
                 put("default_domain_resolver", "dns-direct")
-                if (upstreamUdpIsLossy) {
-                    putJsonArray("rules") {
+                putJsonArray("rules") {
+                    if (upstreamUdpIsLossy) {
                         // Without this the `dns` block above is dead weight for the
                         // system's queries: they would be forwarded as the
                         // datagrams they arrived as, which is the path being
                         // avoided. Absent it, DNS keeps riding the tunnel as UDP,
-                        // which is what the native transports want.
+                        // which is what the native transports want. Before the
+                        // IPv6 reject, so a query to a v6 resolver is still caught
+                        // and answered rather than refused.
                         addJsonObject { put("action", "hijack-dns"); put("port", 53) }
                     }
+                    // IPv6 is claimed and refused, not carried.
+                    //
+                    // Claimed because auto_route only takes the families the
+                    // interface has an address for, and an unclaimed IPv6 default
+                    // route means every dual-stack site is reached outside the
+                    // tunnel at the machine's real address.
+                    //
+                    // Refused rather than forwarded because whether the far end
+                    // has working IPv6 is a property of each operator's node, not
+                    // of this config. A reject is answered immediately, so Happy
+                    // Eyeballs falls back to IPv4 in milliseconds; forwarding into
+                    // a node without IPv6 would hang instead, which is the same
+                    // outcome bought with a timeout.
+                    addJsonObject { put("action", "reject"); put("ip_version", 6) }
                 }
             }
         }

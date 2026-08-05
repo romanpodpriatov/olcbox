@@ -128,11 +128,19 @@ this path is the machine that ruled the other one out.
   actually dialled, so a direct connection carves around the origin and one
   through an edge carves around the edge.
 
-Not yet exercised on hardware: `kill -9` of the app mid-tunnel (the fail-closed
-claim below) and the adopt-and-stop path on the next launch. Note that
-`pkill -f ProofKit` is the wrong instrument for it — the pattern also matches
-`ProofKitTunnelDaemon`, which runs as root and refuses the signal with
-`Operation not permitted`. `pkill -x ProofKit` hits the app alone.
+- **Killing the app fails closed, and that was measured rather than argued.**
+  `pkill -9 -x ProofKit` on a live tunnel left all 39 routes in place — the
+  daemon and its sing-box are not children of the JVM, so nothing signals them —
+  and `curl` then returned nothing at all. That is the whole claim: traffic stops
+  instead of falling back to the clear. The mechanism is that the app's own core
+  died with it, so the daemon's socks outbound points at a `127.0.0.1` port
+  nobody listens on any more, and packets entering the tun reach a dead end
+  rather than a way around it.
+  Use `pkill -x`, not `pkill -f ProofKit`: the pattern form also matches
+  `ProofKitTunnelDaemon`, which runs as root and answers `Operation not
+  permitted` — which looks like a failed test and is a refused one.
+
+Not yet exercised on hardware: the adopt-and-stop path on the next launch.
 
 ## Who is allowed to command it
 
@@ -146,6 +154,28 @@ The daemon also never execs a path a caller sends it. It verifies the signature 
 the `sing-box` inside the bundle, copies it into a root-owned directory and runs
 the copy — `/Applications` is writable by any admin, so verifying and executing
 the same file there leaves a window to swap it.
+
+## IPv6
+
+The tun claims IPv6 and refuses it. It carries none.
+
+**Claimed**, because `auto_route` only takes over the address families the
+interface has an address for. The first version of this had an IPv4 address
+alone, and the consequence was found on a real Mac rather than here: the machine
+kept its IPv6 default route on `en0`, so a browser — which prefers IPv6 — reached
+every dual-stack site at the machine's own address, outside the tunnel, and the
+reported IP never changed no matter which exit was selected. `curl
+api.ipify.org` did not catch it, because that name has an A record only: the
+check exercised precisely the half that worked.
+
+**Refused**, because whether the far end has working IPv6 is a property of each
+operator's node, not of this config. A reject is answered immediately and Happy
+Eyeballs falls back to IPv4 in milliseconds; forwarding IPv6 into a node without
+it would hang instead — the same outcome, bought with a timeout.
+
+The Linux and Windows tun controllers have the same IPv4-only shape and so the
+same leak. Not fixed here — this branch is macOS — but recorded so it is not
+rediscovered as a macOS quirk.
 
 ## Known limits, stated plainly
 
