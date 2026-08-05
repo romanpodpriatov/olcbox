@@ -185,3 +185,31 @@ are listed so nobody pays twice:
   looks exactly like a bridge that never ran.
 - **`strings | grep -q` under `set -o pipefail`** reports "missing" for something
   present, because the reader closing first is a SIGPIPE for the writer.
+
+---
+
+# Parked, 2026-08-05
+
+**Not our bug.** macOS 26 rejects *new* system-extension activations with exactly
+this message, for fully native, correctly signed, notarised apps — LuLu among
+them. Extensions activated before macOS 26 keep working; new ones do not. Apple
+DTS calls the "no policy" line a red herring, points at `sysextd` losing a helper
+service during `realize`, and has published no fix:
+
+- https://developer.apple.com/forums/thread/817101
+- https://developer.apple.com/forums/thread/820254
+
+So the decisive experiment written above would have failed whichever way it was
+built, and the four rounds spent on the bundle were spent against a wall.
+
+Two things learned on the way out, both of which would have sunk the plan on
+their own. Apple requires `OSSystemExtensionRequest` to come from the **container
+app's main executable** — not a helper, a daemon or a command-line tool — so the
+"native helper inside the same bundle" idea was never allowed. And no
+cross-platform VPN ships NetworkExtension on macOS: Mullvad, Tailscale and Clash
+Verge Rev all run a root daemon instead.
+
+macOS ships a TUN that way now — see `docs/macos-tunnel-daemon.md` on
+`feat/macos-tun-daemon`. This branch stays exactly as it is: it is the shape to
+resume from if the Mac App Store ever needs a provider, and everything above is
+still correct for that day.
