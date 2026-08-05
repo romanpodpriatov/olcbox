@@ -1101,3 +1101,29 @@ internal enum class DesktopMode {
  */
 internal fun macOsModeFor(daemon: MacOsTunnelDaemon.Registration): DesktopMode =
     if (daemon == MacOsTunnelDaemon.Registration.Enabled) DesktopMode.MacTun else DesktopMode.SystemProxy
+
+/**
+ * How this machine carries traffic, in the words the settings screen shows.
+ *
+ * Public because the desktop app is a separate Gradle module and [DesktopMode] is
+ * internal to this one. It exists because the settings screen used to state the
+ * default — "Proxy · Local SOCKS5 proxy" — on a Mac whose traffic was going
+ * through a tun, next to a row saying the tunnel was installed. Two true-looking
+ * lines contradicting each other is worse than either one being absent.
+ */
+data class DesktopConnectionModeInfo(val title: String, val summary: String)
+
+fun desktopConnectionModeInfo(): DesktopConnectionModeInfo = when (DesktopMode.current()) {
+    DesktopMode.MacTun -> DesktopConnectionModeInfo(
+        "System-wide tunnel",
+        "Every app on this Mac, through a utun"
+    )
+    DesktopMode.LinuxTun, DesktopMode.WindowsTun -> DesktopConnectionModeInfo(
+        "System-wide tunnel",
+        "Every app on this machine, through a TUN device"
+    )
+    DesktopMode.SystemProxy -> DesktopConnectionModeInfo(
+        "Proxy",
+        "Local SOCKS5 proxy — only apps that follow the system proxy"
+    )
+}

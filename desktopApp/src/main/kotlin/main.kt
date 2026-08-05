@@ -106,6 +106,7 @@ import org.olcbox.app.update.isUpdateCheckDue
 import org.olcbox.app.update.shouldShowOffer
 import org.olcbox.app.vpn.DesktopSocksProxySettings
 import org.olcbox.app.vpn.DesktopVpnManager
+import org.olcbox.app.vpn.desktopConnectionModeInfo
 import org.olcbox.app.vpn.JvmDesktopSocksProxySettingsStore
 import org.olcbox.app.vpn.desktop.MacOsTunnelDaemon
 
@@ -160,6 +161,11 @@ fun main(args: Array<String>) = application {
     var desktopNotice by remember { mutableStateOf<String?>(null) }
     // Null on every platform but macOS, and the settings row is then absent.
     var tunnelDaemonSummary by remember { mutableStateOf(MacOsTunnelDaemon.settingsSummary()) }
+    // Recomputed alongside it: approving the daemon changes which mode the next
+    // connection uses, and a Connection Mode card still reading "Local SOCKS5
+    // proxy" next to a tunnel row reading "Installed" is the app contradicting
+    // itself in two places at once.
+    var connectionMode by remember { mutableStateOf(desktopConnectionModeInfo()) }
     val scope = rememberCoroutineScope()
     val trayState = rememberTrayState()
     val trayHomeState by dependencies.homeViewModel.state.collectAsState()
@@ -255,6 +261,7 @@ fun main(args: Array<String>) = application {
     LaunchedEffect(showDesktopSettings) {
         while (showDesktopSettings) {
             tunnelDaemonSummary = MacOsTunnelDaemon.settingsSummary()
+            connectionMode = desktopConnectionModeInfo()
             delay(1_000)
         }
     }
@@ -397,11 +404,21 @@ fun main(args: Array<String>) = application {
                         updateOffer = updateOffer,
                         subscriptions = desktopSubscriptionItems(dependencies.locationViewModel.locations.toList()),
                         logs = logs,
-                        connectionSummary = "SOCKS5 ${socksProxySettings.host}:${socksProxySettings.port}",
-                        connectionDetails = listOf(
-                            "PAC URL" to "http://127.0.0.1:10809/proxy.pac",
-                            "PAC Target" to "SOCKS5 ${socksProxySettings.host}:${socksProxySettings.port}"
-                        ),
+                        connectionSummary = connectionMode.summary,
+                        connectionModeTitle = connectionMode.title,
+                        connectionModeSummary = connectionMode.summary,
+                        // The PAC server is how the proxy mode delivers traffic and
+                        // has nothing to do with a tun. Listing its URL under a
+                        // system-wide tunnel invites someone to point a browser at
+                        // a component that is not in the path.
+                        connectionDetails = if (connectionMode.title == "Proxy") {
+                            listOf(
+                                "PAC URL" to "http://127.0.0.1:10809/proxy.pac",
+                                "PAC Target" to "SOCKS5 ${socksProxySettings.host}:${socksProxySettings.port}"
+                            )
+                        } else {
+                            emptyList()
+                        },
                         socksProxySettings = socksProxySettings.toApplicationSocksProxySettings(),
                         tunnelDaemonSummary = tunnelDaemonSummary,
                         onTunnelDaemonClick = {
