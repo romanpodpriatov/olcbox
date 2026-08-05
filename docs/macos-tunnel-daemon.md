@@ -191,6 +191,26 @@ takes — and `curl -6 https://ifconfig.co` returns nothing at all. Before the f
 the browser reported the machine's real mobile IPv6 address and it did not change
 no matter which exit was chosen.
 
+## The exit address can be IPv6 even when your machine has none
+
+Reported as a leak, and it is not one. With the tunnel up, `curl -6` returns
+nothing (IPv6 is refused locally, as designed) while a browser on ifconfig.co
+shows an IPv6 address in Germany. Both are true at once:
+
+1. The machine reaches the site over **IPv4**, through the tunnel, to the origin.
+2. The origin has WARP on, so it hands the request to Cloudflare.
+3. WARP picks its own address family for its own upstream hop. ifconfig.co is
+   dual-stack, so it goes IPv6 and the site records `2a09:bac5::…` —
+   `CLOUDFLAREWARP` by RDAP, geolocated wherever that WARP egress sits.
+
+`api.ipify.org` has an A record and nothing else, so the same tunnel reports an
+IPv4 there. The client's address family and the exit's are independent, and a
+dual-stack checker will report the far end's choice, not yours.
+
+So: **what these sites show is the WARP egress, not the node.** To see the node's
+own address, turn `warp_enabled` off for it. To check for an actual IPv6 leak,
+use `curl -6` — silence is the correct answer.
+
 ## Known limits, stated plainly
 
 - **A server hostname that re-resolves to a new address mid-session loses its
