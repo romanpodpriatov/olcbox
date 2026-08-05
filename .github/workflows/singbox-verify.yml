@@ -241,6 +241,14 @@ jobs:
         working-directory: olcbox
         run: sing-box check -c sharedUI/build/singbox-configs/olcrtc-socks.json
 
+      # The macOS root daemon's shape. It is the only one emitting a route
+      # exclusion, a `local` DNS server and a second inbound — all 1.12+ syntax
+      # that no other dump exercises, so nothing else here would catch a schema
+      # drift in it.
+      - name: check desktop-tun
+        working-directory: olcbox
+        run: sing-box check -c sharedUI/build/singbox-configs/desktop-tun.json
+
       - name: Download Xray-core (pinned, fallback to latest)
         run: |
           set -e

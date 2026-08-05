@@ -44,6 +44,18 @@ object SingBoxConfig {
     const val TUN_MTU = 9000
 
     /**
+     * Desktop addressing, and it is not the iOS one.
+     *
+     * iOS rejects an MTU of 9000 outright (`nesessionmanager: failed to set the
+     * MTU to 9000`) while the config that asked for it carries on claiming it. A
+     * utun on macOS is no place to find out whether the same is true, so the
+     * desktop shape uses the 1500 the Linux and Windows controllers have always
+     * used.
+     */
+    const val DESKTOP_TUN_ADDRESS = "172.19.0.1/30"
+    const val DESKTOP_TUN_MTU = 1500
+
+    /**
      * Config for a core that owns the tun itself, as on iOS.
      *
      * The desktop and Android builds put the core behind a SOCKS port and bridge
@@ -91,6 +103,114 @@ object SingBoxConfig {
             if (username.isNotBlank()) put("username", username)
             if (password.isNotBlank()) put("password", password)
         }
+    }
+
+    /**
+     * Config for the sing-box the macOS root daemon runs: a tun in front of the
+     * core the app already started on localhost.
+     *
+     * Two things here exist only because the core is a *separate process*. On iOS
+     * the outbound lives inside the same binary and neither is needed:
+     *
+     * [excludeAddresses] keeps the core's own packets to the VPN server out of the
+     * tun. `auto_route` points the default route at the tunnel, and without an
+     * exclusion the core's upstream connection is routed into the tunnel it is
+     * trying to build. That does not degrade — it deadlocks, and it reads as a
+     * broken server rather than a missing route.
+     *
+     * [directDnsDomains] does the same for name resolution. The core redials by
+     * hostname, that query enters the tun like any other, and answering it needs
+     * the tunnel being redialled; those names go to the system resolver instead.
+     *
+     * [verifyPort] is a second socks inbound, for `TunnelVerifier`. Verifying
+     * through the core's own port would prove the core works and say nothing
+     * about the tun in front of it — which is the half that is new here, so it is
+     * the half a green light has to be about.
+     *
+     * This is not [renderTun]: that one emits neither an exclusion nor a second
+     * inbound, and bending it to would leave the iOS shape carrying desktop
+     * concerns it has no use for.
+     */
+    fun buildDesktopTun(
+        corePort: Int,
+        verifyPort: Int,
+        username: String = "",
+        password: String = "",
+        excludeAddresses: List<String> = emptyList(),
+        directDnsDomains: List<String> = emptyList(),
+        upstreamUdpIsLossy: Boolean = false,
+        address: String = DESKTOP_TUN_ADDRESS,
+        mtu: Int = DESKTOP_TUN_MTU,
+    ): String {
+        val obj = buildJsonObject {
+            putJsonObject("log") { put("level", "info") }
+            if (upstreamUdpIsLossy || directDnsDomains.isNotEmpty()) {
+                putJsonObject("dns") {
+                    putJsonArray("servers") {
+                        if (upstreamUdpIsLossy) {
+                            addJsonObject {
+                                put("type", "tcp"); put("tag", "dns-remote")
+                                put("server", TCP_DNS_SERVER); put("detour", "out")
+                            }
+                        }
+                        if (directDnsDomains.isNotEmpty()) {
+                            addJsonObject { put("type", "local"); put("tag", "dns-direct") }
+                        }
+                    }
+                    if (directDnsDomains.isNotEmpty()) {
+                        putJsonArray("rules") {
+                            addJsonObject {
+                                putJsonArray("domain") { directDnsDomains.forEach { add(it) } }
+                                put("server", "dns-direct")
+                            }
+                        }
+                    }
+                }
+            }
+            putJsonArray("inbounds") {
+                addJsonObject {
+                    put("type", "tun"); put("tag", "tun-in")
+                    putJsonArray("address") { add(address) }
+                    put("mtu", mtu)
+                    put("auto_route", true)
+                    put("stack", "gvisor")
+                    if (excludeAddresses.isNotEmpty()) {
+                        putJsonArray("route_exclude_address") {
+                            excludeAddresses.forEach { add(it) }
+                        }
+                    }
+                }
+                addJsonObject {
+                    put("type", "socks"); put("tag", "verify-in")
+                    put("listen", "127.0.0.1"); put("listen_port", verifyPort)
+                }
+            }
+            putJsonArray("outbounds") {
+                addJsonObject {
+                    put("type", "socks"); put("tag", "out")
+                    put("server", "127.0.0.1"); put("server_port", corePort)
+                    put("version", "5")
+                    // Only when the core on the other end asked for them, which is
+                    // olcRTC and only olcRTC: it refuses a connection offered none
+                    // when it was started with a pair, and the app generates one on
+                    // first run. Xray's inbound has no auth.
+                    if (username.isNotBlank()) put("username", username)
+                    if (password.isNotBlank()) put("password", password)
+                }
+                addJsonObject { put("type", "direct"); put("tag", "direct") }
+            }
+            if (upstreamUdpIsLossy) {
+                putJsonObject("route") {
+                    putJsonArray("rules") {
+                        // Without this the `dns` block above is dead weight: queries
+                        // would be forwarded as the datagrams they arrived as, which
+                        // is the path being avoided.
+                        addJsonObject { put("action", "hijack-dns"); put("port", 53) }
+                    }
+                }
+            }
+        }
+        return obj.toString()
     }
 
     /** Resolver reached over the tunnel when the upstream's UDP is unreliable. */
