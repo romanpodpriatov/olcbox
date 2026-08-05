@@ -859,6 +859,12 @@ class DesktopVpnManager private constructor(
                 currentTunProcess ?: error("TUN process is missing"),
                 requestGeneration
             )
+            // Neither has a tun process in *this* JVM to watch: the proxy has no
+            // tun at all, and on macOS the tun belongs to the root daemon's child.
+            // A daemon-side death therefore goes unnoticed here until the next
+            // command — noted in docs/macos-tunnel-daemon.md rather than papered
+            // over with a poll that would still be a guess.
+            DesktopMode.MacTun,
             DesktopMode.SystemProxy -> {
                 tunProcessWatchJob?.cancel()
                 tunProcessWatchJob = null

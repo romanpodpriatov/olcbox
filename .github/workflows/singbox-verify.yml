@@ -249,6 +249,10 @@ jobs:
         working-directory: olcbox
         run: sing-box check -c sharedUI/build/singbox-configs/desktop-tun.json
 
+      - name: check desktop-tun-native
+        working-directory: olcbox
+        run: sing-box check -c sharedUI/build/singbox-configs/desktop-tun-native.json
+
       - name: Download Xray-core (pinned, fallback to latest)
         run: |
           set -e

@@ -61,4 +61,23 @@ class SingBoxConfigDumpTest {
         )
         assertTrue(File(outDir, "desktop-tun.json").exists())
     }
+
+    /**
+     * The same builder without olcRTC's lossy-carrier handling — no hijack rule,
+     * no remote resolver. It is a different config, so it gets its own check: the
+     * first version of this shape was rejected by sing-box in exactly the section
+     * the two variants differ in.
+     */
+    @Test fun dumpDesktopTunNative() {
+        dump(
+            "desktop-tun-native",
+            SingBoxConfig.buildDesktopTun(
+                corePort = 10810,
+                verifyPort = 10811,
+                excludeAddresses = listOf("203.0.113.7/32", "2001:db8::1/128"),
+                directDnsDomains = listOf("de1.example.org")
+            )
+        )
+        assertTrue(File(outDir, "desktop-tun-native.json").exists())
+    }
 }

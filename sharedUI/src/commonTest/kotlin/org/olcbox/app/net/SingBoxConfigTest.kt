@@ -276,6 +276,47 @@ class SingBoxConfigTest {
     }
 
     @Test
+    fun desktopTunAlwaysNamesADefaultDomainResolver() {
+        // sing-box 1.12 refuses to start a config that has a `dns` section and no
+        // default_domain_resolver, and says so by naming a deprecation and an
+        // environment variable rather than the field. Both shapes emit `dns`.
+        for (lossy in listOf(true, false)) {
+            val json = SingBoxConfig.buildDesktopTun(
+                corePort = 10810, verifyPort = 10811, upstreamUdpIsLossy = lossy
+            )
+            assertContains(json, "\"default_domain_resolver\":\"dns-direct\"")
+        }
+    }
+
+    @Test
+    fun desktopTunHijacksDnsOnlyWhenTheUpstreamCannotBeTrustedWithDatagrams() {
+        // The native transports carry UDP themselves, so their DNS rides the
+        // tunnel as it always has. Hijacking it there would move working
+        // resolution onto a path that exists for olcRTC's lossy carrier.
+        assertTrue(
+            "hijack-dns" !in SingBoxConfig.buildDesktopTun(
+                corePort = 10810, verifyPort = 10811, upstreamUdpIsLossy = false
+            )
+        )
+        assertContains(
+            SingBoxConfig.buildDesktopTun(
+                corePort = 10810, verifyPort = 10811, upstreamUdpIsLossy = true
+            ),
+            "hijack-dns"
+        )
+    }
+
+    @Test
+    fun desktopTunPutsTheRemoteResolverFirstWhenQueriesAreHijacked() {
+        // The first server answers anything no rule claims. Local first would send
+        // every hijacked lookup to the machine's own resolver, in the clear.
+        val json = SingBoxConfig.buildDesktopTun(
+            corePort = 10810, verifyPort = 10811, upstreamUdpIsLossy = true
+        )
+        assertTrue(json.indexOf("dns-remote") < json.indexOf("dns-direct"))
+    }
+
+    @Test
     fun desktopTunMtuIsNotTheIosOne() {
         // iOS rejects 9000 outright; a utun on macOS is no place to find out.
         assertContains(

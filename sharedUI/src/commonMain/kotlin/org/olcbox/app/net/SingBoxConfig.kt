@@ -144,25 +144,25 @@ object SingBoxConfig {
     ): String {
         val obj = buildJsonObject {
             putJsonObject("log") { put("level", "info") }
-            if (upstreamUdpIsLossy || directDnsDomains.isNotEmpty()) {
-                putJsonObject("dns") {
-                    putJsonArray("servers") {
-                        if (upstreamUdpIsLossy) {
-                            addJsonObject {
-                                put("type", "tcp"); put("tag", "dns-remote")
-                                put("server", TCP_DNS_SERVER); put("detour", "out")
-                            }
-                        }
-                        if (directDnsDomains.isNotEmpty()) {
-                            addJsonObject { put("type", "local"); put("tag", "dns-direct") }
+            putJsonObject("dns") {
+                putJsonArray("servers") {
+                    // Order is the default. The first server answers anything no
+                    // rule claims, so `dns-remote` has to come first whenever
+                    // queries are hijacked here at all — put the local one first
+                    // and every hijacked lookup leaves the machine unprotected.
+                    if (upstreamUdpIsLossy) {
+                        addJsonObject {
+                            put("type", "tcp"); put("tag", "dns-remote")
+                            put("server", TCP_DNS_SERVER); put("detour", "out")
                         }
                     }
-                    if (directDnsDomains.isNotEmpty()) {
-                        putJsonArray("rules") {
-                            addJsonObject {
-                                putJsonArray("domain") { directDnsDomains.forEach { add(it) } }
-                                put("server", "dns-direct")
-                            }
+                    addJsonObject { put("type", "local"); put("tag", "dns-direct") }
+                }
+                if (directDnsDomains.isNotEmpty()) {
+                    putJsonArray("rules") {
+                        addJsonObject {
+                            putJsonArray("domain") { directDnsDomains.forEach { add(it) } }
+                            put("server", "dns-direct")
                         }
                     }
                 }
@@ -199,12 +199,21 @@ object SingBoxConfig {
                 }
                 addJsonObject { put("type", "direct"); put("tag", "direct") }
             }
-            if (upstreamUdpIsLossy) {
-                putJsonObject("route") {
+            putJsonObject("route") {
+                // Required since 1.12 as soon as a `dns` section exists: without
+                // it sing-box refuses to start, naming a deprecation and an
+                // environment variable rather than the config. It resolves domain
+                // names in *dial* fields only — nothing this instance dials is a
+                // name, since its outbound is 127.0.0.1 — so the local resolver is
+                // both correct and inert here.
+                put("default_domain_resolver", "dns-direct")
+                if (upstreamUdpIsLossy) {
                     putJsonArray("rules") {
-                        // Without this the `dns` block above is dead weight: queries
-                        // would be forwarded as the datagrams they arrived as, which
-                        // is the path being avoided.
+                        // Without this the `dns` block above is dead weight for the
+                        // system's queries: they would be forwarded as the
+                        // datagrams they arrived as, which is the path being
+                        // avoided. Absent it, DNS keeps riding the tunnel as UDP,
+                        // which is what the native transports want.
                         addJsonObject { put("action", "hijack-dns"); put("port", 53) }
                     }
                 }
