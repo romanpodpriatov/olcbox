@@ -1099,12 +1099,21 @@ jobs:
         working-directory: olcbox
         run: |
           export OLCRTC_REPO="${{ github.workspace }}/olcrtc"
+          # The same version every other platform gets, from the same job.
+          # Without these two the build falls back to the literals in the
+          # pbxproj, which is how the App Store came to show 1.0.0 for a build
+          # whose own about screen said 1.0.24x. Passed on the command line so
+          # they reach *every* target: the app and PacketTunnel must agree, and a
+          # mismatch between them fails the install on a device rather than the
+          # build.
           xcodebuild \
             -project iosApp/iosApp.xcodeproj \
             -scheme iosApp \
             -sdk iphoneos \
             -configuration Release \
             -derivedDataPath build/ios-ipa/DerivedData \
+            MARKETING_VERSION="${OLCBOX_VERSION}" \
+            CURRENT_PROJECT_VERSION="${OLCBOX_VERSION_CODE}" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
