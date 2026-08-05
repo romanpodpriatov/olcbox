@@ -18,7 +18,7 @@ import java.nio.file.StandardCopyOption
  * Absent is a normal state, not an error: every non-macOS desktop build has no
  * such library, and this object is reachable from shared code.
  */
-internal object MacOsTunnelDaemon {
+object MacOsTunnelDaemon {
 
     /** Mirrors the Swift status codes; the numbers are the contract. */
     enum class Registration(val code: Int) {

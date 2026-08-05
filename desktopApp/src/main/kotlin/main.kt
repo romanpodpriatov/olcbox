@@ -107,6 +107,7 @@ import org.olcbox.app.update.shouldShowOffer
 import org.olcbox.app.vpn.DesktopSocksProxySettings
 import org.olcbox.app.vpn.DesktopVpnManager
 import org.olcbox.app.vpn.JvmDesktopSocksProxySettingsStore
+import org.olcbox.app.vpn.desktop.MacOsTunnelDaemon
 
 private class DesktopAppDependencies {
     private val locationsDataSource = JvmLocationsDataSourceImpl()
@@ -157,6 +158,8 @@ fun main(args: Array<String>) = application {
     var updateOffer by remember { mutableStateOf<AppUpdateInfo?>(null) }
     var sharePayload by remember { mutableStateOf<Pair<String, String>?>(null) }
     var desktopNotice by remember { mutableStateOf<String?>(null) }
+    // Null on every platform but macOS, and the settings row is then absent.
+    var tunnelDaemonSummary by remember { mutableStateOf(MacOsTunnelDaemon.settingsSummary()) }
     val scope = rememberCoroutineScope()
     val trayState = rememberTrayState()
     val trayHomeState by dependencies.homeViewModel.state.collectAsState()
@@ -242,6 +245,17 @@ fun main(args: Array<String>) = application {
             dependencies.homeViewModel.loadCurrentConfig {
                 dependencies.homeViewModel.ToggleVpn()
             }
+        }
+    }
+
+    // The daemon's state changes without us: the user approves it in System
+    // Settings, in another application, and launchd finishes the job afterwards.
+    // Polling while the sheet is open is what stops the row from still reading
+    // "Approve in System Settings" once they have.
+    LaunchedEffect(showDesktopSettings) {
+        while (showDesktopSettings) {
+            tunnelDaemonSummary = MacOsTunnelDaemon.settingsSummary()
+            delay(1_000)
         }
     }
 
@@ -389,6 +403,24 @@ fun main(args: Array<String>) = application {
                             "PAC Target" to "SOCKS5 ${socksProxySettings.host}:${socksProxySettings.port}"
                         ),
                         socksProxySettings = socksProxySettings.toApplicationSocksProxySettings(),
+                        tunnelDaemonSummary = tunnelDaemonSummary,
+                        onTunnelDaemonClick = {
+                            // Approval is a trip to System Settings that only the
+                            // user can make; anything else is ours to attempt.
+                            if (MacOsTunnelDaemon.status() ==
+                                MacOsTunnelDaemon.Registration.RequiresApproval
+                            ) {
+                                MacOsTunnelDaemon.openLoginItemsSettings()
+                            } else {
+                                MacOsTunnelDaemon.register()
+                            }
+                            tunnelDaemonSummary = MacOsTunnelDaemon.settingsSummary()
+                            // Verbatim, not a paraphrase: "Operation not
+                            // permitted" and "already registered" both mean
+                            // nothing happened, and only Apple's own text says
+                            // which of them it was.
+                            desktopNotice = MacOsTunnelDaemon.message().ifBlank { null }
+                        },
                         isConnectionActive = homeState.isVpnConnected,
                         subscriptionSettings = subscriptionSettings,
                         onSubscriptionSettingsChanged =

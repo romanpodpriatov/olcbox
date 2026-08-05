@@ -32,6 +32,8 @@ import org.olcbox.app.vpn.desktop.DesktopDnsResolver
 import org.olcbox.app.vpn.desktop.DesktopProxyController
 import org.olcbox.app.vpn.desktop.LinuxPrivilege
 import org.olcbox.app.vpn.desktop.LinuxTunController
+import org.olcbox.app.vpn.desktop.MacOsTunController
+import org.olcbox.app.vpn.desktop.MacOsTunnelDaemon
 import org.olcbox.app.vpn.desktop.OlcRtcCommand
 import org.olcbox.app.vpn.desktop.PacServer
 import org.olcbox.app.vpn.desktop.WindowsTunController
@@ -92,6 +94,19 @@ class DesktopVpnManager private constructor(
     private var generation = 0L
     private val linuxTunController = LinuxTunController(::addLog)
     private val windowsTunController = WindowsTunController(::addLog)
+    private val macOsTunController = MacOsTunController(::addLog)
+
+    /** The daemon's own socks inbound, which is what a green light is measured through. */
+    private var macTunVerifyPort: Int? = null
+
+    /**
+     * Whether this session started a macOS tunnel at all.
+     *
+     * Without it, every disconnect on a Mac where the daemon was never installed
+     * would log that stopping the tunnel failed — a line that is true, useless,
+     * and alarming.
+     */
+    private var macTunActive = false
 
     // Unified client: sing-box / Xray cores for vless/hy2/xhttp locations (exec'd
     // bundled binaries). The tun/PAC targets `activeCorePort` when a core is active
@@ -225,6 +240,25 @@ class DesktopVpnManager private constructor(
         )
     }
 
+    init {
+        // A tunnel outlives the process that asked for it: the daemon keeps the
+        // tun after the app is killed, so the app has to ask what is true rather
+        // than assume it starts from idle. Assuming idle is the iOS bug that
+        // showed "relay idle" over a live tunnel and then tore it down.
+        //
+        // Stopped rather than adopted into Connected, deliberately: this manager
+        // cannot say which location an orphaned tun belongs to, and a connection
+        // it cannot describe is worse than a clean restart. Giving the daemon a
+        // location tag to hand back is the fix if that proves annoying.
+        if (DesktopPaths.os == DesktopOs.MacOS) {
+            scope.launch {
+                if (!macOsTunController.isRunning()) return@launch
+                addLog("a tunnel from a previous run was still up; stopping it")
+                macOsTunController.stop()
+            }
+        }
+    }
+
     fun close() {
         runBlocking {
             generation++
@@ -303,6 +337,12 @@ class DesktopVpnManager private constructor(
             when (desktopMode) {
                 DesktopMode.LinuxTun -> startLinuxTun(effectiveSocksPort, requestGeneration)
                 DesktopMode.WindowsTun -> startWindowsTun(effectiveSocksPort, requestGeneration)
+                DesktopMode.MacTun -> startMacTun(
+                    corePort = effectiveSocksPort,
+                    isOlcrtc = isOlcrtc,
+                    socksSettings = socksSettings,
+                    location = location
+                )
                 DesktopMode.SystemProxy ->
                     startSystemProxy(
                         // The cores listen without authentication; only the olcRTC
@@ -335,11 +375,15 @@ class DesktopVpnManager private constructor(
             // "connected" — a port collision, a rejected certificate, a browser that
             // never used the proxy — because the status meant "we ran the steps", not
             // "traffic reaches the internet".
+            // In TUN mode the probe goes through the daemon's own inbound, so a
+            // green light means the tun carried the request — not merely that the
+            // core would have. That inbound has no auth; only the olcRTC core's has.
+            val verifiedThroughTun = desktopMode == DesktopMode.MacTun && macTunVerifyPort != null
             val exit = org.olcbox.app.net.TunnelVerifier.verify(
                 socksHost = socksSettings.host,
-                socksPort = effectiveSocksPort,
-                username = if (isOlcrtc) socksSettings.username else "",
-                password = if (isOlcrtc) socksSettings.password else ""
+                socksPort = if (verifiedThroughTun) macTunVerifyPort!! else effectiveSocksPort,
+                username = if (isOlcrtc && !verifiedThroughTun) socksSettings.username else "",
+                password = if (isOlcrtc && !verifiedThroughTun) socksSettings.password else ""
             )
             if (requestGeneration != generation) {
                 throw CancellationException("Desktop start superseded")
@@ -348,6 +392,7 @@ class DesktopVpnManager private constructor(
             val transport = when (desktopMode) {
                 DesktopMode.LinuxTun -> "Desktop Linux TUN"
                 DesktopMode.WindowsTun -> "Desktop Windows TUN"
+                DesktopMode.MacTun -> "Desktop macOS TUN"
                 DesktopMode.SystemProxy -> "Desktop proxy"
             }
             if (exit == null) {
@@ -420,21 +465,52 @@ class DesktopVpnManager private constructor(
         }
     }
 
-    private enum class DesktopMode {
-        LinuxTun,
-        WindowsTun,
-        SystemProxy;
+    /**
+     * Start the macOS tunnel: the daemon runs a sing-box whose tun feeds the core
+     * this manager has already started on localhost.
+     *
+     * olcRTC has no server host in a link — it is addressed by a room on somebody
+     * else's SFU — so there is nothing to exclude from the tunnel for it, and
+     * [serverEndpoint] returning null is the honest answer rather than a gap.
+     */
+    private suspend fun startMacTun(
+        corePort: Int,
+        isOlcrtc: Boolean,
+        socksSettings: DesktopSocksProxySettings,
+        location: LocationConfig
+    ) {
+        val verifyPort = allocateVerifyPort(corePort)
+        macOsTunController.start(
+            corePort = corePort,
+            verifyPort = verifyPort,
+            // Only olcRTC enforces them; the cores' own inbounds have no auth.
+            username = if (isOlcrtc) socksSettings.username else "",
+            password = if (isOlcrtc) socksSettings.password else "",
+            serverHost = serverEndpoint(location)?.first,
+            // olcRTC relays UDP over a lossy video carrier, so DNS takes the
+            // reliable path. The native transports carry UDP themselves.
+            upstreamUdpIsLossy = isOlcrtc
+        )
+        macTunVerifyPort = verifyPort
+        macTunActive = true
+    }
 
-        companion object {
-            fun current(): DesktopMode {
-                return when (DesktopPaths.os) {
-                    DesktopOs.Linux -> LinuxTun
-                    DesktopOs.Windows -> WindowsTun
-                    DesktopOs.MacOS,
-                    DesktopOs.Other -> SystemProxy
-                }
+    /**
+     * A port for the daemon's own socks inbound, never the core's.
+     *
+     * Verifying through the core's port would prove the core works and say
+     * nothing about the tun in front of it — which is the half that is new, so it
+     * is the half a green light has to be about.
+     */
+    private fun allocateVerifyPort(corePort: Int): Int {
+        val preferred = corePort + 1
+        if (isLocalPortFree(preferred)) return preferred
+        return runCatching {
+            java.net.ServerSocket().use { socket ->
+                socket.bind(java.net.InetSocketAddress("127.0.0.1", 0))
+                socket.localPort
             }
-        }
+        }.getOrNull() ?: preferred
     }
 
     /** Start a sing-box (reality/hy2) or Xray (xhttp) core on the core SOCKS port. */
@@ -556,11 +632,21 @@ class DesktopVpnManager private constructor(
     }
 
     private suspend fun stopDesktopMode(finalStatus: Boolean) {
-        if (_status.value is VpnStatus.Disconnected && process == null && tunProcess == null) {
+        // macTunActive belongs in this guard: on macOS the cores are owned by
+        // their own controllers and the tun by the daemon, so both `process` and
+        // `tunProcess` are null while a tunnel is very much up. Without it a stop
+        // arriving in any non-Connected state would return here and leave the
+        // machine routed through a tunnel nothing is feeding.
+        if (_status.value is VpnStatus.Disconnected &&
+            process == null &&
+            tunProcess == null &&
+            !macTunActive
+        ) {
             cancelProcessJobs()
             return
         }
 
+        val wasMacTun = macTunActive
         setStatus(VpnStatus.Stopping)
         cancelProcessJobs()
 
@@ -583,6 +669,19 @@ class DesktopVpnManager private constructor(
             }
             DesktopOs.MacOS,
             DesktopOs.Other -> {
+                // Both, and in this order. A session may have used either mode —
+                // the daemon can be approved between one connect and the next —
+                // and restoring a proxy that was never set is a no-op, while
+                // leaving a tun up is a Mac with no network.
+                if (macTunActive) {
+                    runCatching {
+                        macOsTunController.stop()
+                    }.onFailure {
+                        addLog("macOS TUN stop failed: ${it.message}")
+                    }
+                    macTunActive = false
+                    macTunVerifyPort = null
+                }
                 runCatching {
                     proxyController.restore()
                 }.onFailure {
@@ -605,7 +704,7 @@ class DesktopVpnManager private constructor(
                 when (DesktopPaths.os) {
                     DesktopOs.Linux -> "Desktop Linux TUN stopped"
                     DesktopOs.Windows -> "Desktop Windows TUN stopped"
-                    DesktopOs.MacOS,
+                    DesktopOs.MacOS -> if (wasMacTun) "Desktop macOS TUN stopped" else "Desktop proxy stopped"
                     DesktopOs.Other -> "Desktop proxy stopped"
                 }
             )
@@ -959,3 +1058,40 @@ class DesktopVpnManager private constructor(
         }
     }
 }
+
+/**
+ * How this desktop puts traffic through the tunnel.
+ *
+ * Top-level rather than nested in the manager so that the one decision worth
+ * testing — which mode a Mac gets — can be tested without standing up a manager,
+ * its coroutine scope and its two cores.
+ */
+internal enum class DesktopMode {
+    LinuxTun,
+    WindowsTun,
+    MacTun,
+    SystemProxy;
+
+    companion object {
+        fun current(): DesktopMode {
+            return when (DesktopPaths.os) {
+                DesktopOs.Linux -> LinuxTun
+                DesktopOs.Windows -> WindowsTun
+                DesktopOs.MacOS -> macOsModeFor(MacOsTunnelDaemon.status())
+                DesktopOs.Other -> SystemProxy
+            }
+        }
+    }
+}
+
+/**
+ * Only an approved daemon earns TUN mode.
+ *
+ * Every other state — not installed, waiting for approval, missing from the
+ * build, a macOS too old to have SMAppService — keeps the SOCKS proxy that has
+ * always worked. A connect is the worst possible moment to discover that a root
+ * component needs a trip to System Settings, and a user who never installs the
+ * daemon should see no change at all.
+ */
+internal fun macOsModeFor(daemon: MacOsTunnelDaemon.Registration): DesktopMode =
+    if (daemon == MacOsTunnelDaemon.Registration.Enabled) DesktopMode.MacTun else DesktopMode.SystemProxy
