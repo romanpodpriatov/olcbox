@@ -35,10 +35,16 @@ final class TunnelChild {
 
     /// The bundled core, found relative to this binary: the daemon lives at
     /// `ProofKit.app/Contents/MacOS/ProofKitTunnelDaemon` and the core at
-    /// `ProofKit.app/Contents/Resources/sing-box`. Not `Bundle.main` — a launchd
-    /// daemon's main bundle is not reliably the app that carries it.
+    /// `ProofKit.app/Contents/Resources/sing-box`.
+    ///
+    /// `Bundle.main.executableURL` rather than `CommandLine.arguments[0]`: launchd
+    /// does not promise argv[0] is an absolute path, and a relative one walked two
+    /// directories up lands somewhere arbitrary — where the copy step would fail
+    /// with a path that says nothing about why.
     private var bundledCore: URL {
-        URL(fileURLWithPath: CommandLine.arguments[0])
+        let executable = Bundle.main.executableURL
+            ?? URL(fileURLWithPath: CommandLine.arguments[0])
+        return executable
             .resolvingSymlinksInPath()
             .deletingLastPathComponent()
             .deletingLastPathComponent()
