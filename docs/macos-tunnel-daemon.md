@@ -85,10 +85,12 @@ could not have been produced by the mode it replaces.
 
 ## What has been verified on a real Mac
 
-2026-08-05, Apple Silicon, a direct hysteria2 link to a Japanese origin — so the
-native shape of the config (`upstreamUdpIsLossy = false`: no DNS hijack, DNS
-riding the tun as UDP), which is the one `desktop-tun-native.json` schema-checks
-in CI.
+**macOS 26.5.1**, Apple Silicon, a direct hysteria2 link to a Japanese origin —
+so the native shape of the config (`upstreamUdpIsLossy = false`: no DNS hijack,
+DNS riding the tun as UDP), which is the one `desktop-tun-native.json`
+schema-checks in CI. That version number is worth keeping: 26.x is precisely the
+macOS that cannot activate a new system extension, so the machine that proves
+this path is the machine that ruled the other one out.
 
 - **The tunnel carries traffic.** `curl https://api.ipify.org` from a plain
   shell, with no proxy set anywhere, went from the machine's own address to the
@@ -114,9 +116,23 @@ in CI.
   system's DNS went there. Worth knowing before it reads as a leak in this app:
   it is the other tunnel's route, on a machine with two.
 
-Not yet exercised on hardware: stopping from the UI and its route cleanup,
-`kill -9` of the app mid-tunnel (the fail-closed claim below), and the
-adopt-and-stop path on the next launch.
+- **Stopping cleans up after itself.** `netstat -rn | grep -c 172.19.0.1` went
+  from 38 while connected to 0 after disconnecting — `auto_route` removes what it
+  installed, which is why this controller has none of the route bookkeeping the
+  Linux and Windows ones carry.
+- **The exit IP is the origin's egress, not its address, and that surprises
+  people.** The test connected directly to a Japanese origin and landed on a US
+  address, because that origin has WARP on: the tunnel chooses the *path to* the
+  node, `warp_enabled` chooses how the node leaves for the internet. The routing
+  table settles which of the two was in play — the excluded /32 names the host
+  actually dialled, so a direct connection carves around the origin and one
+  through an edge carves around the edge.
+
+Not yet exercised on hardware: `kill -9` of the app mid-tunnel (the fail-closed
+claim below) and the adopt-and-stop path on the next launch. Note that
+`pkill -f ProofKit` is the wrong instrument for it — the pattern also matches
+`ProofKitTunnelDaemon`, which runs as root and refuses the signal with
+`Operation not permitted`. `pkill -x ProofKit` hits the app alone.
 
 ## Who is allowed to command it
 
