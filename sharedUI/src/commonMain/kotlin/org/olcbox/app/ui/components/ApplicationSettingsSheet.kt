@@ -83,6 +83,23 @@ import org.olcbox.app.update.AppUpdateInfo
 import org.olcbox.app.update.AppUpdateSettings
 import kotlin.time.Instant
 
+/**
+ * One way this platform can carry traffic, for the Connection Mode chooser.
+ *
+ * Platform-neutral on purpose: Android already has `AndroidConnectionMode` and
+ * the desktop now has `DesktopConnectionMode`, and both mean the same two
+ * things. This is the shape the shared screen renders, so one explanation and
+ * one set of words cover every platform that has a choice to offer.
+ */
+data class ApplicationConnectionModeOption(
+    val id: String,
+    val title: String,
+    val summary: String,
+    val enabled: Boolean = true,
+    /** Shown in place of [summary] when the option cannot be picked yet. */
+    val disabledReason: String? = null
+)
+
 data class ApplicationSocksProxySettings(
     val host: String = "127.0.0.1",
     val port: Int = DEFAULT_PORT,
@@ -120,6 +137,16 @@ fun ApplicationSettingsSheet(
      */
     connectionModeTitle: String = "Proxy",
     connectionModeSummary: String = "Local SOCKS5 proxy",
+    /**
+     * The ways this platform can carry traffic, when it has more than one.
+     *
+     * Empty on a platform with a single mode, and the screen then shows what is
+     * in force rather than a choice of one — which is what it always showed,
+     * including on machines that had two modes and no way to say which.
+     */
+    connectionModeOptions: List<ApplicationConnectionModeOption> = emptyList(),
+    selectedConnectionModeId: String? = null,
+    onConnectionModeSelected: (String) -> Unit = {},
     /**
      * How the platform's own tunnel component is doing, when it has one — today
      * the macOS root daemon, which the user installs and approves rather than
@@ -228,6 +255,9 @@ fun ApplicationSettingsSheet(
                 SharedSettingsRoute.ConnectionMode -> SharedConnectionModeSettingsContent(
                     title = connectionModeTitle,
                     summary = connectionModeSummary,
+                    options = connectionModeOptions,
+                    selectedId = selectedConnectionModeId,
+                    onSelected = onConnectionModeSelected,
                     onBack = { route = SharedSettingsRoute.Connection }
                 )
 
@@ -426,6 +456,9 @@ private fun SharedConnectionSettingsContent(
 private fun SharedConnectionModeSettingsContent(
     title: String,
     summary: String,
+    options: List<ApplicationConnectionModeOption>,
+    selectedId: String?,
+    onSelected: (String) -> Unit,
     onBack: () -> Unit
 ) {
     Column(
@@ -442,12 +475,35 @@ private fun SharedConnectionModeSettingsContent(
 
         Spacer(Modifier.height(20.dp))
 
-        SharedSelectableSettingsCard(
-            selected = true,
-            icon = PkIcons.Public,
-            title = title,
-            subtitle = summary
-        )
+        if (options.isEmpty()) {
+            // One mode, so nothing to choose. Shown selected because it is what is
+            // in force, not because it won a comparison.
+            SharedSelectableSettingsCard(
+                selected = true,
+                icon = PkIcons.Public,
+                title = title,
+                subtitle = summary
+            )
+        } else {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                options.forEach { option ->
+                    SharedSelectableSettingsCard(
+                        selected = option.id == selectedId,
+                        icon = PkIcons.Public,
+                        title = option.title,
+                        // An option that cannot be picked says why instead of
+                        // describing a thing the person cannot have.
+                        subtitle = if (option.enabled) {
+                            option.summary
+                        } else {
+                            option.disabledReason ?: option.summary
+                        },
+                        enabled = option.enabled,
+                        onClick = { onSelected(option.id) }
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -1058,12 +1114,21 @@ private fun SharedSelectableSettingsCard(
     selected: Boolean,
     icon: ImageVector,
     title: String,
-    subtitle: String
+    subtitle: String,
+    enabled: Boolean = true,
+    onClick: (() -> Unit)? = null
 ) {
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .height(82.dp),
+            .height(82.dp)
+            .then(
+                if (onClick != null && enabled) {
+                    Modifier.clickable(onClick = onClick)
+                } else {
+                    Modifier
+                }
+            ),
         shape = RoundedCornerShape(18.dp),
         color = if (selected) {
             MaterialTheme.colorScheme.secondaryContainer

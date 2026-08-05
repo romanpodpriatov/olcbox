@@ -87,6 +87,7 @@ import org.olcbox.app.data.share.ConfigShareService
 import org.olcbox.app.data.share.SubscriptionShareItem
 import org.olcbox.app.ui.components.kit.PkBrand
 import org.olcbox.app.ui.OlcboxAppContent
+import org.olcbox.app.ui.components.ApplicationConnectionModeOption
 import org.olcbox.app.ui.components.ApplicationSocksProxySettings
 import org.olcbox.app.ui.components.ApplicationSettingsSheet
 import org.olcbox.app.ui.components.ApplicationUpdateOfferSheet
@@ -106,7 +107,8 @@ import org.olcbox.app.update.isUpdateCheckDue
 import org.olcbox.app.update.shouldShowOffer
 import org.olcbox.app.vpn.DesktopSocksProxySettings
 import org.olcbox.app.vpn.DesktopVpnManager
-import org.olcbox.app.vpn.desktopConnectionModeInfo
+import org.olcbox.app.vpn.DesktopConnectionMode
+import org.olcbox.app.vpn.DesktopConnectionModePreference
 import org.olcbox.app.vpn.JvmDesktopSocksProxySettingsStore
 import org.olcbox.app.vpn.desktop.MacOsTunnelDaemon
 
@@ -165,7 +167,9 @@ fun main(args: Array<String>) = application {
     // connection uses, and a Connection Mode card still reading "Local SOCKS5
     // proxy" next to a tunnel row reading "Installed" is the app contradicting
     // itself in two places at once.
-    var connectionMode by remember { mutableStateOf(desktopConnectionModeInfo()) }
+    var connectionModeOptions by remember { mutableStateOf(DesktopConnectionModePreference.available()) }
+    var selectedConnectionMode by remember { mutableStateOf(DesktopConnectionModePreference.selected()) }
+    val effectiveConnectionMode = DesktopConnectionModePreference.effective()
     val scope = rememberCoroutineScope()
     val trayState = rememberTrayState()
     val trayHomeState by dependencies.homeViewModel.state.collectAsState()
@@ -261,7 +265,9 @@ fun main(args: Array<String>) = application {
     LaunchedEffect(showDesktopSettings) {
         while (showDesktopSettings) {
             tunnelDaemonSummary = MacOsTunnelDaemon.settingsSummary()
-            connectionMode = desktopConnectionModeInfo()
+            // Approving the daemon makes the tunnel option pickable, and that
+            // happens in System Settings, in another application.
+            connectionModeOptions = DesktopConnectionModePreference.available()
             delay(1_000)
         }
     }
@@ -411,14 +417,37 @@ fun main(args: Array<String>) = application {
                         updateOffer = updateOffer,
                         subscriptions = desktopSubscriptionItems(dependencies.locationViewModel.locations.toList()),
                         logs = logs,
-                        connectionSummary = connectionMode.summary,
-                        connectionModeTitle = connectionMode.title,
-                        connectionModeSummary = connectionMode.summary,
+                        connectionSummary = effectiveConnectionMode?.summary.orEmpty(),
+                        connectionModeTitle = effectiveConnectionMode?.title.orEmpty(),
+                        connectionModeSummary = effectiveConnectionMode?.summary.orEmpty(),
+                        connectionModeOptions = connectionModeOptions.map { option ->
+                            ApplicationConnectionModeOption(
+                                id = option.mode.id,
+                                title = option.title,
+                                summary = option.summary,
+                                enabled = option.enabled,
+                                disabledReason = option.disabledReason
+                            )
+                        },
+                        selectedConnectionModeId = effectiveConnectionMode?.mode?.id,
+                        onConnectionModeSelected = { id ->
+                            val mode = DesktopConnectionMode.fromId(id)
+                            if (mode != selectedConnectionMode) {
+                                DesktopConnectionModePreference.select(mode)
+                                selectedConnectionMode = mode
+                                // Restart rather than wait for the next connect: a
+                                // mode that takes effect at some unannounced later
+                                // time is exactly what this screen was already
+                                // confusing people with. Same call Android makes
+                                // on the same gesture.
+                                dependencies.homeViewModel.restartVpnIfRunning()
+                            }
+                        },
                         // The PAC server is how the proxy mode delivers traffic and
                         // has nothing to do with a tun. Listing its URL under a
                         // system-wide tunnel invites someone to point a browser at
                         // a component that is not in the path.
-                        connectionDetails = if (connectionMode.title == "Proxy") {
+                        connectionDetails = if (effectiveConnectionMode?.mode == DesktopConnectionMode.Proxy) {
                             listOf(
                                 "PAC URL" to "http://127.0.0.1:10809/proxy.pac",
                                 "PAC Target" to "SOCKS5 ${socksProxySettings.host}:${socksProxySettings.port}"

@@ -310,7 +310,14 @@ fun LocationSelectorScreen(
                                 pingsState = pingsState,
                                 onLocationSelected = onLocationSelected,
                                 onLocationSettingsClick = onLocationSettingsClick,
-                                showSettings = showSettings
+                                // Always, unlike the subscription rows above.
+                                // A subscription owns its locations and editing one
+                                // by hand is plumbing, so that stays behind the
+                                // admin gate. A custom location was added by the
+                                // person looking at it, and anyone who can add one
+                                // must be able to delete it — the gate was making a
+                                // location they created permanent.
+                                showSettings = true
                             )
                         }
                     }
