@@ -24,7 +24,13 @@ LIBXRAY_VERSION="${LIBXRAY_VERSION:-v1.260711.0}"
 # before this was upstream `42ae4e0c`, where internal/client/udp.go does not
 # exist at all, so the SOCKS5 server could not answer UDP ASSOCIATE and every
 # datagram died inside the extension, DNS first among them.
-OLCRTC_VERSION="${OLCRTC_VERSION:-v0.0.0-20260717184831-c83717e7e900}"
+#
+# c83717e7e900 → 240487450763: the dual-stack dial fix (olcrtc#1). Carrier auth
+# resolved through a single IPv4 literal and dialed whichever family survived
+# that, so on a network without IPv4 it failed before any media was negotiated.
+# App Review runs on IPv6-only NAT64, which is why this one blocks a submission
+# rather than merely one carrier.
+OLCRTC_VERSION="${OLCRTC_VERSION:-v0.0.0-20260806125211-240487450763}"
 
 # Bumped when the framework's *shape* changes while its pins do not — adding the
 # macOS slice being the first case. The versions alone cannot express that: they
@@ -38,7 +44,11 @@ OLCRTC_VERSION="${OLCRTC_VERSION:-v0.0.0-20260717184831-c83717e7e900}"
 # wider, and every consumer keyed on the tag — the destination stamp, the local
 # cache, the published release — would otherwise hand back the two-slice build
 # for a project that now asks for three.
-CORES_BUILD="${CORES_BUILD:-3}"
+#
+# 3 → 4: olcRTC moved, so the tag moves with it either way. Bumped anyway, so
+# the tag says out loud that this framework is a different build and not a
+# re-publish of the same shape under a longer name.
+CORES_BUILD="${CORES_BUILD:-4}"
 
 # The revision rather than the whole pseudo-version: the tag stays readable and
 # still changes whenever olcRTC does.
