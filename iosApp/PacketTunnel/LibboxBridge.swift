@@ -177,9 +177,10 @@ final class LibboxPlatform: NSObject, LibboxPlatformInterfaceProtocol {
 
         var cellular: UInt32?
         for entry in sequence(first: first, next: { $0.pointee.ifa_next }) {
-            guard entry.pointee.ifa_addr?.pointee.sa_family == UInt8(AF_INET),
-                  entry.pointee.ifa_flags & UInt32(IFF_UP) != 0,
-                  entry.pointee.ifa_flags & UInt32(IFF_LOOPBACK) == 0
+            guard entry.pointee.ifa_flags & UInt32(IFF_UP) != 0,
+                  entry.pointee.ifa_flags & UInt32(IFF_LOOPBACK) == 0,
+                  let address = entry.pointee.ifa_addr,
+                  carriesTraffic(address)
             else { continue }
 
             let name = String(cString: entry.pointee.ifa_name)
@@ -191,6 +192,42 @@ final class LibboxPlatform: NSObject, LibboxPlatformInterfaceProtocol {
             }
         }
         return cellular
+    }
+
+    /// Whether an interface address is one traffic can leave the device by.
+    ///
+    /// This used to be `sa_family == AF_INET` and nothing else, which asks "does
+    /// it have an address" only of a network that has IPv4. On an IPv6-only
+    /// carrier `pdp_ip0` carries no AF_INET address at all, so no interface
+    /// matched, the lookup returned nil, and `pinToPhysicalInterface` then
+    /// answered false for *every* socket - the cores could not dial at all, and
+    /// olcRTC's own account of it was an unrelated "network is unreachable" from
+    /// the IPv4 half of a dual-stack dial (olcrtc#1). Apple runs App Review on
+    /// an IPv6-only NAT64 network, so this is the review path, not an edge case.
+    ///
+    /// Link-local is excluded deliberately. `fe80::/10` sits on every interface
+    /// whether or not it reaches anything, and `169.254/16` means IPv4 gave up;
+    /// counting either would pin to an associated-but-dead Wi-Fi in front of a
+    /// working cellular, which is the bug this function already existed to avoid.
+    private static func carriesTraffic(_ address: UnsafeMutablePointer<sockaddr>) -> Bool {
+        switch Int32(address.pointee.sa_family) {
+        case AF_INET:
+            let v4 = address.withMemoryRebound(to: sockaddr_in.self, capacity: 1) {
+                $0.pointee.sin_addr
+            }
+            return withUnsafeBytes(of: v4) { raw in
+                !(raw[0] == 169 && raw[1] == 254)
+            }
+        case AF_INET6:
+            let v6 = address.withMemoryRebound(to: sockaddr_in6.self, capacity: 1) {
+                $0.pointee.sin6_addr
+            }
+            return withUnsafeBytes(of: v6) { raw in
+                !(raw[0] == 0xfe && raw[1] & 0xc0 == 0x80)
+            }
+        default:
+            return false
+        }
     }
 
     /// 1.13 returns a whole owner record rather than a uid, and folded the two
