@@ -163,8 +163,17 @@ echo "== bind, all three packages in one framework =="
 #
 # gomobile builds the macOS slice for both architectures, which the desktop app
 # needs: release.yml ships an arm64 DMG and an Intel one.
+#
+# `iossimulator` is a target of its own — gomobile's `ios` means the device and
+# nothing else. Without it the framework has no simulator slice, and the Xcode
+# project's simulator search path points at a directory that does not exist:
+# every simulator build fails with `Unable to resolve module dependency: 'Cores'`,
+# which names the module and not the missing platform. Nobody could run the app
+# on a simulator at all, screenshots included. The extension still cannot carry
+# traffic there — NetworkExtension does not work in the simulator — but the app
+# builds, runs and can be photographed.
 gomobile bind -v \
-  -target=ios,macos \
+  -target=ios,iossimulator,macos \
   -tags "with_gvisor,with_quic,with_utls,with_clash_api" \
   -ldflags "-s -w" \
   -o "$OUT/Cores.xcframework" \
@@ -190,13 +199,19 @@ test -n "$macos_slice" \
   || { echo "no macOS slice — the bind did not target macOS properly"; exit 1; }
 echo "== macOS slice: $(basename "$macos_slice") =="
 
+# Named by architecture for the same reason, and found the same way.
+simulator_slice="$(find "$OUT/Cores.xcframework" -maxdepth 1 -type d -name 'ios-*simulator*' -print -quit)"
+test -n "$simulator_slice" \
+  || { echo "no simulator slice — the bind did not target iossimulator properly"; exit 1; }
+echo "== simulator slice: $(basename "$simulator_slice") =="
+
 # The whole point of the exercise: every API, one framework. A bind that silently
 # dropped one package would otherwise only fail much later, in Xcode — and now it
 # could drop it from one platform and not the other, which is worse, because the
 # build that catches it is the one nobody runs until the Mac app is being wired
 # up. Check both slices.
 headers="$OUT/Cores.xcframework/ios-arm64/Cores.framework/Headers"
-for slice in "$OUT/Cores.xcframework/ios-arm64" "$macos_slice"; do
+for slice in "$OUT/Cores.xcframework/ios-arm64" "$simulator_slice" "$macos_slice"; do
   slice_headers="$slice/Cores.framework/Headers"
   test -f "$slice_headers/Libbox.objc.h" \
     || { echo "no Libbox header in $(basename "$slice") — sing-box was not bound"; exit 1; }
@@ -205,7 +220,7 @@ for slice in "$OUT/Cores.xcframework/ios-arm64" "$macos_slice"; do
   test -f "$slice_headers/Mobile.objc.h" \
     || { echo "no Mobile header in $(basename "$slice") — olcrtc was not bound"; exit 1; }
 done
-echo "== all three APIs present on both platforms =="
+echo "== all three APIs present on every slice =="
 
 # Say which pins this framework came from, next to the framework itself.
 #

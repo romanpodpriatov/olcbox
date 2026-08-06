@@ -87,6 +87,12 @@ test -d "${DEST}/Cores.xcframework/ios-arm64" \
 # thing to notice would be a linker looking for a Mac binary that is not there.
 test -n "$(find "${DEST}/Cores.xcframework" -maxdepth 1 -type d -name 'macos*' -print -quit)" \
     || { echo "downloaded archive has no macOS slice — it predates ${TAG}"; exit 1; }
+# And the simulator slice, for the same reason and with the same failure: an
+# archive built before it existed still downloads under a tag that promises it,
+# and the next thing anyone sees is Xcode reporting that the module `Cores`
+# cannot be resolved — which names neither the platform nor the tag.
+test -n "$(find "${DEST}/Cores.xcframework" -maxdepth 1 -type d -name 'ios-*simulator*' -print -quit)" \
+    || { echo "downloaded archive has no simulator slice — it predates ${TAG}"; exit 1; }
 
 # Cache what was just downloaded, so the next sweep of the build directory is a
 # copy rather than a download.

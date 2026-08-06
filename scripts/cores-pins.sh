@@ -33,7 +33,12 @@ OLCRTC_VERSION="${OLCRTC_VERSION:-v0.0.0-20260717184831-c83717e7e900}"
 # release — would hand back an iOS-only framework as though it were the one this
 # build asked for. That is the same failure the header above describes, arriving
 # by a different door.
-CORES_BUILD="${CORES_BUILD:-2}"
+#
+# 2 → 3: the simulator slice. Same three versions, a framework one platform
+# wider, and every consumer keyed on the tag — the destination stamp, the local
+# cache, the published release — would otherwise hand back the two-slice build
+# for a project that now asks for three.
+CORES_BUILD="${CORES_BUILD:-3}"
 
 # The revision rather than the whole pseudo-version: the tag stays readable and
 # still changes whenever olcRTC does.
