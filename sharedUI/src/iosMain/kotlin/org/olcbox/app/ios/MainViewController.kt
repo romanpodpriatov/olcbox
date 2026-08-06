@@ -212,6 +212,9 @@ private fun IosApp(
                 // Nothing here is disabled or greyed out. The row is gone, so
                 // there is nothing to explain and nothing to tap.
                 showGetSubscription = false,
+                // Not on iOS: the app is a client for locations it is given,
+                // not an editor for ones typed in by hand.
+                showCustomLocation = false,
                 onOpenExternalUrl = { url -> platformBridge.openUrl(url) },
                 showSplitTunnelingButton = false,
                 canScanQr = true,

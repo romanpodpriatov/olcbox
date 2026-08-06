@@ -34,6 +34,14 @@ fun OlcboxAppContent(
     showAppSettingsButton: Boolean,
     onGetSubscriptionClick: () -> Unit = {},
     showGetSubscription: Boolean = true,
+    /**
+     * Whether this platform offers building a location by hand.
+     *
+     * A platform flag rather than the admin gate, because the two answer
+     * different questions: the gate asks whether this person is configuring the
+     * app, this asks whether the app configures servers at all. iOS says no.
+     */
+    showCustomLocation: Boolean = true,
     showSplitTunnelingButton: Boolean = false,
     canScanQr: Boolean = false,
     onAppSettingsClick: () -> Unit,
@@ -87,6 +95,7 @@ fun OlcboxAppContent(
                     showAppSettingsButton = showAppSettingsButton,
                     onGetSubscriptionClick = onGetSubscriptionClick,
                     showGetSubscription = showGetSubscription,
+                    showCustomLocation = showCustomLocation,
                     showSplitTunnelingButton = showSplitTunnelingButton,
                     canScanQr = canScanQr,
                     onAppSettingsClick = onAppSettingsClick,

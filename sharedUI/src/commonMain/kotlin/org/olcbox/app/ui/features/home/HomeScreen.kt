@@ -62,6 +62,7 @@ fun HomeScreen(
     onAddLocation: () -> Unit,
     onGetSubscriptionClick: () -> Unit = {},
     showGetSubscription: Boolean = true,
+    showCustomLocation: Boolean = true,
     /** Opens a provider's support or web link. Platform-supplied. */
     onOpenExternalUrl: (String) -> Unit = {}
 ) {
@@ -344,13 +345,14 @@ fun HomeScreen(
                         sort = subscriptionSettings.sort,
                         collapsible = subscriptionSettings.collapsible,
                         showSettings = admin,
-                        // Adding one by hand is the same act as importing a link
-                        // or scanning a QR code, and neither of those is gated.
-                        // Gating only this one made the app refuse in a dialog
-                        // what it accepted from a clipboard, and left the person
-                        // who had just deleted a custom location with no way to
-                        // put it back.
-                        showCustomLocation = true
+                        // The platform's answer, not the admin gate's. Where the
+                        // app does build locations by hand, adding one is the
+                        // same act as importing a link or scanning a QR code, and
+                        // neither of those is gated — gating only this one made
+                        // the app refuse in a dialog what it accepted from a
+                        // clipboard, and left anyone who had just deleted a
+                        // custom location with no way to put it back.
+                        showCustomLocation = showCustomLocation
                     )
 
                     Spacer(modifier = Modifier.height(24.dp))
@@ -444,7 +446,10 @@ fun HomeScreen(
                     onGetSubscriptionClick()
                 },
                 showGetSubscription = showGetSubscription,
-                showCustomLocation = admin
+                // The same answer as the locations list above. These two
+                // disagreed — `true` there and the admin gate here — so the
+                // button appeared or vanished depending on which way in you took.
+                showCustomLocation = showCustomLocation
             )
         }
     }
