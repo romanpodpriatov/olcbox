@@ -617,9 +617,22 @@ enum TunnelCounters {
 /// identifier, which the kernel is free to rewrite.
 enum IcmpProbe {
 
-    private static let echoRequest: UInt8 = 8
-    private static let echoReply: UInt8 = 0
+    private static let echoRequestV4: UInt8 = 8
+    private static let echoReplyV4: UInt8 = 0
+    // ICMPv6 numbers its echo differently, and the kernel — not us — computes
+    // its checksum, because that checksum covers a pseudo-header only the stack
+    // knows. Apple's SimplePing makes the same split.
+    private static let echoRequestV6: UInt8 = 128
+    private static let echoReplyV6: UInt8 = 129
     private static let payload = Array("proofkit-latency".utf8)
+
+    /// A resolved address with everything needed to talk to it.
+    private struct Target {
+        var storage: sockaddr_storage
+        var length: socklen_t
+        var family: Int32
+        var isV6: Bool { family == AF_INET6 }
+    }
 
     nonisolated(unsafe) private static var sequence: UInt16 = 0
     private static let lock = NSLock()
@@ -647,7 +660,11 @@ enum IcmpProbe {
     static func measure(host: String, timeout: TimeInterval) -> Int64 {
         guard let target = resolve(host) else { return Failure.unresolved.rawValue }
 
-        let fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_ICMP)
+        let fd = socket(
+            target.family,
+            SOCK_DGRAM,
+            target.isV6 ? IPPROTO_ICMPV6 : IPPROTO_ICMP
+        )
         guard fd >= 0 else { return Failure.socketRefused.rawValue }
         defer { close(fd) }
 
@@ -658,17 +675,14 @@ enum IcmpProbe {
         setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
 
         let seq = nextSequence()
-        let request = echoPacket(sequence: seq)
+        let request = echoPacket(sequence: seq, isV6: target.isV6)
 
         let started = Date()
         let sent = request.withUnsafeBufferPointer { buffer -> Int in
-            var addr = target
+            var addr = target.storage
             return withUnsafePointer(to: &addr) {
                 $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { sa in
-                    sendto(
-                        fd, buffer.baseAddress, buffer.count, 0,
-                        sa, socklen_t(MemoryLayout<sockaddr_in>.size)
-                    )
+                    sendto(fd, buffer.baseAddress, buffer.count, 0, sa, target.length)
                 }
             }
         }
@@ -683,16 +697,16 @@ enum IcmpProbe {
                 recv(fd, buffer.baseAddress, buffer.count, 0)
             }
             if read <= 0 { return Failure.noReply.rawValue }
-            if matches(reply, count: read, sequence: seq) {
+            if matches(reply, count: read, sequence: seq, isV6: target.isV6) {
                 return Int64(Date().timeIntervalSince(started) * 1000)
             }
         }
         return Failure.noReply.rawValue
     }
 
-    private static func echoPacket(sequence: UInt16) -> [UInt8] {
+    private static func echoPacket(sequence: UInt16, isV6: Bool) -> [UInt8] {
         var packet = [UInt8](repeating: 0, count: 8 + payload.count)
-        packet[0] = echoRequest
+        packet[0] = isV6 ? echoRequestV6 : echoRequestV4
         packet[1] = 0
         // 2..3 is the checksum, left zero while it is computed.
         packet[4] = 0
@@ -701,9 +715,15 @@ enum IcmpProbe {
         packet[7] = UInt8(sequence & 0xFF)
         for (i, byte) in payload.enumerated() { packet[8 + i] = byte }
 
-        let sum = checksum(packet)
-        packet[2] = UInt8(sum >> 8)
-        packet[3] = UInt8(sum & 0xFF)
+        // Left at zero for ICMPv6 on purpose: its checksum covers a pseudo-header
+        // built from the source address, which is chosen by the kernel after this
+        // returns. The stack fills it in; computing one here would be wrong twice
+        // over, and a wrong checksum is discarded silently by the far end.
+        if !isV6 {
+            let sum = checksum(packet)
+            packet[2] = UInt8(sum >> 8)
+            packet[3] = UInt8(sum & 0xFF)
+        }
         return packet
     }
 
@@ -721,31 +741,52 @@ enum IcmpProbe {
         return UInt16(truncatingIfNeeded: ~total)
     }
 
-    private static func matches(_ reply: [UInt8], count: Int, sequence: UInt16) -> Bool {
+    private static func matches(
+        _ reply: [UInt8], count: Int, sequence: UInt16, isV6: Bool
+    ) -> Bool {
         guard count > 0 else { return false }
-        // Darwin hands this socket the IP header along with the reply, which is
-        // what SimplePing documents and skips. Both offsets are tried anyway:
-        // the alternative is a probe that silently never matches on a platform
-        // detail, and trying twice costs a comparison.
+        // Darwin hands the IPv4 socket the IP header along with the reply, which
+        // is what SimplePing documents and skips; the IPv6 one starts at the
+        // ICMP message. Both offsets are tried for v4 anyway: the alternative is
+        // a probe that silently never matches on a platform detail, and trying
+        // twice costs a comparison.
         var offsets = [0]
-        if reply[0] >> 4 == 4 { offsets.insert(Int(reply[0] & 0x0F) * 4, at: 0) }
-        return offsets.contains { icmpEcho(reply, count: count, at: $0, sequence: sequence) }
+        if !isV6, reply[0] >> 4 == 4 { offsets.insert(Int(reply[0] & 0x0F) * 4, at: 0) }
+        return offsets.contains {
+            icmpEcho(reply, count: count, at: $0, sequence: sequence, isV6: isV6)
+        }
     }
 
     private static func icmpEcho(
-        _ reply: [UInt8], count: Int, at offset: Int, sequence: UInt16
+        _ reply: [UInt8], count: Int, at offset: Int, sequence: UInt16, isV6: Bool
     ) -> Bool {
         guard count >= offset + 8 + payload.count else { return false }
-        guard reply[offset] == echoReply else { return false }
+        guard reply[offset] == (isV6 ? echoReplyV6 : echoReplyV4) else { return false }
         let seq = UInt16(reply[offset + 6]) << 8 | UInt16(reply[offset + 7])
         guard seq == sequence else { return false }
         return Array(reply[(offset + 8)..<(offset + 8 + payload.count)]) == payload
     }
 
-    private static func resolve(_ host: String) -> sockaddr_in? {
+    /// Whatever family this network can actually reach.
+    ///
+    /// `AF_UNSPEC`, never `AF_INET`. On an IPv6-only mobile network the phone has
+    /// no IPv4 address at all, and an IPv4 socket cannot send anywhere: every
+    /// location reported "could not send an echo" while the same nodes answered
+    /// fine over Wi-Fi. Asking for one family and getting a network that does not
+    /// have it is not a failure worth reporting — it is a question worth not
+    /// asking.
+    ///
+    /// This is also why the address goes through `getaddrinfo` even when it is
+    /// already a literal: on a NAT64 network Darwin synthesises an IPv6 address
+    /// for an IPv4 literal, so a node with no IPv6 of its own stays reachable.
+    /// Apple documents this as the reason not to hardcode `AF_INET` anywhere.
+    ///
+    /// The first entry wins. `getaddrinfo` returns them in the order the system
+    /// would use itself, which already accounts for what the interface can do.
+    private static func resolve(_ host: String) -> Target? {
         var hints = addrinfo(
-            ai_flags: 0,
-            ai_family: AF_INET,
+            ai_flags: AI_DEFAULT,
+            ai_family: AF_UNSPEC,
             ai_socktype: SOCK_DGRAM,
             ai_protocol: 0,
             ai_addrlen: 0,
@@ -756,8 +797,22 @@ enum IcmpProbe {
         var result: UnsafeMutablePointer<addrinfo>?
         guard getaddrinfo(host, nil, &hints, &result) == 0, let first = result else { return nil }
         defer { freeaddrinfo(result) }
-        guard let addr = first.pointee.ai_addr else { return nil }
-        return addr.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { $0.pointee }
+
+        var entry: UnsafeMutablePointer<addrinfo>? = first
+        while let candidate = entry {
+            let family = candidate.pointee.ai_family
+            if family == AF_INET || family == AF_INET6, let addr = candidate.pointee.ai_addr {
+                var storage = sockaddr_storage()
+                memcpy(&storage, addr, Int(candidate.pointee.ai_addrlen))
+                return Target(
+                    storage: storage,
+                    length: candidate.pointee.ai_addrlen,
+                    family: family
+                )
+            }
+            entry = candidate.pointee.ai_next
+        }
+        return nil
     }
 }
 
