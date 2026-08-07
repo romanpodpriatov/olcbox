@@ -97,14 +97,22 @@ about you.
 
 REQUIREMENTS
 
-A subscription from a VPN provider. ProofKit does not sell one and does not
-include one. If you do not have a provider yet, the app can open proofkit.org,
-where you can get a subscription for the ProofKit network.
+A server configuration from a VPN provider: a subscription URL, a QR code, or a
+pasted link. ProofKit does not sell one and does not include one. Any provider
+that speaks the protocols above will work.
 
 OPEN SOURCE
 
 github.com/romanpodpriatov/olcbox
 ```
+
+> **Do not put a purchase pointer back into this text.** The sentence that used to
+> close REQUIREMENTS — "the app can open proofkit.org, where you can get a
+> subscription" — is what kept Guideline 3.1.1 alive after the control itself was
+> removed from the app on 2026-08-04. We told review the pointer was gone while the
+> listing still advertised it, so from their side nothing had changed. Metadata is
+> reviewed alongside the binary; a call to action for a purchase counts wherever it
+> appears.
 
 ---
 
