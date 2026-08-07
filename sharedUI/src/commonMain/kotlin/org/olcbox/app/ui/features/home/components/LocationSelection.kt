@@ -47,7 +47,6 @@ import androidx.compose.ui.unit.sp
 import org.olcbox.app.ui.icons.PkIcons
 import org.olcbox.app.net.TransportKind
 import org.olcbox.app.net.transportKind
-import org.olcbox.app.ui.components.kit.PkBrand
 import org.olcbox.app.ui.components.kit.PkFilterChip
 import org.olcbox.app.ui.components.kit.PkSectionLabel
 import org.olcbox.app.ui.theme.LocalPkPalette
@@ -353,7 +352,7 @@ fun LocationSelectorScreen(
                     Icon(Icons.Rounded.Add, contentDescription = null)
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        text = "Add subscription",
+                        text = "Add server list",
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Medium
                     )
@@ -396,20 +395,14 @@ private fun RelaySetupCard(
             PkSectionLabel("Add relay setup")
         }
 
-        // Absent, not disabled, where a build may not point at a purchase —
-        // see showGetSubscription in AddConfigurationSheet for why.
-        if (showGetSubscription) {
-            SetupActionRow(
-                title = "Get a subscription",
-                subtitle = "Open ${PkBrand.name} to create one",
-                icon = PkIcons.OpenInNew,
-                prominent = true,
-                onClick = onGetSubscriptionClick
-            )
-        }
+        // There is no row here that points at a purchase. It was removed rather
+        // than hidden: App Review read the app as a front end for a paid plan, and
+        // a control that only a flag stands between us and shipping is not an
+        // answer to that. `showGetSubscription` stays as the guard against one
+        // being added back.
 
         SetupActionRow(
-            title = "Add subscription",
+            title = "Add server list",
             subtitle = "Scan QR, paste URI, or import file",
             icon = PkIcons.QrCodeScanner,
             onClick = onAddSubscriptionClick
@@ -529,7 +522,7 @@ private fun SubscriptionGroupHeader(
 ) {
     val pk = LocalPkPalette.current
     val first = locations.firstOrNull()
-    val title = first?.subscriptionTitle().orEmpty().ifBlank { "Subscriptions" }
+    val title = first?.subscriptionTitle().orEmpty().ifBlank { "Server lists" }
     val refreshLine = first?.subscriptionRefreshLine()
     val quotaLine = first?.subscriptionQuotaLine()
     // A quarter turn rather than two icons: the same arrow points at the rows
@@ -727,12 +720,12 @@ private fun LocationItem.subscriptionGroupKey(): String {
 
 private fun LocationItem.subscriptionTitle(): String {
     val subscription = metadata?.subscription
-    // Falling back to the literal "Subscriptions" labelled every unnamed
+    // Falling back to the literal "Server lists" labelled every unnamed
     // subscription identically, so two of them read as the same heading twice.
     // Identify by host instead, which is what actually distinguishes them.
     val name = subscription?.name?.takeIf { it.isNotBlank() }
         ?: subscriptionUrl?.let { subscriptionHost(it) }
-        ?: "Subscription"
+        ?: "Server list"
 
     return listOfNotNull(
         subscription?.icon?.takeIf { it.isNotBlank() },

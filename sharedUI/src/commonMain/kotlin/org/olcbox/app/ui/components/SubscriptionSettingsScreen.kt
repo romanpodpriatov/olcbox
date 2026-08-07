@@ -57,7 +57,7 @@ fun SubscriptionSettingsScreen(
             .padding(top = 16.dp, bottom = 32.dp)
     ) {
         SubscriptionSettingsHeader(
-            title = "Subscriptions",
+            title = "Server lists",
             subtitle = settings.hubSummary(),
             onBack = onBack
         )
@@ -96,7 +96,7 @@ fun SubscriptionSettingsScreen(
         }
 
         SubscriptionSettingsNote(
-            "Sets how often subscriptions refresh themselves while the app is running."
+            "Sets how often server lists refresh themselves while the app is running."
         )
 
         Spacer(Modifier.height(18.dp))
@@ -144,20 +144,20 @@ fun SubscriptionSettingsScreen(
         }
 
         SubscriptionSettingsNote(
-            "Importing a subscription URL that is already here refreshes the one " +
+            "Importing a server list URL that is already here refreshes the one " +
                 "you have instead of adding a second copy of it."
         )
 
         Spacer(Modifier.height(18.dp))
 
         SubscriptionToggleRow(
-            title = "Collapsible subscriptions",
+            title = "Collapsible server lists",
             checked = settings.collapsible,
             onCheckedChange = { onChanged(settings.copy(collapsible = it)) }
         )
 
         SubscriptionSettingsNote(
-            "Lets a subscription's servers be folded away. Off, every subscription " +
+            "Lets a server list's servers be folded away. Off, every list " +
                 "always shows all of them."
         )
     }

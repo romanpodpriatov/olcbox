@@ -465,7 +465,7 @@ fun AndroidMainScreen(
                 checkUpdate(manual = true)
             },
             onSubscriptionShareClick = { url ->
-                shareSheetPayload = "Subscription QR" to ConfigShareService.subscriptionQrText(url)
+                shareSheetPayload = "Server list QR" to ConfigShareService.subscriptionQrText(url)
             },
             onSubscriptionRefreshClick = { url ->
                 viewModel.refreshSubscription(url) { report ->
@@ -484,7 +484,7 @@ fun AndroidMainScreen(
                     reloadLocationsAfterImport {
                         Toast.makeText(
                             context,
-                            if (removed > 0) "Subscription removed" else "Subscription not found",
+                            if (removed > 0) "Server list removed" else "Server list not found",
                             Toast.LENGTH_SHORT
                         ).show()
                     }

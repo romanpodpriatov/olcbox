@@ -355,7 +355,7 @@ private fun AppSettingsHubContent(
         )
 
         SettingsNavigationRow(
-            title = "Subscription Settings",
+            title = "Server list updates",
             value = subscriptionSettings.hubSummary(),
             icon = Icons.Outlined.Refresh,
             enabled = enabled,
@@ -363,7 +363,7 @@ private fun AppSettingsHubContent(
         )
 
         SettingsNavigationRow(
-            title = "Subscriptions & Sharing",
+            title = "Server lists & sharing",
             value = subscriptionsCount.subscriptionSummary(),
             icon = Icons.Outlined.Share,
             enabled = true,
@@ -1122,7 +1122,7 @@ private fun SubscriptionsSharingSettingsContent(
             .padding(top = 16.dp, bottom = 12.dp)
     ) {
         SettingsDetailHeader(
-            title = "Subscriptions & Sharing",
+            title = "Server lists & sharing",
             subtitle = subscriptions.size.subscriptionSummary(),
             onBack = onBack
         )
@@ -1147,12 +1147,12 @@ private fun SubscriptionsSharingSettingsContent(
                 onClick = onCopyConfigClick
             )
 
-            SettingsSectionLabel("Subscriptions")
+            SettingsSectionLabel("Server lists")
 
             if (subscriptions.isEmpty()) {
                 EmptyAppsState(
-                    title = "No subscriptions",
-                    subtitle = "Imported HTTPS subscriptions will appear here."
+                    title = "No server lists",
+                    subtitle = "Imported HTTPS server lists will appear here."
                 )
             } else {
                 subscriptions.forEach { item ->
@@ -1180,11 +1180,11 @@ private fun SubscriptionShareRow(
     if (confirmDelete) {
         AlertDialog(
             onDismissRequest = { confirmDelete = false },
-            title = { Text("Remove subscription?") },
+            title = { Text("Remove server list?") },
             text = {
                 Text(
                     "${item.name} and its ${item.locationCount} location(s) will be " +
-                        "removed from this device. You can add the subscription again later."
+                        "removed from this device. You can add the server list again later."
                 )
             },
             confirmButton = {
@@ -2252,9 +2252,9 @@ private fun AndroidConnectionMode.label(): String {
 
 private fun Int.subscriptionSummary(): String {
     return when (this) {
-        0 -> "No HTTPS subscriptions"
-        1 -> "1 HTTPS subscription"
-        else -> "$this HTTPS subscriptions"
+        0 -> "No HTTPS sources"
+        1 -> "1 HTTPS source"
+        else -> "$this HTTPS sources"
     }
 }
 

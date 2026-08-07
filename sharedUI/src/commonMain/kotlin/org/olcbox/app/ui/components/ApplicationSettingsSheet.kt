@@ -342,14 +342,14 @@ private fun SharedSettingsHubContent(
         )
 
         SharedNavigationRow(
-            title = "Subscription Settings",
+            title = "Server list updates",
             value = subscriptionSettings.hubSummary(),
             icon = Icons.Outlined.Refresh,
             onClick = onSubscriptionOptionsClick
         )
 
         SharedNavigationRow(
-            title = "Subscriptions & Sharing",
+            title = "Server lists & sharing",
             value = subscriptionsCount.subscriptionSummary(),
             icon = Icons.Outlined.Share,
             onClick = onSubscriptionsClick
@@ -793,7 +793,7 @@ private fun SharedSubscriptionsSettingsContent(
             .padding(top = 16.dp, bottom = 12.dp)
     ) {
         SharedDetailHeader(
-            title = "Subscriptions & Sharing",
+            title = "Server lists & sharing",
             subtitle = subscriptions.size.subscriptionSummary(),
             onBack = onBack
         )
@@ -817,12 +817,12 @@ private fun SharedSubscriptionsSettingsContent(
                 onClick = onCopyConfigClick
             )
 
-            SharedSectionLabel("Subscriptions")
+            SharedSectionLabel("Server lists")
 
             if (subscriptions.isEmpty()) {
                 SharedEmptyState(
-                    title = "No subscriptions",
-                    subtitle = "Imported HTTPS subscriptions will appear here."
+                    title = "No server lists",
+                    subtitle = "Imported HTTPS server lists will appear here."
                 )
             } else {
                 subscriptions.forEach { item ->
@@ -946,11 +946,11 @@ private fun SharedSubscriptionRow(
     if (confirmDelete) {
         AlertDialog(
             onDismissRequest = { confirmDelete = false },
-            title = { Text("Remove subscription?") },
+            title = { Text("Remove server list?") },
             text = {
                 Text(
                     "${item.name} and its ${item.locationCount} location(s) will be " +
-                        "removed from this device. You can add the subscription again later."
+                        "removed from this device. You can add the server list again later."
                 )
             },
             confirmButton = {
@@ -1334,9 +1334,9 @@ private enum class SharedSettingsRoute {
 
 private fun Int.subscriptionSummary(): String {
     return when (this) {
-        0 -> "No HTTPS subscriptions"
-        1 -> "1 HTTPS subscription"
-        else -> "$this HTTPS subscriptions"
+        0 -> "No HTTPS sources"
+        1 -> "1 HTTPS source"
+        else -> "$this HTTPS sources"
     }
 }
 

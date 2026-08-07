@@ -275,7 +275,7 @@ private fun IosApp(
                     onDownloadUpdateClick = {},
                     onLaterUpdateClick = {},
                     onSubscriptionShareClick = { url ->
-                        platformBridge.shareText("Subscription", ConfigShareService.subscriptionQrText(url))
+                        platformBridge.shareText("Server list", ConfigShareService.subscriptionQrText(url))
                     },
                     onSubscriptionRefreshClick = { url ->
                         dependencies.homeViewModel.refreshSubscription(url) { report ->
@@ -289,7 +289,7 @@ private fun IosApp(
                         dependencies.homeViewModel.deleteSubscription(url) { removed ->
                             reloadLocationsAfterImport {
                                 platformBridge.showMessage(
-                                    if (removed > 0) "Subscription removed" else "Subscription not found"
+                                    if (removed > 0) "Server list removed" else "Server list not found"
                                 )
                             }
                         }

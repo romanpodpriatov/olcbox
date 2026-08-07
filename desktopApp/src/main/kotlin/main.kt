@@ -527,7 +527,7 @@ fun main(args: Array<String>) = application {
                         onDownloadUpdateClick = { info -> downloadUpdate(info) },
                         onLaterUpdateClick = { info -> postponeUpdate(info) },
                         onSubscriptionShareClick = { url ->
-                            sharePayload = "Subscription QR" to ConfigShareService.subscriptionQrText(url)
+                            sharePayload = "Server list QR" to ConfigShareService.subscriptionQrText(url)
                         },
                         onSubscriptionRefreshClick = { url ->
                             dependencies.homeViewModel.refreshSubscription(url) { report ->
@@ -541,9 +541,9 @@ fun main(args: Array<String>) = application {
                             dependencies.homeViewModel.deleteSubscription(url) { removed ->
                                 reloadLocationsAfterImport {
                                     updateMessage = if (removed > 0) {
-                                        "Subscription removed"
+                                        "Server list removed"
                                     } else {
-                                        "Subscription not found"
+                                        "Server list not found"
                                     }
                                 }
                             }

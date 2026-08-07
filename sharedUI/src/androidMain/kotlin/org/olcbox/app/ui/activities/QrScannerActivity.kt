@@ -320,7 +320,7 @@ private fun QrScannerTopBar(onClose: () -> Unit) {
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
-                    text = "subscription or location URI",
+                    text = "server list or location URI",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -428,7 +428,7 @@ private fun QrScannerStatusPanel(modifier: Modifier = Modifier) {
                         fontWeight = FontWeight.SemiBold
                     )
                     Text(
-                        text = "Subscription or location URI",
+                        text = "Server list or location URI",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

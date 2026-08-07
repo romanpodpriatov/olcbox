@@ -364,7 +364,7 @@ class HomeScreenViewModel(
                     // — the user's next move is their provider's bot, not another paste.
                     onError(
                         if (isPartnerLink(rawText)) {
-                            "Link not recognised. Open your provider's bot and copy the subscription link again."
+                            "Link not recognised. Open your provider's bot and copy the server list link again."
                         } else {
                             "No valid ProofKit config found"
                         }

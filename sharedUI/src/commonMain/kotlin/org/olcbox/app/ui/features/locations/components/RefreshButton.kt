@@ -54,7 +54,7 @@ fun SubscriptionRefreshButton(
     IconButton(onClick = onClick, enabled = !isRefreshing, modifier = Modifier.size(40.dp)) {
         Icon(
             imageVector = Icons.Rounded.Refresh,
-            contentDescription = "Update subscription",
+            contentDescription = "Update server list",
             tint = tint,
             modifier = Modifier
                 .size(20.dp)

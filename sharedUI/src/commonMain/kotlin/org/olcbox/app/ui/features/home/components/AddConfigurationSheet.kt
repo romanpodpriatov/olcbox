@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import org.olcbox.app.ui.icons.PkIcons
-import org.olcbox.app.ui.components.kit.PkBrand
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Refresh
@@ -49,13 +48,15 @@ fun AddConfigurationSheet(
     onAddCustomLocationClick: () -> Unit,
     onGetSubscriptionClick: () -> Unit = {},
     /**
-     * False in a build that may not point anyone at a purchase.
+     * Kept as a guard after the row it gated was removed outright.
      *
      * App Store guideline 3.1.1: a call to action inside the app that sends a
-     * user to buy digital content outside In-App Purchase is not allowed, and
-     * this row is exactly that — it opens the site where the service is sold.
-     * The app works the same without it; a subscription link arrives by QR,
-     * paste or file like any other client's.
+     * user to buy digital content outside In-App Purchase is not allowed. The row
+     * that did this is gone from the source, not merely switched off — twice now
+     * review has read the app as a front end for a paid plan, and a control that
+     * only a boolean stands between us and shipping is not an answer to that.
+     * Every platform passes `false`; nothing reads this any more, and a build
+     * that wants such a row has to add it back deliberately.
      */
     showGetSubscription: Boolean = true,
     showCustomLocation: Boolean = true
@@ -81,27 +82,20 @@ fun AddConfigurationSheet(
         ) {
             AddSheetHeader(
                 title = "Add connection",
-                subtitle = "Subscription or custom location"
+                subtitle = "Server list or custom location"
             )
 
             Spacer(Modifier.height(20.dp))
 
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                if (!hasSubscriptions && showGetSubscription) {
-                    // Someone with nothing yet needs a source before any of the
-                    // import actions below mean anything.
-                    AddSheetAction(
-                        title = "Get a subscription",
-                        value = "Open ${PkBrand.name} to create one",
-                        icon = PkIcons.OpenInNew,
-                        onClick = onGetSubscriptionClick
-                    )
-                }
+                // No row here points at a purchase. Someone with nothing yet gets
+                // the import actions below and nothing else — where they obtained a
+                // server list is not this app's business.
 
                 if (canScanQr) {
                     AddSheetAction(
                         title = "Scan QR code",
-                        value = "Subscription or olcrtc URI",
+                        value = "Server list or olcrtc URI",
                         icon = PkIcons.QrCodeScanner,
                         onClick = onScanQrClick
                     )
@@ -116,15 +110,15 @@ fun AddConfigurationSheet(
 
                 AddSheetAction(
                     title = "Import from file",
-                    value = "Read subscription or config file",
+                    value = "Read server list or config file",
                     icon = PkIcons.FileOpen,
                     onClick = onImportFileClick
                 )
 
                 if (hasSubscriptions) {
                     AddSheetAction(
-                        title = "Update subscriptions",
-                        value = "Refresh imported subscription locations",
+                        title = "Update server lists",
+                        value = "Refresh imported server locations",
                         icon = Icons.Outlined.Refresh,
                         showChevron = false,
                         onClick = onUpdateSubscriptionsClick

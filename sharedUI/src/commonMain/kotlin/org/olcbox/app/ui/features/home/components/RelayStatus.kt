@@ -60,7 +60,7 @@ fun RelayStatus(
     }
     val caption = when {
         isActive -> exitName?.let { "Traffic exits via $it" } ?: "Connected — traffic is routed"
-        requiresSetup -> "Import a subscription to start"
+        requiresSetup -> "Import a server list to start"
         else -> "Disconnected"
     }
     Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {

@@ -866,7 +866,7 @@ class LocationsRepositoryImplTest {
 
         assertEquals(1, report.updatedCount)
         assertFalse(report.hasFailures)
-        assertEquals("Subscription updated", report.singleMessage())
+        assertEquals("Server list updated", report.singleMessage())
     }
 
     @Test

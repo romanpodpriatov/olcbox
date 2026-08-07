@@ -27,13 +27,13 @@ data class SubscriptionRefreshFailure(
     /** One line for a toast/snackbar. */
     fun message(): String = when (error) {
         SubscriptionRefreshError.Rejected ->
-            "Subscription rejected${statusCode?.let { " ($it)" }.orEmpty()} — it may have been revoked"
+            "Server list rejected${statusCode?.let { " ($it)" }.orEmpty()} — it may have been revoked"
         SubscriptionRefreshError.ServerError ->
-            "Subscription server error${statusCode?.let { " ($it)" }.orEmpty()} — try again later"
+            "Server list host error${statusCode?.let { " ($it)" }.orEmpty()} — try again later"
         SubscriptionRefreshError.Unreachable ->
-            "Could not reach the subscription server — check your connection"
+            "Could not reach the server list host — check your connection"
         SubscriptionRefreshError.Empty ->
-            "Subscription returned no locations"
+            "Server list returned no locations"
     }
 }
 
@@ -49,22 +49,22 @@ data class SubscriptionRefreshReport(
 ) {
     val hasFailures: Boolean get() = failures.isNotEmpty()
 
-    /** Message for refreshing one subscription. */
+    /** Message for refreshing one server list. */
     fun singleMessage(): String = when {
         failures.isNotEmpty() -> failures.first().message()
-        updatedCount > 0 -> "Subscription updated"
-        else -> "Subscription unchanged"
+        updatedCount > 0 -> "Server list updated"
+        else -> "Server list unchanged"
     }
 
     /** Message for refreshing everything at once. */
     fun bulkMessage(): String = when {
         failures.isNotEmpty() && updatedCount == 0 ->
             if (failures.size == 1) failures.first().message()
-            else "${failures.size} subscriptions failed: ${failures.first().message()}"
+            else "${failures.size} server lists failed: ${failures.first().message()}"
         failures.isNotEmpty() ->
             "Updated $updatedCount, ${failures.size} failed: ${failures.first().message()}"
-        updatedCount > 0 -> "Subscriptions updated: $updatedCount"
-        else -> "No subscriptions to update"
+        updatedCount > 0 -> "Server lists updated: $updatedCount"
+        else -> "No server lists to update"
     }
 
     companion object {
