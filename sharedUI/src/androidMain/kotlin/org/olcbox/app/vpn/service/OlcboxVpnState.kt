@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.update
 import org.olcbox.app.util.nowMillis
 import org.olcbox.app.vpn.TrafficCounters
 import org.olcbox.app.vpn.VpnStatus
+import org.olcbox.app.log.LogScrubber
 
 object OlcboxVpnState {
     private val _logs = MutableStateFlow<List<String>>(emptyList())
@@ -47,8 +48,10 @@ object OlcboxVpnState {
     }
 
     fun addLog(msg: String) {
-        Log.d(TAG, msg)
-        _logs.update { (it + msg).takeLast(MAX_LOG_ENTRIES) }
+        // Scrubbed once, at the top: logcat and a captured bug report are exports too.
+        val safe = LogScrubber.default.scrub(msg)
+        Log.d(TAG, safe)
+        _logs.update { (it + safe).takeLast(MAX_LOG_ENTRIES) }
     }
 
     private const val MAX_LOG_ENTRIES = 1_000

@@ -167,6 +167,28 @@ class SingBoxConfigTest {
         assertIs<kotlinx.serialization.json.JsonObject>(parsed)
     }
 
+    @Test fun everyBuilderKeepsTheLogQuiet() {
+        // At "info" sing-box names every outbound connection the user makes, and that
+        // output lands in the log we invite the user to export — their browsing
+        // history in a file, which our no-logs commitment says it must not be. Dial
+        // failures are warnings and survive. Nothing parses this stream: readiness is
+        // a socket probe (waitForCoreSocks), not a log match.
+        //
+        // Read the field rather than grepping the string: a config with no "log" block
+        // is not quiet, it is on sing-box's default, which is "info".
+        for (json in listOf(
+            SingBoxConfig.build(vless()),
+            SingBoxConfig.buildTun(vless()),
+            SingBoxConfig.buildTunSocks(socksPort = 10809),
+            SingBoxConfig.buildDesktopTun(corePort = 10809, verifyPort = 10810),
+            SingBoxConfig.buildOlcrtcSocks(olcrtcPort = 10808),
+        )) {
+            val level = Json.parseToJsonElement(json).jsonObject["log"]
+                ?.jsonObject?.get("level")?.jsonPrimitive?.content
+            assertEquals("warn", level, json)
+        }
+    }
+
     private fun vless() = OutboundSpec.Vless(
         "u", "1.2.3.4", 443, "sni.x", "PBK", "sid", "chrome",
         "xtls-rprx-vision", TransportSpec.Tcp, "DE"

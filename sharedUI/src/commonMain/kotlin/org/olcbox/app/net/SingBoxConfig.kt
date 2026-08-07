@@ -157,7 +157,7 @@ object SingBoxConfig {
         mtu: Int = DESKTOP_TUN_MTU,
     ): String {
         val obj = buildJsonObject {
-            putJsonObject("log") { put("level", "info") }
+            putJsonObject("log") { put("level", "warn") }
             putJsonObject("dns") {
                 putJsonArray("servers") {
                     // Order is the default. The first server answers anything no
@@ -262,7 +262,7 @@ object SingBoxConfig {
         outbounds: JsonArrayBuilder.() -> Unit,
     ): String {
         val obj = buildJsonObject {
-            putJsonObject("log") { put("level", "info") }
+            putJsonObject("log") { put("level", "warn") }
             // Name resolution is the one thing that must not ride an unreliable
             // datagram path: lose it and nothing resolves, so no app opens a
             // socket at all and the tunnel looks perfectly connected behind a
@@ -321,6 +321,11 @@ object SingBoxConfig {
 
     private fun render(socksPort: Int, outbounds: JsonArrayBuilder.() -> Unit): String {
         val obj = buildJsonObject {
+            // Without this sing-box applies its own default, which is "info" — and
+            // that names every connection the user makes, in a log we invite them to
+            // export. This renderer is behind the plain socks path, so it is the one
+            // most users are actually on.
+            putJsonObject("log") { put("level", "warn") }
             putJsonArray("inbounds") {
                 addJsonObject {
                     put("type", "socks"); put("tag", "in")

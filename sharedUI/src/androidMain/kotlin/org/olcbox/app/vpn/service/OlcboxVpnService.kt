@@ -76,6 +76,7 @@ import java.net.ServerSocket
 import java.net.Socket
 import kotlin.concurrent.thread
 import kotlin.coroutines.coroutineContext
+import org.olcbox.app.log.LogScrubber
 
 class OlcboxVpnService : VpnService() {
 
@@ -329,7 +330,9 @@ class OlcboxVpnService : VpnService() {
             override fun writeLog(msg: String) {
                 val line = msg.trimEnd()
                 addLog("rtc: $line")
-                Log.v("olcrtc", line)
+                // Its own tag, so it needs its own scrub: this one does not go through
+                // addLog, and logcat is captured by bug reports.
+                Log.v("olcrtc", LogScrubber.default.scrub(line))
                 handleRtcLine(line)
             }
         })

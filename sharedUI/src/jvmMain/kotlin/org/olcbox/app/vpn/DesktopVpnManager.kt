@@ -44,6 +44,7 @@ import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.TimeUnit
+import org.olcbox.app.log.LogScrubber
 
 class DesktopVpnManager private constructor(
     private val locationsRepository: LocationsRepository,
@@ -758,7 +759,9 @@ class DesktopVpnManager private constructor(
         val configPath = writeOlcRtcClientConfig(olcRtcCommand)
         val command = olcRtcCommand.args(configPath)
 
-        addLog("Starting olcRTC provider=$provider, transport=${config.transport}, room=${config.id}, port=${socksSettings.port}")
+        // The room id is a capability, not a name. Left out of the message rather
+        // than left to the scrubber's UUID rule — that is one rule away from a leak.
+        addLog("Starting olcRTC provider=$provider, transport=${config.transport}, port=${socksSettings.port}")
 
         if (privileged) {
             addLog("Linux TUN mode starts olcRTC with elevated privileges to bypass the TUN route")
@@ -790,7 +793,9 @@ class DesktopVpnManager private constructor(
                         if (logOutput) {
                             val message = "rtc: $line"
                             addLog(message)
-                            println(message)
+                            // stdout is a second sink and bypasses addLog. Scrubbing an
+                            // already-scrubbed line is a no-op, so this stays simple.
+                            println(LogScrubber.default.scrub(message))
                         }
 
                         if (line.contains("SOCKS5 server listening", ignoreCase = true)) {
@@ -843,7 +848,8 @@ class DesktopVpnManager private constructor(
 
                         val message = "tun: $line"
                         addLog(message)
-                        println(message)
+                        // Same reason as the rtc reader above: stdout bypasses addLog.
+                        println(LogScrubber.default.scrub(message))
                     }
                 }
             } catch (_: IOException) {
@@ -1093,8 +1099,12 @@ class DesktopVpnManager private constructor(
     }
 
     private fun addLog(message: String) {
+        // Here and not one line earlier: the raw core output is matched for transport
+        // state (see waitForCoreSocks's neighbour at the SOCKS5-listening check), and
+        // a scrubbed line reaching that matcher would break reconnect silently.
+        val safe = LogScrubber.default.scrub(message)
         _logs.update {
-            (it + message).takeLast(MAX_LOG_ENTRIES)
+            (it + safe).takeLast(MAX_LOG_ENTRIES)
         }
     }
 

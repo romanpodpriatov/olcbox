@@ -41,6 +41,7 @@ import org.olcbox.app.ios.IosOlcRtcStartRequest
 import org.olcbox.app.ui.components.ApplicationSocksProxySettings
 import org.olcbox.app.util.nowMillis
 import platform.Foundation.NSUserDefaults
+import org.olcbox.app.log.LogScrubber
 
 class IosVpnManager(
     private val locationsRepository: LocationsRepository,
@@ -669,7 +670,9 @@ class IosVpnManager(
     }
 
     private fun addLog(message: String) {
-        _logs.value = (_logs.value + message).takeLast(MAX_LOG_LINES)
+        // After handleRtcLine, never before it: that matcher reads the raw text.
+        _logs.value =
+            (_logs.value + LogScrubber.default.scrub(message)).takeLast(MAX_LOG_LINES)
     }
 
     private fun LocationConfig.startRequest(
