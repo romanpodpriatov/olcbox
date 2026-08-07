@@ -21,8 +21,11 @@ Two separate leaks feed it, on all three platforms.
 | Android | `OlcboxVpnService.kt:331` (`rtc:` lines) and `:723` (`diagnose()`) |
 
 sing-box runs at `level: "info"` (`SingBoxConfig.kt:160` and `:265`, both in
-commonMain, so on every platform). Xray is already at `warning`, which is better, but
-a warning still names the server it failed to dial.
+commonMain, so on every platform) — and the third renderer, `render()` at `:322`,
+sets **no level at all**, so it runs at sing-box's own default, which is also `info`.
+That is the one behind `build()` and `buildOlcrtcSocks()`: the plain socks path, which
+is what Android and desktop-without-TUN use. Xray is already at `warning`, which is
+better, but a warning still names the server it failed to dial.
 
 **App-level lines name hosts and capabilities directly.** `IosVpnManager.kt:223` logs
 the origin host on every ping, deliberately. `MacOsTunController.kt:33` logs
@@ -113,11 +116,15 @@ that is what support actually uses.
 A non-cryptographic hash is enough — the salt does the hiding, the hash only spreads
 values across buckets — so this adds no dependency to commonMain.
 
-### 3. sing-box `info` → `warn`
+### 3. sing-box `info` → `warn`, in all three renderers
 
-Both renderers in `SingBoxConfig.kt`. Nothing in the app parses sing-box output:
-readiness is a socket probe (`waitForCoreSocks`), not a log match. Dial failures are
-warnings and survive.
+Two say `info` and one says nothing, which is the same thing — sing-box defaults to
+`info`. The silent one is `render()`, behind the plain socks path, so it is the one
+most users are actually on. The test asserts the level per **builder**, not per
+renderer, so a config that emits no `log` block fails rather than passing by omission.
+
+Nothing in the app parses sing-box output: readiness is a socket probe
+(`waitForCoreSocks`), not a log match. Dial failures are warnings and survive.
 
 ### 4. The scrubber sits at the sink — never earlier
 
@@ -162,7 +169,9 @@ scrubbed one.
    must read the same after a pass. This is the test that catches the regression that
    would otherwise show up as "reconnect stopped working" weeks later.
 
-`SingBoxConfigTest` gains an assertion that both renderers emit `warn`.
+`SingBoxConfigTest` gains an assertion that **every public builder** emits
+`log.level == "warn"` — read per builder rather than per renderer, so the config that
+sets no level today fails on a missing field instead of quietly passing.
 
 Everything runs on the cloud runners — `pr-checks.yml` runs `:sharedUI:jvmTest`,
 `:desktopApp:compileKotlin`, `:androidApp:assembleDebug`. This dev box has no JDK by
