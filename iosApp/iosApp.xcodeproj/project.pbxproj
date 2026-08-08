@@ -347,7 +347,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = iosApp/iosApp.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 271;
+				CURRENT_PROJECT_VERSION = 273;
 				DEVELOPMENT_ASSET_PATHS = "";
 				DEVELOPMENT_TEAM = 3QJG3J7L66;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
@@ -370,7 +370,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0.271;
+				MARKETING_VERSION = 1.0.273;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-ObjC",
@@ -394,7 +394,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = iosApp/iosApp.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 271;
+				CURRENT_PROJECT_VERSION = 273;
 				DEVELOPMENT_TEAM = 3QJG3J7L66;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = x86_64;
@@ -416,7 +416,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0.271;
+				MARKETING_VERSION = 1.0.273;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-ObjC",
@@ -480,7 +480,7 @@
 					Cores,
 					"-lresolv",
 				);
-				CURRENT_PROJECT_VERSION = 271;
+				CURRENT_PROJECT_VERSION = 273;
 				DEVELOPMENT_TEAM = 3QJG3J7L66;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
@@ -500,7 +500,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
-				MARKETING_VERSION = 1.0.271;
+				MARKETING_VERSION = 1.0.273;
 				PRODUCT_BUNDLE_IDENTIFIER = org.proofkit.app.PacketTunnel;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -561,7 +561,7 @@
 					"-lresolv",
 				);
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 271;
+				CURRENT_PROJECT_VERSION = 273;
 				DEVELOPMENT_TEAM = 3QJG3J7L66;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
@@ -581,7 +581,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
-				MARKETING_VERSION = 1.0.271;
+				MARKETING_VERSION = 1.0.273;
 				PRODUCT_BUNDLE_IDENTIFIER = org.proofkit.app.PacketTunnel;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
