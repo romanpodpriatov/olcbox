@@ -197,6 +197,25 @@ fun HomeScreen(
         )
     }
 
+    // Occupancy goes stale on its own, so it has to be re-asked.
+    //
+    // It was fetched once, when the location list loaded, and then never again — so a
+    // node that filled up, or the slot the user just freed by disconnecting, kept
+    // showing whatever was true minutes ago. A number that only moves when the list
+    // reloads is worse than no number: it looks live and is not.
+    //
+    // Re-asked on every change of connection state, because that is the moment the
+    // count moves and the moment the user is looking at it, and on a slow tick besides
+    // for everyone else's comings and goings. The tick is well inside the server's
+    // five-minute presence window, so a freed slot shows up long before it would
+    // matter, and each pass is one small request per olcRTC location.
+    LaunchedEffect(state.isVpnConnected) {
+        while (true) {
+            locationViewModel.refreshOlcrtcSlots()
+            kotlinx.coroutines.delay(OCCUPANCY_REFRESH_MS)
+        }
+    }
+
     // What the app does on its own when it opens. Each is off unless asked for:
     // connecting without being told to is not a default anyone should inherit.
     var launchActionsDone by rememberSaveable { mutableStateOf(false) }
@@ -479,3 +498,12 @@ fun HomeScreen(
         }
     }
 }
+
+/**
+ * How often the server is re-asked how full each olcRTC node is.
+ *
+ * Comfortably inside the five-minute window the server uses to decide somebody has
+ * left, so a slot that frees is visible long before anyone would act on it, and slow
+ * enough that a list of rooms costs a handful of requests a minute.
+ */
+private const val OCCUPANCY_REFRESH_MS = 45_000L
