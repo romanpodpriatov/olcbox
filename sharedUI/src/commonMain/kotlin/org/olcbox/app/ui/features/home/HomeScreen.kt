@@ -26,6 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
+import org.olcbox.app.data.model.LocationConfig
 import org.olcbox.app.admin.AdminState
 import org.olcbox.app.net.TransportGroup
 import org.olcbox.app.net.transportKind
@@ -117,12 +118,33 @@ fun HomeScreen(
         )
     }
 
+    /**
+     * The config the tunnel is currently built from, or null when nothing is running.
+     *
+     * Captured before a refresh and compared after, because a refresh that changed
+     * nothing about the active location has no reason to tear its tunnel down. Refresh
+     * used to restart unconditionally, so pressing the arrow on one subscription
+     * dropped a connection running on another — the user pressed "update the list" and
+     * got their traffic cut.
+     */
+    fun activeLocationConfig(): LocationConfig? =
+        locations.firstOrNull { it.storageId == locationViewModel.selectedLocationId }?.config
+
+    /** Restarts only if the running tunnel's own config actually moved. */
+    fun restartIfActiveChanged(before: LocationConfig?) {
+        val after = activeLocationConfig()
+        // Vanished counts too: the location the tunnel runs on being gone is exactly
+        // when a restart is right, and comparing to null covers it.
+        if (after != before) viewModel.restartVpnIfRunning()
+    }
+
     fun refreshSubscriptions() {
         isRefreshingSubscriptions = true
+        val activeBefore = activeLocationConfig()
         viewModel.refreshSubscriptions { report ->
             locationViewModel.loadLocations {
                 isRefreshingSubscriptions = false
-                viewModel.restartVpnIfRunning()
+                restartIfActiveChanged(activeBefore)
 
                 scope.launch {
                     snackbarHostState.showSnackbar(report.bulkMessage())
@@ -133,10 +155,11 @@ fun HomeScreen(
 
     fun refreshSubscription(url: String) {
         refreshingSubscriptionUrl = url
+        val activeBefore = activeLocationConfig()
         viewModel.refreshSubscription(url) { report ->
             locationViewModel.loadLocations {
                 refreshingSubscriptionUrl = null
-                viewModel.restartVpnIfRunning()
+                restartIfActiveChanged(activeBefore)
                 scope.launch { snackbarHostState.showSnackbar(report.singleMessage()) }
             }
         }
