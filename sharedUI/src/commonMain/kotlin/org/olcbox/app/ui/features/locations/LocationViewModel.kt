@@ -6,6 +6,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import org.olcbox.app.net.LocationKind
+import org.olcbox.app.net.OlcrtcSlots
+import org.olcbox.app.net.OlcrtcStatusClient
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
@@ -51,6 +54,8 @@ sealed class PingsState {
 
 class LocationViewModel(
     private val locationsRepository: LocationsRepository,
+    private val olcrtcStatus: OlcrtcStatusClient =
+        OlcrtcStatusClient(org.olcbox.app.data.datasource.createProxyHttpClient()),
 ) : ViewModel() {
 
     var locations = mutableStateListOf<LocationItem>()
@@ -61,6 +66,18 @@ class LocationViewModel(
 
     var pingsState by mutableStateOf<PingsState>(PingsState.Idle)
         private set
+
+    /**
+     * olcRTC occupancy per location storage id.
+     *
+     * Absent means "not known", never "empty": a node that did not answer must render
+     * as it did before occupancy existed rather than as one with no users, which would
+     * invite people onto a node that may well be full.
+     */
+    var olcrtcSlots by mutableStateOf<Map<String, OlcrtcSlots>>(emptyMap())
+        private set
+
+    private var olcrtcSlotsJob: Job? = null
 
     private val activePingJobs = mutableMapOf<String, Job>()
     private val pingSemaphore = Semaphore(LOCATION_PING_PARALLELISM)
@@ -132,6 +149,7 @@ class LocationViewModel(
 
             locations.clear()
             locations.addAll(nextLocations)
+            refreshOlcrtcSlots()
 
             val nextSelectedId = if (
                 nextLocations.isNotEmpty() &&
@@ -507,4 +525,32 @@ class LocationViewModel(
         val room: String = "",
         val key: String = ""
     )
+
+    /**
+     * Refreshes occupancy for every olcRTC location that carries a key.
+     *
+     * Best-effort and non-blocking: failures leave the previous answer in place rather
+     * than clearing it, because a momentary network blip should not make every node
+     * look unknown while the user is reading the list. Cancels any in-flight pass, so
+     * a fast reload cannot leave two writers racing over one map.
+     */
+    fun refreshOlcrtcSlots() {
+        olcrtcSlotsJob?.cancel()
+        olcrtcSlotsJob = viewModelScope.launch {
+            val targets = locations.mapNotNull { item ->
+                val config = item.config ?: return@mapNotNull null
+                if (config.kind != LocationKind.Olcrtc) return@mapNotNull null
+                config.key.takeIf { it.isNotBlank() }?.let { item.storageId to it }
+            }
+            if (targets.isEmpty()) return@launch
+
+            val fetched = mutableMapOf<String, OlcrtcSlots>()
+            for ((storageId, key) in targets) {
+                olcrtcStatus.slotsFor(key)?.let { fetched[storageId] = it }
+            }
+            // Merge rather than replace: a node that failed this pass keeps the number
+            // it had, which is older but truer than nothing.
+            olcrtcSlots = olcrtcSlots + fetched
+        }
+    }
 }

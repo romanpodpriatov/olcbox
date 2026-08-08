@@ -54,6 +54,7 @@ import org.olcbox.app.data.model.SubscriptionSort
 import org.olcbox.app.util.formatDate
 import org.olcbox.app.util.formatDateTime
 import org.olcbox.app.ui.features.locations.LocationItem
+import org.olcbox.app.net.OlcrtcSlots
 import org.olcbox.app.ui.features.locations.PingsState
 import org.olcbox.app.ui.features.locations.components.LocationRow
 import org.olcbox.app.ui.features.locations.components.LatencyButton
@@ -75,6 +76,8 @@ fun LocationSelectorScreen(
     locations: List<LocationItem>,
     selectedLocationId: String?,
     pingsState: PingsState,
+    /** olcRTC occupancy by storage id; a missing entry renders no bar at all. */
+    olcrtcSlots: Map<String, OlcrtcSlots> = emptyMap(),
     onLocationSelected: (String) -> Unit,
     onLocationSettingsClick: (String) -> Unit,
     sort: SubscriptionSort = SubscriptionSort.None,
@@ -264,6 +267,7 @@ fun LocationSelectorScreen(
                                 location = location,
                                 selectedLocationId = selectedLocationId,
                                 pingsState = pingsState,
+                                olcrtcSlots = olcrtcSlots,
                                 onLocationSelected = onLocationSelected,
                                 onLocationSettingsClick = onLocationSettingsClick,
                                 showSettings = showSettings
@@ -307,6 +311,7 @@ fun LocationSelectorScreen(
                                 location = location,
                                 selectedLocationId = selectedLocationId,
                                 pingsState = pingsState,
+                                olcrtcSlots = olcrtcSlots,
                                 onLocationSelected = onLocationSelected,
                                 onLocationSettingsClick = onLocationSettingsClick,
                                 // Always, unlike the subscription rows above.
@@ -620,6 +625,8 @@ private fun LocationSelectorRow(
     location: LocationItem,
     selectedLocationId: String?,
     pingsState: PingsState,
+    /** olcRTC occupancy by storage id; a missing entry renders no bar at all. */
+    olcrtcSlots: Map<String, OlcrtcSlots>,
     onLocationSelected: (String) -> Unit,
     onLocationSettingsClick: (String) -> Unit,
     showSettings: Boolean = true
@@ -634,6 +641,7 @@ private fun LocationSelectorRow(
         isLoading = isLoading,
         isError = isOffline,
         pingMs = pingMs,
+        slots = olcrtcSlots[location.storageId],
         settingsEnabled = showSettings,
         onSettingsClick = {
             onLocationSettingsClick(location.storageId)

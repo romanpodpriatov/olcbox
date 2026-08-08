@@ -312,6 +312,7 @@ fun HomeScreen(
                         locations = locations,
                         selectedLocationId = locationViewModel.selectedLocationId,
                         pingsState = pingsState,
+                        olcrtcSlots = locationViewModel.olcrtcSlots,
                         onLocationSelected = { id ->
                             // Read before the switch: picking a row while
                             // connected tears the tunnel down and builds a new
