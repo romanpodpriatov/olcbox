@@ -54,6 +54,8 @@ import org.olcbox.app.data.model.SubscriptionSort
 import org.olcbox.app.util.formatDate
 import org.olcbox.app.util.formatDateTime
 import org.olcbox.app.ui.features.locations.LocationItem
+import org.olcbox.app.data.model.LocationConfig
+import org.olcbox.app.net.OlcrtcSlots
 import org.olcbox.app.ui.features.locations.PingsState
 import org.olcbox.app.ui.features.locations.components.LocationRow
 import org.olcbox.app.ui.features.locations.components.LatencyButton
@@ -75,6 +77,14 @@ fun LocationSelectorScreen(
     locations: List<LocationItem>,
     selectedLocationId: String?,
     pingsState: PingsState,
+    /** olcRTC occupancy by storage id; a missing entry renders no bar at all. */
+    olcrtcSlots: Map<String, OlcrtcSlots> = emptyMap(),
+    /**
+     * Whether a location can be measured at all, asked of the platform rather than
+     * guessed here — it is the same predicate the measurement itself consults, so the
+     * button cannot appear on a group where pressing it does nothing.
+     */
+    canPing: (LocationConfig) -> Boolean = { true },
     onLocationSelected: (String) -> Unit,
     onLocationSettingsClick: (String) -> Unit,
     sort: SubscriptionSort = SubscriptionSort.None,
@@ -236,11 +246,13 @@ fun LocationSelectorScreen(
                                     )
                                 }
 
-                            LatencyButton(
-                                isRunning = isGroupRefreshing,
-                                onClick = { onRefreshClick(groupIds) },
-                                tint = MaterialTheme.colorScheme.primary
-                            )
+                            if (group.any { it.config?.let(canPing) == true }) {
+                                LatencyButton(
+                                    isRunning = isGroupRefreshing,
+                                    onClick = { onRefreshClick(groupIds) },
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            }
                             if (!groupUrl.isNullOrBlank()) {
                                 SubscriptionRefreshButton(
                                     isRefreshing = groupUrl == refreshingSubscriptionUrl,
@@ -264,6 +276,7 @@ fun LocationSelectorScreen(
                                 location = location,
                                 selectedLocationId = selectedLocationId,
                                 pingsState = pingsState,
+                                olcrtcSlots = olcrtcSlots,
                                 onLocationSelected = onLocationSelected,
                                 onLocationSettingsClick = onLocationSettingsClick,
                                 showSettings = showSettings
@@ -292,11 +305,13 @@ fun LocationSelectorScreen(
                         val isCustomRefreshing = pingsState is PingsState.Loading &&
                                 pingsState.pendingLocationIds.any { it in customIds }
 
-                        LatencyButton(
-                            isRunning = isCustomRefreshing,
-                            onClick = { onRefreshClick(customIds) },
-                            tint = MaterialTheme.colorScheme.primary
-                        )
+                        if (customLocations.any { it.config?.let(canPing) == true }) {
+                            LatencyButton(
+                                isRunning = isCustomRefreshing,
+                                onClick = { onRefreshClick(customIds) },
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(6.dp))
@@ -307,6 +322,7 @@ fun LocationSelectorScreen(
                                 location = location,
                                 selectedLocationId = selectedLocationId,
                                 pingsState = pingsState,
+                                olcrtcSlots = olcrtcSlots,
                                 onLocationSelected = onLocationSelected,
                                 onLocationSettingsClick = onLocationSettingsClick,
                                 // Always, unlike the subscription rows above.
@@ -620,6 +636,8 @@ private fun LocationSelectorRow(
     location: LocationItem,
     selectedLocationId: String?,
     pingsState: PingsState,
+    /** olcRTC occupancy by storage id; a missing entry renders no bar at all. */
+    olcrtcSlots: Map<String, OlcrtcSlots>,
     onLocationSelected: (String) -> Unit,
     onLocationSettingsClick: (String) -> Unit,
     showSettings: Boolean = true
@@ -634,6 +652,7 @@ private fun LocationSelectorRow(
         isLoading = isLoading,
         isError = isOffline,
         pingMs = pingMs,
+        slots = olcrtcSlots[location.storageId],
         settingsEnabled = showSettings,
         onSettingsClick = {
             onLocationSettingsClick(location.storageId)

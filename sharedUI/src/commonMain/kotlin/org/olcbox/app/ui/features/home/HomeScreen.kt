@@ -26,6 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
+import org.olcbox.app.data.model.LocationConfig
 import org.olcbox.app.admin.AdminState
 import org.olcbox.app.net.TransportGroup
 import org.olcbox.app.net.transportKind
@@ -117,12 +118,33 @@ fun HomeScreen(
         )
     }
 
+    /**
+     * The config the tunnel is currently built from, or null when nothing is running.
+     *
+     * Captured before a refresh and compared after, because a refresh that changed
+     * nothing about the active location has no reason to tear its tunnel down. Refresh
+     * used to restart unconditionally, so pressing the arrow on one subscription
+     * dropped a connection running on another — the user pressed "update the list" and
+     * got their traffic cut.
+     */
+    fun activeLocationConfig(): LocationConfig? =
+        locations.firstOrNull { it.storageId == locationViewModel.selectedLocationId }?.config
+
+    /** Restarts only if the running tunnel's own config actually moved. */
+    fun restartIfActiveChanged(before: LocationConfig?) {
+        val after = activeLocationConfig()
+        // Vanished counts too: the location the tunnel runs on being gone is exactly
+        // when a restart is right, and comparing to null covers it.
+        if (after != before) viewModel.restartVpnIfRunning()
+    }
+
     fun refreshSubscriptions() {
         isRefreshingSubscriptions = true
+        val activeBefore = activeLocationConfig()
         viewModel.refreshSubscriptions { report ->
             locationViewModel.loadLocations {
                 isRefreshingSubscriptions = false
-                viewModel.restartVpnIfRunning()
+                restartIfActiveChanged(activeBefore)
 
                 scope.launch {
                     snackbarHostState.showSnackbar(report.bulkMessage())
@@ -133,10 +155,11 @@ fun HomeScreen(
 
     fun refreshSubscription(url: String) {
         refreshingSubscriptionUrl = url
+        val activeBefore = activeLocationConfig()
         viewModel.refreshSubscription(url) { report ->
             locationViewModel.loadLocations {
                 refreshingSubscriptionUrl = null
-                viewModel.restartVpnIfRunning()
+                restartIfActiveChanged(activeBefore)
                 scope.launch { snackbarHostState.showSnackbar(report.singleMessage()) }
             }
         }
@@ -172,6 +195,25 @@ fun HomeScreen(
             },
             canPing = { config -> viewModel.canPing(config) },
         )
+    }
+
+    // Occupancy goes stale on its own, so it has to be re-asked.
+    //
+    // It was fetched once, when the location list loaded, and then never again — so a
+    // node that filled up, or the slot the user just freed by disconnecting, kept
+    // showing whatever was true minutes ago. A number that only moves when the list
+    // reloads is worse than no number: it looks live and is not.
+    //
+    // Re-asked on every change of connection state, because that is the moment the
+    // count moves and the moment the user is looking at it, and on a slow tick besides
+    // for everyone else's comings and goings. The tick is well inside the server's
+    // five-minute presence window, so a freed slot shows up long before it would
+    // matter, and each pass is one small request per olcRTC location.
+    LaunchedEffect(state.isVpnConnected) {
+        while (true) {
+            locationViewModel.refreshOlcrtcSlots()
+            kotlinx.coroutines.delay(OCCUPANCY_REFRESH_MS)
+        }
     }
 
     // What the app does on its own when it opens. Each is off unless asked for:
@@ -312,6 +354,8 @@ fun HomeScreen(
                         locations = locations,
                         selectedLocationId = locationViewModel.selectedLocationId,
                         pingsState = pingsState,
+                        olcrtcSlots = locationViewModel.olcrtcSlots,
+                        canPing = { config -> viewModel.canPing(config) },
                         onLocationSelected = { id ->
                             // Read before the switch: picking a row while
                             // connected tears the tunnel down and builds a new
@@ -454,3 +498,12 @@ fun HomeScreen(
         }
     }
 }
+
+/**
+ * How often the server is re-asked how full each olcRTC node is.
+ *
+ * Comfortably inside the five-minute window the server uses to decide somebody has
+ * left, so a slot that frees is visible long before anyone would act on it, and slow
+ * enough that a list of rooms costs a handful of requests a minute.
+ */
+private const val OCCUPANCY_REFRESH_MS = 45_000L

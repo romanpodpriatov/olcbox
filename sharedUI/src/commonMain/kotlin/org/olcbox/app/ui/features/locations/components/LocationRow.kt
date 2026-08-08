@@ -33,6 +33,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
@@ -41,7 +42,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.layout.fillMaxHeight
 import org.olcbox.app.data.model.LocationConfig
+import org.olcbox.app.net.OlcrtcSlots
 import org.olcbox.app.ui.features.locations.LocationItem
 import org.olcbox.app.ui.theme.LocalPkPalette
 import org.olcbox.app.util.parseEmojiAndName
@@ -54,6 +57,13 @@ fun LocationRow(
     isLoading: Boolean,
     pingMs: Int?,
     isError: Boolean = false,
+    /**
+     * olcRTC occupancy, `null` for locations that are not olcRTC or whose node has not
+     * answered. Null must render exactly as this row did before occupancy existed: an
+     * enrichment that is unavailable may not make a location look worse than one that
+     * never had it.
+     */
+    slots: OlcrtcSlots? = null,
     settingsEnabled: Boolean = true,
     onSettingsClick: () -> Unit = {},
     onClick: () -> Unit
@@ -77,6 +87,10 @@ fun LocationRow(
     val borderWidth = if (isSelected) 2.dp else 1.dp
     val textColor = MaterialTheme.colorScheme.onSurface
 
+    // A node with no slot left cannot take this user — but one they already hold a slot
+    // on can, which is why `isBlocked` asks about them and not just the count.
+    val blocked = slots?.isBlocked == true
+
     val metadata = location.metadata
     val rawName = metadata?.name?.takeIf { it.isNotBlank() } ?: location.fullName
     val fallbackIcon = metadata?.icon?.takeIf { it.isNotBlank() }
@@ -93,8 +107,12 @@ fun LocationRow(
             .clip(RoundedCornerShape(16.dp))
             .background(bgColor)
             .border(borderWidth, borderColor, RoundedCornerShape(16.dp))
+            .alpha(if (blocked) 0.45f else 1f)
             .combinedClickable(
-                onClick = onClick,
+                // Tapping a full node would fail somewhere deep in the engine with
+                // nothing to show for it. Refusing here, next to the words that say
+                // why, is the difference between "occupied" and "broken".
+                onClick = { if (!blocked) onClick() },
                 onLongClick = {
                     if (settingsEnabled) onSettingsClick()
                 }
@@ -126,9 +144,25 @@ fun LocationRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
+
+            if (slots != null) {
+                Spacer(modifier = Modifier.height(4.dp))
+                OccupancyBar(slots = slots)
+            }
         }
         
         when {
+            blocked -> {
+                // Where the latency would be, because that is where the eye already is,
+                // and a number is no use on a node that will not take you.
+                Text(
+                    text = "Full",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+
             isLoading -> {
                 ShimmeringPingSkeleton()
             }
@@ -167,6 +201,60 @@ fun LocationRow(
         // below still opens it, and only where `settingsEnabled` allows.
 
         LocationSelectionIndicator(isSelected = isSelected)
+    }
+}
+
+/**
+ * Occupancy of an olcRTC node: a slim bar and the plain count beside it.
+ *
+ * Both, not one. The bar is read at a glance while scanning a list; the numbers answer
+ * the question the bar raises once something looks tight, and "7 / 8" is a fact a person
+ * can act on in a way that four-fifths of a line is not.
+ */
+@Composable
+private fun OccupancyBar(slots: OlcrtcSlots) {
+    val pk = LocalPkPalette.current
+    val fraction = if (slots.slots_total > 0) {
+        (slots.used.toFloat() / slots.slots_total).coerceIn(0f, 1f)
+    } else {
+        0f
+    }
+    // Colour tracks how close the node is to refusing somebody, not how busy it is in
+    // the abstract: the only threshold a user cares about is the last slot going.
+    val barColor = when {
+        slots.slots_free <= 0 -> MaterialTheme.colorScheme.error
+        slots.slots_free == 1 -> pk.accent2
+        else -> pk.accent
+    }
+
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .height(3.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.surfaceVariant)
+        ) {
+            // fillMaxWidth(0f) would still paint a hairline on some densities, so an
+            // empty node draws nothing at all rather than a misleading sliver.
+            if (fraction > 0f) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(fraction)
+                        .fillMaxHeight()
+                        .clip(CircleShape)
+                        .background(barColor)
+                )
+            }
+        }
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = "${slots.used} / ${slots.slots_total}",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.labelSmall,
+            fontSize = 11.sp,
+            maxLines = 1
+        )
     }
 }
 
