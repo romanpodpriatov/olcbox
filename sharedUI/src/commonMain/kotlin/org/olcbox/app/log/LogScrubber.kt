@@ -68,6 +68,17 @@ class LogScrubber(private val salt: Long) {
     }
 
     private fun tagIfPublicV6(addr: String): String {
+        // The pattern over-matches on purpose so it can take a whole address in one
+        // bite; this is where a timestamp is turned away. A real address is either
+        // compressed — and then it contains "::" — or written in full, which takes
+        // seven colons. Two colons and no "::" is 15:28:17, not a host.
+        //
+        // Anchoring this in the regex instead was the first attempt and it was
+        // worse than wrong: it matched from the *last* group, so 2a01:4f8:c17:b8f::1
+        // was replaced as b8f::1 and the prefix stayed in the log, while
+        // fdfe:dcba:9876::1 matched as 9876::1, no longer looked like a ULA, and a
+        // private address got tagged.
+        if (!addr.contains("::") && addr.count { it == ':' } < 4) return addr
         val a = addr.lowercase()
         // ULA (fc00::/7) covers the desktop TUN address; fe80::/10 is link-local.
         val local = a == "::1" || a == "::" ||
@@ -97,13 +108,11 @@ class LogScrubber(private val salt: Long) {
 
         private val IPV4 = Regex("""\b\d{1,3}(?:\.\d{1,3}){3}\b""")
 
-        // Two shapes cover everything that turns up in a log: any compressed address
-        // (which always contains "::") and a full one (four colon-separated groups or
-        // more). Deliberately not the RFC 4291 grammar — the property that matters is
-        // that a timestamp like 15:28:17 must never match, and the tests pin it.
-        private val IPV6 = Regex(
-            """[0-9a-fA-F]{0,4}::[0-9a-fA-F:]{0,39}""" +
-                """|(?:[0-9a-fA-F]{1,4}:){4,7}[0-9a-fA-F]{1,4}"""
-        )
+        // Greedy and loose on purpose: it must take the *whole* address, leading
+        // groups included, so an empty group is allowed and a match can start at the
+        // first group of a compressed address. What this lets through — timestamps,
+        // "host:443:" fragments — is rejected in tagIfPublicV6, which is a far more
+        // reliable place to say "this is not an address" than a regex is.
+        private val IPV6 = Regex("""[0-9a-fA-F]{0,4}(?::[0-9a-fA-F]{0,4}){2,7}""")
     }
 }
