@@ -1,7 +1,11 @@
-# Olcbox
+# ProofKit
 
 A VPN client for servers you already have. Kotlin Multiplatform and Compose,
 one codebase for Android, iOS, macOS, Windows and Linux.
+
+It ships as **ProofKit** and is built on the olcbox codebase — the app's own
+footer says `PROOFKIT • OLCBOX CORE` for the same reason, and so does the
+repository name.
 
 It is a client, not a service: you bring a server list from your provider — a
 subscription URL, a QR code, or a pasted link — and the app turns it into
@@ -30,8 +34,9 @@ filters by protocol, and remembers the exit last used.
 
 ## Status
 
-Shipping. iOS is distributed through the App Store; every other platform is
-built by the release workflow and published on the Releases page.
+Shipping on Android, macOS, Windows and Linux — built by the release workflow
+and published on the Releases page. **iOS is in TestFlight and not yet approved
+for the App Store**; that review is in progress.
 
 ## Credits
 
@@ -45,9 +50,12 @@ MIT requires and as it should.
 
 Support options are not publicly listed. Contact the author if needed.
 
-> **Автор ничего не продаёт.
-> Не продаются приложение, доступ, конфигурации, подписки или услуги поддержки.
-> Возможен только добровольный донат.**
+> **The author sells nothing.** Not the app, not access, not configurations,
+> not server lists, not support. Donations only, and only voluntary.
+
+> **Автор ничего не продаёт.**
+> Не продаются приложение, доступ, конфигурации, списки серверов или услуги
+> поддержки. Возможен только добровольный донат.
 
 ## Legal Notice
 This software is intended for development, testing and research purposes only.
@@ -65,15 +73,17 @@ The author does not support or encourage such use.
 
 ## Features
 - One tap to connect, with the session's elapsed time and traffic on screen.
-- Subscriptions by link, QR code or file; grouped, foldable, and refreshed on
+- Server lists by link, QR code or file; grouped, foldable, and refreshed on
   a schedule you choose.
 - What the provider says about your plan — quota, expiry, its own support and
-  web links — read from the subscription's own headers.
+  web links — read from the server list's own headers.
 - Latency where it can honestly be measured: through the tunnel for the
   connection you are on, ICMP for a server you are not connected to.
 - Sorting by ping or name, filtering by protocol, duplicate subscriptions
   refreshed rather than added twice.
-- Diagnostics log with export, and a failed connection that says why.
+- Diagnostics log with export, and a failed connection that says why. Server
+  addresses are replaced by short tags before a line reaches the log, so the
+  file is safe to send to anyone and still says which hop failed.
 - Android TUN/proxy modes, SOCKS5 credentials, split tunneling.
 - Network migration, reconnect handling, and watchdog recovery.
 - No account, no analytics, nothing collected.
@@ -84,7 +94,7 @@ The author does not support or encourage such use.
 | --- | --- | --- |
 | Android | TUN, proxy | `VpnService`, `hev-socks5-tunnel`, local `olcrtc` SOCKS5 |
 | iOS | System VPN | `NEPacketTunnelProvider`; sing-box, Xray and olcRTC bound into one framework inside the extension |
-| macOS | Proxy | local `olcrtc` SOCKS5 with OS PAC settings |
+| macOS | TUN, proxy | root daemon via `SMAppService` + sing-box for TUN; local `olcrtc` SOCKS5 with OS PAC settings otherwise |
 | Windows | TUN | local `olcrtc` SOCKS5, `hev-socks5-tunnel`, Wintun |
 | Linux | TUN | local `olcrtc` SOCKS5, `hev-socks5-tunnel`, policy routes |
 
@@ -142,10 +152,10 @@ $env:OLCRTC_REPO="C:\path\to\olcrtc"
 | Android debug | `./gradlew :androidApp:assembleDebug` | `androidApp/build/outputs/apk/debug/androidApp-debug.apk` |
 | Android release | `./gradlew :androidApp:assembleRelease` | `androidApp/build/outputs/apk/release/androidApp-release.apk` |
 | iOS simulator | `xcodebuild -project iosApp/iosApp.xcodeproj -scheme iosApp -sdk iphonesimulator -configuration Debug build` | Xcode DerivedData app product |
-| macOS DMG | `./gradlew :desktopApp:packageReleaseDmg` | `desktopApp/build/compose/binaries/main-release/dmg/Olcbox-1.0.0.dmg` |
-| Windows EXE | `.\gradlew.bat :desktopApp:packageReleaseExe` | `desktopApp\build\compose\binaries\main-release\exe\Olcbox-1.0.0.exe` |
-| Windows MSI | `.\gradlew.bat :desktopApp:packageReleaseMsi` | `desktopApp\build\compose\binaries\main-release\msi\Olcbox-1.0.0.msi` |
-| Linux AppImage | `./gradlew :desktopApp:packageReleaseLinuxAppImage` | `desktopApp/build/compose/binaries/main-release/appimage/Olcbox-1.0.0-amd64.AppImage` |
+| macOS DMG | `./gradlew :desktopApp:packageReleaseDmg` | `desktopApp/build/compose/binaries/main-release/dmg/ProofKit-<version>.dmg` |
+| Windows EXE | `.\gradlew.bat :desktopApp:packageReleaseExe` | `desktopApp\build\compose\binaries\main-release\exe\ProofKit-<version>.exe` |
+| Windows MSI | `.\gradlew.bat :desktopApp:packageReleaseMsi` | `desktopApp\build\compose\binaries\main-release\msi\ProofKit-<version>.msi` |
+| Linux AppImage | `./gradlew :desktopApp:packageReleaseLinuxAppImage` | `desktopApp/build/compose/binaries/main-release/appimage/ProofKit-<version>-amd64.AppImage` |
 
 ## Native Assets
 
@@ -177,8 +187,6 @@ storePassword=...
 keyAlias=...
 keyPassword=...
 ```
-
-Linux privilege override:
 
 Linux privilege override:
 
