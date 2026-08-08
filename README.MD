@@ -1,17 +1,18 @@
 # Olcbox
 
-A VPN client for a subscription you already have. Kotlin Multiplatform and
-Compose, one codebase for Android, iOS, macOS, Windows and Linux.
+A VPN client for servers you already have. Kotlin Multiplatform and Compose,
+one codebase for Android, iOS, macOS, Windows and Linux.
 
-It is a client, not a service: you bring a subscription link from your
-provider, and the app turns it into a list of servers you can connect to.
-There is no account and nothing to sign up for.
+It is a client, not a service: you bring a server list from your provider — a
+subscription URL, a QR code, or a pasted link — and the app turns it into
+servers you can connect to. It is free, there is no account, nothing to sign
+up for, and nothing to buy here.
 
 <p align="center">
   <img src="docs/screenshots/03-connected.PNG" alt="Connected, with session timer and traffic" width="200">
-  <img src="docs/screenshots/02-list.PNG" alt="Server list grouped by subscription" width="200">
-  <img src="docs/screenshots/04-settings.PNG" alt="Subscription settings" width="200">
-  <img src="docs/screenshots/01-empty.PNG" alt="Adding a subscription" width="200">
+  <img src="docs/screenshots/05-serverlistnotconnected.PNG" alt="Server list, grouped by provider" width="200">
+  <img src="docs/screenshots/04-settings.PNG" alt="Settings" width="200">
+  <img src="docs/screenshots/06-addconnection.PNG" alt="Adding a connection" width="200">
 </p>
 
 ## Protocols

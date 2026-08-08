@@ -293,23 +293,26 @@ app gets rejected for something nobody intended to ship.
 Required size: **6.9" iPhone — 1320 × 2868**. Apple derives every smaller size
 itself.
 
-### The Simulator cannot make all five
+### The Simulator cannot make all six
 
 **Network Extension does not exist in the Simulator.** Not "does not work
 well" — the framework is absent, `saveToPreferences` fails, and the app now
 says so plainly instead of reporting "no VPN configuration", which reads as
 something missing that could be supplied.
 
-So four of the five screenshots can be taken in the Simulator, and the
-connected one cannot. That one needs a device, and the device has to be the
-right size: App Store Connect accepts **1320 × 2868** (iPhone 16/17 Pro Max)
-or **1290 × 2796** (iPhone 14/15 Pro Max, or a Plus) for this slot. A 6.1"
-phone produces 1179 × 2556, which is not accepted and cannot honestly be
-scaled into one that is.
+**Two** of the six therefore need a real device, not one: `03-connected`, and
+also `02-vpnpopup` — the system permission prompt is raised by the very
+framework the Simulator lacks, so there is nothing there to photograph. The
+other four are Simulator work.
+
+The device has to be the right size: App Store Connect accepts **1320 × 2868**
+(iPhone 16/17 Pro Max) or **1290 × 2796** (iPhone 14/15 Pro Max, or a Plus) for
+this slot. A 6.1" phone produces 1179 × 2556, which is not accepted and cannot
+honestly be scaled into one that is.
 
 If no Pro Max is to hand, the options are borrowing one, or shipping the four
-that the Simulator can produce — Apple requires a minimum of one screenshot,
-not five. Four honest screenshots beat five with an upscaled one.
+the Simulator can produce — Apple requires a minimum of one screenshot, not
+six. Four honest screenshots beat six with two upscaled ones.
 
 ### Capturing
 
@@ -334,16 +337,27 @@ you about afterwards: a size off by a pixel, an alpha channel an editor left
 behind, and a file that is a JPEG wearing a `.png`. It validates and never
 resizes — a screenshot scaled to fit is a screenshot of the wrong thing.
 
-### The five, in the order a new user meets the app
+### The six, in the order a new user meets the app
 
-1. **Empty state** — "Add relay setup", the three ways to add a subscription.
-2. **The list** — a subscription expanded, protocol filter chips visible, one
-   exit selected.
-3. **Connected** — the lime dial on STOP, session timer running, traffic
-   counters underneath.
-4. **Subscription header** — provider name, quota, expiry, the two links.
-5. **Subscription settings** — the switches, so it is clear the app is
+These are the files in `docs/screenshots/`, and they are the set uploaded on
+2026-08-08. Keep the two in step: the repository is linked from the listing as
+OPEN SOURCE, so a reviewer who follows that link should meet the same app.
+
+1. `01-empty` — **empty state**, "Add relay setup" and the ways to add a server
+   list.
+2. `02-vpnpopup` — **the system VPN permission prompt**, so it is plain what the
+   app asks for and when.
+3. `03-connected` — **connected**: the lime dial on STOP, session timer running,
+   traffic counters underneath.
+4. `04-settings` — **settings**, the switches, so it is clear the app is
    configurable rather than a black box.
+5. `05-serverlistnotconnected` — **the server list** before connecting, protocol
+   filter chips visible.
+6. `06-addconnection` — **adding a connection**: scan, paste, or import.
+
+Nothing in the set may show a purchase, a price, or a way to get one — that is
+the reading that cost two rejections under 3.1.1. See
+`docs/app-review-3.1.1-reply.md`.
 
 ### Two things to get right before pressing the shutter
 
