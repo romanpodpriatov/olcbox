@@ -46,7 +46,7 @@ class LogScrubber(private val salt: Long) {
             h = h xor c.code.toLong()
             h *= FNV_PRIME
         }
-        val short = ((h ushr 16) and 0xFFFF).toString(16).padStart(4, '0')
+        val short = ((h ushr 16) and 0xFFFFL).toString(16).padStart(4, '0')
         return "node#$short"
     }
 
