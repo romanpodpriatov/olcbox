@@ -180,8 +180,17 @@ class IosVpnManager(
     override fun canPing(locationConfig: LocationConfig): Boolean {
         val config = locationConfig.normalized()
         if (!config.isComplete()) return false
+        // Connected, the active location is still measurable: that path times a request
+        // through the tunnel that is already up and joins nothing.
         if (_status.value is VpnStatus.Connected) return config == activeConfig
-        return config.kind == LocationKind.Olcrtc || serverHost(config) != null
+        // Disconnected, olcRTC is not. The only way to time a room is `mobile.Ping`,
+        // which JOINS it as a real client, waits for the session to be ready and tears
+        // it down — a genuine peer occupying a node whose entire capacity is single
+        // digits, to produce a time-to-join that is not comparable with the ICMP numbers
+        // on the rows beside it. A button that says "measure" and quietly connects is
+        // worth less than no button.
+        if (config.kind == LocationKind.Olcrtc) return false
+        return serverHost(config) != null
     }
 
     /**

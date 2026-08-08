@@ -264,7 +264,17 @@ class AndroidVpnManager(private val context: Context) : VpnManager {
     override fun canPing(locationConfig: LocationConfig): Boolean {
         val config = locationConfig.normalized()
         if (!config.isComplete()) return false
-        return config.kind == LocationKind.Olcrtc || serverEndpoint(config) != null
+        // olcRTC is deliberately not measurable.
+        //
+        // There is no host to probe: a room is a meeting, not an address, so the only
+        // way to time one is `mobile.Ping`, which JOINS the room as a real client,
+        // waits for the session to become ready and tears it down. That is a genuine
+        // peer occupying a node whose whole capacity is single digits, for a number
+        // that is time-to-join rather than latency and is not comparable with the ICMP
+        // figures on the rows beside it. A button that says "measure" and quietly
+        // connects is worth less than no button.
+        if (config.kind == LocationKind.Olcrtc) return false
+        return serverEndpoint(config) != null
     }
 
     private fun serverEndpoint(config: LocationConfig): Pair<String, Int>? =
