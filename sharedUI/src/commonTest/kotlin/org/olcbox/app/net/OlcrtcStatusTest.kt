@@ -1,5 +1,13 @@
 package org.olcbox.app.net
 
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.mock.MockEngine
+import io.ktor.client.engine.mock.respond
+import io.ktor.http.HttpStatusCode
+import io.ktor.http.headersOf
+import io.ktor.http.HttpHeaders
+import io.ktor.http.ContentType
+import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -52,5 +60,44 @@ class OlcrtcStatusTest {
             "greying out the server somebody is connected to is worse than showing it full"
         )
         assertFalse(OlcrtcSlots(slots_total = 8, slots_free = 1).isBlocked)
+    }
+
+    /**
+     * The bug this exists for: the app's shared HttpClient installs `HttpTimeout` and
+     * nothing else — no `ContentNegotiation` — so `body<T>()` threw
+     * `NoTransformationFoundException` on every call, the catch-all swallowed it, and
+     * occupancy was silently absent everywhere. The client here is deliberately bare for
+     * exactly that reason: a test that installs a JSON negotiator would pass while the
+     * app shipped broken.
+     */
+    @Test fun slotsParseThroughAClientThatCannotNegotiateJson() = runTest {
+        val engine = MockEngine { request ->
+            assertEquals("/api/v1/olcrtc/status", request.url.encodedPath)
+            assertEquals("9a2db2e23f1504cd", request.url.parameters["key_id"])
+            respond(
+                content = """{"slots_total":8,"slots_free":3,"holds_slot":true}""",
+                status = HttpStatusCode.OK,
+                headers = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString())
+            )
+        }
+        val slots = OlcrtcStatusClient(HttpClient(engine)).slotsFor("ab".repeat(32))
+
+        assertEquals(OlcrtcSlots(slots_total = 8, slots_free = 3, holds_slot = true), slots)
+    }
+
+    @Test fun anUnknownKeyYieldsNoOccupancyRatherThanAnError() = runTest {
+        val engine = MockEngine {
+            respond(
+                content = """{"error":{"code":"NOT_FOUND","message":"Unknown or revoked key"}}""",
+                status = HttpStatusCode.NotFound,
+                headers = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString())
+            )
+        }
+        assertNull(OlcrtcStatusClient(HttpClient(engine)).slotsFor("ab".repeat(32)))
+    }
+
+    @Test fun aMalformedKeyNeverReachesTheNetwork() = runTest {
+        val engine = MockEngine { error("the client must not call out for a key it cannot hash") }
+        assertNull(OlcrtcStatusClient(HttpClient(engine)).slotsFor("not-a-key"))
     }
 }

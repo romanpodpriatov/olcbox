@@ -1,12 +1,13 @@
 package org.olcbox.app.net
 
 import io.ktor.client.HttpClient
-import io.ktor.client.call.body
 import io.ktor.client.request.get
 import io.ktor.client.request.parameter
 import io.ktor.client.statement.HttpResponse
+import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
 import org.olcbox.app.crypt.PlatformCrypto
 
 /**
@@ -77,6 +78,16 @@ class OlcrtcStatusClient(
     private val baseUrl: String = DEFAULT_BASE_URL
 ) {
     /**
+     * Parsed here rather than through `body<T>()`.
+     *
+     * The client this is handed is the app's shared one, and it installs `HttpTimeout`
+     * and nothing else — no `ContentNegotiation`. `body<T>()` against it throws
+     * `NoTransformationFoundException` on every call, which the catch below would turn
+     * into a silent "no occupancy" forever. `PartnerLinkResolver` reads its own body for
+     * the same reason; doing it here means this works whatever client it is given.
+     */
+    private val json = Json { ignoreUnknownKeys = true }
+    /**
      * Occupancy for the node this key belongs to, or null when it cannot be determined.
      *
      * Null on every failure — unknown key, revoked key, network down, coordinator
@@ -90,7 +101,11 @@ class OlcrtcStatusClient(
             val response: HttpResponse = httpClient.get("$baseUrl$PATH") {
                 parameter("key_id", keyId)
             }
-            if (response.status != HttpStatusCode.OK) null else response.body<OlcrtcSlots>()
+            if (response.status != HttpStatusCode.OK) {
+                null
+            } else {
+                json.decodeFromString<OlcrtcSlots>(response.bodyAsText())
+            }
         } catch (_: Throwable) {
             null
         }
