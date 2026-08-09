@@ -77,10 +77,22 @@ fun pkMaskSubscriptionUrl(url: String): String {
     return path.substring(0, cut + 1) + masked + (query?.let { "?…" } ?: "")
 }
 
-/** Pure so it is unit-testable: "PROOFKIT · v1.0.209 · OLCBOX CORE". */
+/**
+ * Pure so it is unit-testable: "PROOFKIT · v1.0.273 · 9f3c1ab".
+ *
+ * The third segment used to name the project this app was forked from, which is
+ * not something a ProofKit user needs to read and which occupied the one slot
+ * that could tell two binaries apart. It could not: our patch number is the CI
+ * run number, so a nightly and a local Xcode archive both say 1.0.273.
+ */
 fun pkVersionLine(info: AppInfo): String {
     val version = info.version.removePrefix("v")
-    return "${PkBrand.name.uppercase()} · v$version · OLCBOX CORE"
+    return listOfNotNull(
+        PkBrand.name.uppercase(),
+        "v$version",
+        // A build with no id says nothing rather than trailing a separator.
+        info.build.trim().takeIf { it.isNotEmpty() }
+    ).joinToString(" · ")
 }
 
 enum class PkStatus { Idle, Active, Warn, Error }
@@ -233,7 +245,7 @@ fun PkFilterChip(
     }
 }
 
-/** Home-screen footer: PROOFKIT · v<version> · OLCBOX CORE. */
+/** Home-screen footer: PROOFKIT · v<version> · <build>. */
 @Composable
 fun PkVersionFooter(modifier: Modifier = Modifier) {
     Column(modifier = modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {

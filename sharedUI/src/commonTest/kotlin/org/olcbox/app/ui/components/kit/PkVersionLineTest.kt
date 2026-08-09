@@ -6,18 +6,34 @@ import kotlin.test.assertEquals
 
 class PkVersionLineTest {
     @Test
-    fun formatsBrandVersionAndCore() {
+    fun formatsBrandVersionAndBuild() {
         assertEquals(
-            "PROOFKIT · v1.0.209 · OLCBOX CORE",
-            pkVersionLine(AppInfo(name = "olcbox", version = "1.0.209"))
+            "PROOFKIT · v1.0.209 · 9f3c1ab",
+            pkVersionLine(AppInfo(name = "olcbox", version = "1.0.209", build = "9f3c1ab"))
         )
     }
 
     @Test
     fun stripsLeadingVIfAlreadyPresent() {
         assertEquals(
-            "PROOFKIT · v2.0.0 · OLCBOX CORE",
-            pkVersionLine(AppInfo(name = "olcbox", version = "v2.0.0"))
+            "PROOFKIT · v2.0.0 · 9f3c1ab",
+            pkVersionLine(AppInfo(name = "olcbox", version = "v2.0.0", build = "9f3c1ab"))
+        )
+    }
+
+    @Test
+    fun aBuildWithNoIdLeavesNoDanglingSeparator() {
+        assertEquals(
+            "PROOFKIT · v1.0.209",
+            pkVersionLine(AppInfo(name = "olcbox", version = "1.0.209", build = "  "))
+        )
+    }
+
+    @Test
+    fun aDirtyTreeIsPartOfTheBuildId() {
+        assertEquals(
+            "PROOFKIT · v1.0.273 · 9f3c1ab*",
+            pkVersionLine(AppInfo(name = "olcbox", version = "1.0.273", build = "9f3c1ab*"))
         )
     }
 

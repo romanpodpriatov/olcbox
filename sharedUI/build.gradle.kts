@@ -18,6 +18,33 @@ plugins {
 
 val olcboxVersion = providers.gradleProperty("olcbox.version").orElse("1.0.0")
 val olcboxVersionValue = olcboxVersion.get()
+
+// Which build a user is looking at. The version cannot say: the patch number is
+// the CI run number, so a nightly and a local Xcode archive both call themselves
+// 1.0.273. The short SHA tells them apart, and the `*` says the tree had
+// uncommitted edits — the most useful thing this line can tell whoever is editing.
+//
+// Eager, like olcboxVersionValue above: this is a build input, not a lazy output.
+// runCatching because a source tree with no git, or no git binary, is a build that
+// should still succeed and simply not know its SHA.
+fun gitOutput(vararg args: String): String? = runCatching {
+    val output = providers.exec {
+        workingDir = rootProject.layout.projectDirectory.asFile
+        commandLine(listOf("git") + args)
+        isIgnoreExitValue = true
+    }
+    if (output.result.get().exitValue != 0) {
+        null
+    } else {
+        output.standardOutput.asText.get().trim().ifBlank { null }
+    }
+}.getOrNull()
+
+val olcboxBuildIdValue: String = providers.gradleProperty("olcbox.buildId").orNull
+    ?: gitOutput("rev-parse", "--short=7", "HEAD")?.let { sha ->
+        if (gitOutput("status", "--porcelain").isNullOrBlank()) sha else "$sha*"
+    }
+    ?: "local"
 // Machine-local build inputs, read from local.properties.
 //
 // Deliberately NOT a gradle property: this repository is public and its own
@@ -71,6 +98,10 @@ val olcrtcIosXcframeworkDir = olcrtcIosXcframework.get().asFile
 abstract class GenerateAppInfoTask : DefaultTask() {
     @get:Input
     abstract val version: Property<String>
+
+    /** Short git SHA (`*` when the tree was dirty), or "local". */
+    @get:Input
+    abstract val buildId: Property<String>
 
     @get:Input
     abstract val cryptKeyV1: Property<String>
@@ -141,6 +172,7 @@ abstract class GenerateAppInfoTask : DefaultTask() {
             internal object GeneratedAppInfo {
                 const val NAME: String = "olcbox"
                 const val VERSION: String = "${esc(version.get())}"
+                const val BUILD: String = "${esc(buildId.get())}"
                 const val CRYPT_KEY_V1: String = "${esc(cryptKeyV1.get())}"
                 const val ADMIN_PASS_SHA256: String = "${esc(adminPassSha256.get())}"
                 const val RESOLVER_BASE: String = "${esc(resolverBase.get())}"
@@ -159,6 +191,7 @@ val xcodeIsReleaseBuild = providers.environmentVariable("CONFIGURATION")
 
 val generateAppInfo by tasks.registering(GenerateAppInfoTask::class) {
     version.set(olcboxVersionValue)
+    buildId.set(olcboxBuildIdValue)
     cryptKeyV1.set(olcboxCryptKeyV1)
     adminPassSha256.set(olcboxAdminPassSha256)
     resolverBase.set(olcboxResolverBase)
