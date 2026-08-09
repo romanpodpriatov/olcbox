@@ -91,6 +91,46 @@ fun pkMaskSubscriptionUrl(url: String): String {
 private fun maskUrlSegment(segment: String): String =
     if (segment.length <= 12) segment else segment.take(6) + "…" + segment.takeLast(5)
 
+/** `https://proofkit.org:8443/sub/x` → `proofkit.org`. Null when there is no authority to read. */
+fun pkSubscriptionHost(url: String): String? {
+    val withoutScheme = url.trim().substringAfter("://", missingDelimiterValue = "")
+    if (withoutScheme.isBlank()) return null
+    return withoutScheme.substringBefore('/').substringBefore(':').takeIf { it.isNotBlank() }
+}
+
+/**
+ * Whether this subscription arrived as an encrypted link — ours
+ * (`olcrtc://crypt1/…`) or a partner's (`happ://crypt5/…`).
+ *
+ * [originLink] is the recorded answer. The `crypt=1` clause is the retrofit for
+ * subscriptions imported before that field existed: only our own encrypted
+ * subscriptions ask for an encrypted body, so the marker identifies them.
+ */
+fun pkSubscriptionIsSecret(url: String, originLink: String?): Boolean =
+    !originLink.isNullOrBlank() || url.contains("crypt=1")
+
+/**
+ * What the Server lists row prints under a subscription's name.
+ *
+ * A subscription URL is a bearer credential in every case, so none of these
+ * branches prints a whole one. An encrypted subscription prints no endpoint at
+ * all — hiding it is the entire purpose of the link it arrived as, and printing
+ * what we decrypted out of that link undoes it.
+ *
+ * [revealed] is the admin gate: `AdminState.plumbingVisible`, which fails closed,
+ * rather than `configuratorVisible`, which does not. Forgetting to bake the admin
+ * hash must not be what puts credentials back on the screen.
+ */
+fun pkSubscriptionSourceLine(
+    url: String,
+    originLink: String? = null,
+    revealed: Boolean = false
+): String = when {
+    revealed -> pkMaskSubscriptionUrl(url)
+    pkSubscriptionIsSecret(url, originLink) -> "Encrypted link"
+    else -> pkSubscriptionHost(url) ?: pkMaskSubscriptionUrl(url)
+}
+
 /**
  * Pure so it is unit-testable: "PROOFKIT · v1.0.273 · 9f3c1ab".
  *
