@@ -628,7 +628,11 @@ private fun SubscriptionGroupHeader(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    // Under the title, not under the chevron: the icon and the
+                    // spacer beside it are what the title itself starts after.
+                    .padding(start = if (collapsible) 20.dp else 0.dp)
             )
         }
     }
@@ -800,14 +804,27 @@ private fun LocationItem.subscriptionQuota(): String? {
     return quotaText(subscription.used, subscription.available)
 }
 
-private fun quotaText(used: String?, available: String?): String? {
+internal fun quotaText(used: String?, available: String?): String? {
     return when {
-        // "9.4 MB / 300 GB", the way a provider states a plan.
-        !used.isNullOrBlank() && !available.isNullOrBlank() -> "$used / $available"
+        // "6.3/300 GB" when both sides are in the same unit, "9.4 MB / 300 GB"
+        // when they are not. Saying GB twice costs five characters on a line that
+        // has to fit a phone, and says nothing the once did not.
+        !used.isNullOrBlank() && !available.isNullOrBlank() -> compactQuota(used, available)
         !used.isNullOrBlank() -> "$used used"
         !available.isNullOrBlank() -> "$available available"
         else -> null
     }
+}
+
+private fun compactQuota(used: String, available: String): String {
+    val usedUnit = used.trim().substringAfterLast(' ', missingDelimiterValue = "")
+    val availableUnit = available.trim().substringAfterLast(' ', missingDelimiterValue = "")
+    if (usedUnit.isBlank() || !usedUnit.equals(availableUnit, ignoreCase = true)) {
+        return "$used / $available"
+    }
+    val usedValue = used.trim().substringBeforeLast(' ')
+    val availableValue = available.trim().substringBeforeLast(' ')
+    return "$usedValue/$availableValue $availableUnit"
 }
 
 private const val MINUTE_MILLIS = 60_000L

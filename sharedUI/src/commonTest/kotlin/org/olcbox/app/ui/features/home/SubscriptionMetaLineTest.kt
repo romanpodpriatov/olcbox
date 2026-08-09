@@ -1,5 +1,6 @@
 package org.olcbox.app.ui.features.home
 
+import org.olcbox.app.ui.features.home.components.quotaText
 import org.olcbox.app.ui.features.home.components.subscriptionAge
 import org.olcbox.app.ui.features.home.components.subscriptionMetaLine
 import kotlin.test.Test
@@ -49,6 +50,25 @@ class SubscriptionMetaLineTest {
                 formatDate = date
             )
         )
+    }
+
+    @Test
+    fun aSharedUnitIsSaidOnce() {
+        // Five characters on a line that has to fit a phone, and "GB" twice says
+        // nothing the once did not.
+        assertEquals("6.3/300 GB", quotaText("6.3 GB", "300 GB"))
+        // Providers are not consistent about case; the unit is still the same unit.
+        assertEquals("6.3/300 gb", quotaText("6.3 GB", "300 gb"))
+    }
+
+    @Test
+    fun differingUnitsKeepBothAndOneSidedQuotasSayWhichSide() {
+        assertEquals("980 MB / 300 GB", quotaText("980 MB", "300 GB"))
+        assertEquals("6.3 GB used", quotaText("6.3 GB", null))
+        assertEquals("300 GB available", quotaText(null, "300 GB"))
+        assertNull(quotaText(null, null))
+        // A provider that sends a bare number has no unit to fold away.
+        assertEquals("12 / 300", quotaText("12", "300"))
     }
 
     @Test
