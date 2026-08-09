@@ -1018,6 +1018,130 @@ class LocationsRepositoryImplTest {
         assertNull(resolver.asked)
     }
 
+    // --- an encrypted subscription stays encrypted -------------------------
+    //
+    // The crypt link exists so the endpoint is unreadable; the app decrypted it,
+    // stored the plaintext URL and threw the link away, so the Server lists row
+    // printed exactly what the encryption was hiding.
+
+    private val cryptKeyB64 = "KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKio="
+    private val cryptUrlBlob =
+        "PUtUSvcFHP7RaUdnoe3kiTxMd5t8R2fhKbezwNn4b346MTOM9L_Efda6HedlY1EVxprVRQu-bTgBUwc38IT-23bvBIhBrlFmgOviGK__tX3d8jKEsvUkFKcdd3FnO39oQFSFVcZH6ATMTJuMH6O8Sw"
+    private val cryptUrl = "https://proofkit.org/sub/TESTTOKEN/olcrtc?crypt=1"
+    private val subscriptionBody = "olcrtc://telemost?vp8channel@12345#deadbeefdeadbeef\$DE"
+
+    @Test
+    fun aCryptLinkImportRemembersTheLinkItArrivedAs() = runTest {
+        val source = FakeLocationsDataSource()
+        val engine = MockEngine { respond(subscriptionBody) }
+        val link = "olcrtc://crypt1/$cryptUrlBlob"
+
+        val ok = LocationsRepositoryImpl(
+            dataSource = source,
+            httpClient = HttpClient(engine),
+            cryptCodec = CryptCodec(CryptCodec.decodeMaster(cryptKeyB64)!!)
+        ).importText(link)
+
+        assertTrue(ok)
+        val entry = source.stored!!.locations.single()
+        assertEquals(cryptUrl, entry.subscriptionUrl)
+        assertEquals(link, entry.subscriptionOriginLink)
+    }
+
+    @Test
+    fun aHappLinkImportRemembersThePastedLinkNotTheResolvedOne() = runTest {
+        // What the user can paste again is the happ link; the crypt1 link the
+        // coordinator handed back is an implementation detail of the resolver.
+        val source = FakeLocationsDataSource()
+        val engine = MockEngine { respond(subscriptionBody) }
+        val resolver = FakeResolver(PartnerLinkResult.Resolved("olcrtc://crypt1/$cryptUrlBlob"))
+
+        val ok = LocationsRepositoryImpl(
+            dataSource = source,
+            httpClient = HttpClient(engine),
+            cryptCodec = CryptCodec(CryptCodec.decodeMaster(cryptKeyB64)!!),
+            partnerLinkResolver = resolver
+        ).importText(happLink)
+
+        assertTrue(ok)
+        assertEquals(happLink, source.stored!!.locations.single().subscriptionOriginLink)
+    }
+
+    @Test
+    fun aPlainSubscriptionHasNoOriginLink() = runTest {
+        val source = FakeLocationsDataSource()
+        val engine = MockEngine { respond(subscriptionBody) }
+
+        val ok = LocationsRepositoryImpl(
+            dataSource = source,
+            httpClient = HttpClient(engine)
+        ).importText("https://example.test/sub/plain")
+
+        assertTrue(ok)
+        assertNull(source.stored!!.locations.single().subscriptionOriginLink)
+    }
+
+    @Test
+    fun refreshKeepsTheEncryptedOrigin() = runTest {
+        // A refresh re-imports from the stored plaintext URL and never sees the
+        // encrypted link, so without an explicit carry-over the first auto-refresh
+        // would quietly declassify the subscription.
+        val link = "olcrtc://crypt1/$cryptUrlBlob"
+        val stored = LocationBundleV4(
+            activeLocationId = "alpha",
+            locations = listOf(
+                LocationEntry.from(
+                    "alpha",
+                    LocationConfig("Alpha", "12345", "deadbeefdeadbeef", LocationConfig.PROVIDER_TELEMOST),
+                    subscriptionUrl = cryptUrl,
+                    subscriptionOriginLink = link
+                )
+            )
+        )
+        val source = FakeLocationsDataSource(stored = stored)
+        val engine = MockEngine { respond(subscriptionBody) }
+
+        LocationsRepositoryImpl(
+            dataSource = source,
+            httpClient = HttpClient(engine)
+        ).refreshSubscription(cryptUrl)
+
+        assertEquals(link, source.stored!!.locations.single().subscriptionOriginLink)
+    }
+
+    @Test
+    fun sharingAnEncryptedSubscriptionHandsBackTheEncryptedLink() {
+        val encrypted = LocationEntry.from(
+            "alpha",
+            LocationConfig("Alpha", "room-a", "a".repeat(64), LocationConfig.PROVIDER_WB_STREAM),
+            subscriptionUrl = "https://proofkit.org/sub/TESTTOKEN/olcrtc?crypt=1",
+            subscriptionOriginLink = "olcrtc://crypt1/blob"
+        )
+        val plain = LocationEntry.from(
+            "beta",
+            LocationConfig("Beta", "room-b", "b".repeat(64), LocationConfig.PROVIDER_WB_STREAM),
+            subscriptionUrl = "https://example.test/sub"
+        )
+
+        val items = ConfigShareService.subscriptionShareItems(listOf(encrypted, plain))
+
+        assertEquals("olcrtc://crypt1/blob", items.single { it.originLink != null }.shareText)
+        assertEquals("https://example.test/sub", items.single { it.originLink == null }.shareText)
+    }
+
+    @Test
+    fun theOriginLinkSurvivesASaveRoundTrip() {
+        // normalized() rebuilds the entry field by field and runs on every save, so
+        // a field it forgets is a field that never persists.
+        val entry = LocationEntry.from(
+            "alpha",
+            LocationConfig("Alpha", "12345", "deadbeefdeadbeef", LocationConfig.PROVIDER_TELEMOST),
+            subscriptionUrl = "https://example.test/sub",
+            subscriptionOriginLink = "olcrtc://crypt1/blob"
+        )
+        assertEquals("olcrtc://crypt1/blob", entry.normalized().subscriptionOriginLink)
+    }
+
     private class FakeLocationsDataSource(
         var stored: LocationBundleV4? = null,
         private val legacy: List<Pair<String, String>> = emptyList(),

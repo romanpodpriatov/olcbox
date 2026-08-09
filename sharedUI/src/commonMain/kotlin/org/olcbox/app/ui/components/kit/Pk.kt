@@ -59,28 +59,94 @@ object PkBrand {
 }
 
 /**
- * Hides the secret part of a subscription URL for display: the last path segment
- * is a bearer token, and anyone glancing at the screen could copy it.
+ * Hides the secret parts of a subscription URL for display: a path segment long
+ * enough to be a bearer token is one, and anyone glancing at the screen could
+ * copy it.
  *
- * `https://proofkit.org/sub/c0e79f…17e95` — enough to tell two subscriptions apart,
- * not enough to reuse one.
+ * Every such segment, not merely the last — which is what this used to do, and
+ * which is wrong for our own URLs: `/sub/<token>/olcrtc` ends in a six-character
+ * literal, so the function returned the string untouched and the row ellipsised
+ * it. That looks like masking and is not.
+ *
+ * The host is never masked. It is not a secret, it is the only part a user can
+ * recognise, and it is long enough that masking by length alone would mangle it.
+ *
+ * `https://proofkit.org/sub/c0e79f…17e95/olcrtc?…` — enough to tell two
+ * subscriptions apart, not enough to reuse one.
  */
 fun pkMaskSubscriptionUrl(url: String): String {
     val trimmed = url.trim()
-    val query = trimmed.indexOf('?').takeIf { it >= 0 }
-    val path = query?.let { trimmed.substring(0, it) } ?: trimmed
-    val cut = path.lastIndexOf('/')
-    if (cut < 0 || cut == path.lastIndex) return trimmed
-    val token = path.substring(cut + 1)
-    if (token.length <= 12) return trimmed
-    val masked = token.take(6) + "…" + token.takeLast(5)
-    return path.substring(0, cut + 1) + masked + (query?.let { "?…" } ?: "")
+    val queryAt = trimmed.indexOf('?')
+    val path = if (queryAt >= 0) trimmed.substring(0, queryAt) else trimmed
+    val schemeEnd = path.indexOf("://").let { if (it >= 0) it + 3 else 0 }
+    val masked = path.substring(schemeEnd)
+        .split('/')
+        // Index 0 is the authority, which stays readable.
+        .mapIndexed { index, segment -> if (index == 0) segment else maskUrlSegment(segment) }
+        .joinToString("/")
+    return path.substring(0, schemeEnd) + masked + (if (queryAt >= 0) "?…" else "")
 }
 
-/** Pure so it is unit-testable: "PROOFKIT · v1.0.209 · OLCBOX CORE". */
+/** Short segments are route names, not secrets, and hiding them only costs legibility. */
+private fun maskUrlSegment(segment: String): String =
+    if (segment.length <= 12) segment else segment.take(6) + "…" + segment.takeLast(5)
+
+/** `https://proofkit.org:8443/sub/x` → `proofkit.org`. Null when there is no authority to read. */
+fun pkSubscriptionHost(url: String): String? {
+    val withoutScheme = url.trim().substringAfter("://", missingDelimiterValue = "")
+    if (withoutScheme.isBlank()) return null
+    return withoutScheme.substringBefore('/').substringBefore(':').takeIf { it.isNotBlank() }
+}
+
+/**
+ * Whether this subscription arrived as an encrypted link — ours
+ * (`olcrtc://crypt1/…`) or a partner's (`happ://crypt5/…`).
+ *
+ * [originLink] is the recorded answer. The `crypt=1` clause is the retrofit for
+ * subscriptions imported before that field existed: only our own encrypted
+ * subscriptions ask for an encrypted body, so the marker identifies them.
+ */
+fun pkSubscriptionIsSecret(url: String, originLink: String?): Boolean =
+    !originLink.isNullOrBlank() || url.contains("crypt=1")
+
+/**
+ * What the Server lists row prints under a subscription's name.
+ *
+ * A subscription URL is a bearer credential in every case, so none of these
+ * branches prints a whole one. An encrypted subscription prints no endpoint at
+ * all — hiding it is the entire purpose of the link it arrived as, and printing
+ * what we decrypted out of that link undoes it.
+ *
+ * [revealed] is the admin gate: `AdminState.plumbingVisible`, which fails closed,
+ * rather than `configuratorVisible`, which does not. Forgetting to bake the admin
+ * hash must not be what puts credentials back on the screen.
+ */
+fun pkSubscriptionSourceLine(
+    url: String,
+    originLink: String? = null,
+    revealed: Boolean = false
+): String = when {
+    revealed -> pkMaskSubscriptionUrl(url)
+    pkSubscriptionIsSecret(url, originLink) -> "Encrypted link"
+    else -> pkSubscriptionHost(url) ?: pkMaskSubscriptionUrl(url)
+}
+
+/**
+ * Pure so it is unit-testable: "PROOFKIT · v1.0.273 · 9f3c1ab".
+ *
+ * The third segment used to name the project this app was forked from, which is
+ * not something a ProofKit user needs to read and which occupied the one slot
+ * that could tell two binaries apart. It could not: our patch number is the CI
+ * run number, so a nightly and a local Xcode archive both say 1.0.273.
+ */
 fun pkVersionLine(info: AppInfo): String {
     val version = info.version.removePrefix("v")
-    return "${PkBrand.name.uppercase()} · v$version · OLCBOX CORE"
+    return listOfNotNull(
+        PkBrand.name.uppercase(),
+        "v$version",
+        // A build with no id says nothing rather than trailing a separator.
+        info.build.trim().takeIf { it.isNotEmpty() }
+    ).joinToString(" · ")
 }
 
 enum class PkStatus { Idle, Active, Warn, Error }
@@ -233,7 +299,7 @@ fun PkFilterChip(
     }
 }
 
-/** Home-screen footer: PROOFKIT · v<version> · OLCBOX CORE. */
+/** Home-screen footer: PROOFKIT · v<version> · <build>. */
 @Composable
 fun PkVersionFooter(modifier: Modifier = Modifier) {
     Column(modifier = modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {

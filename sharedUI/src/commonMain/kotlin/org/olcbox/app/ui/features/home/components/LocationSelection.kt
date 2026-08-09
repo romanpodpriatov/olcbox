@@ -49,10 +49,12 @@ import org.olcbox.app.net.TransportKind
 import org.olcbox.app.net.transportKind
 import org.olcbox.app.ui.components.kit.PkFilterChip
 import org.olcbox.app.ui.components.kit.PkSectionLabel
+import org.olcbox.app.ui.components.kit.pkSubscriptionHost
+import org.olcbox.app.ui.components.kit.pkSubscriptionIsSecret
 import org.olcbox.app.ui.theme.LocalPkPalette
 import org.olcbox.app.data.model.SubscriptionSort
 import org.olcbox.app.util.formatDate
-import org.olcbox.app.util.formatDateTime
+import org.olcbox.app.util.nowMillis
 import org.olcbox.app.ui.features.locations.LocationItem
 import org.olcbox.app.data.model.LocationConfig
 import org.olcbox.app.net.OlcrtcSlots
@@ -204,64 +206,28 @@ fun LocationSelectorScreen(
                 Column(
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        SubscriptionGroupHeader(
-                            locations = group,
-                            collapsed = isCollapsed,
-                            // Folding one away must not hide the fact that the
-                            // exit in use is inside it.
-                            holdsSelection = group.any { it.storageId == selectedLocationId },
-                            collapsible = collapsible,
-                            onToggle = { toggle(groupKey) },
-                            onOpenUrl = onOpenUrl,
-                            modifier = Modifier.weight(1f)
-                        )
+                    val groupIds = group.map { it.storageId }
+                    val isGroupRefreshing = pingsState is PingsState.Loading &&
+                            pingsState.pendingLocationIds.any { it in groupIds }
+                    val groupUrl = group.firstOrNull()?.subscriptionUrl?.trim()
 
-                        val groupIds = group.map { it.storageId }
-                        val isGroupRefreshing = pingsState is PingsState.Loading &&
-                                pingsState.pendingLocationIds.any { it in groupIds }
-                        val groupUrl = group.firstOrNull()?.subscriptionUrl?.trim()
-
-                        // Two controls, side by side, neither of them labelled:
-                        // a bolt that measures and circling arrows that fetch
-                        // the list again. They were one button before, captioned
-                        // "Ping" and wired to the refresh.
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(2.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            // Support sits with the other actions on the right;
-                            // the provider's page is information about the
-                            // subscription and rides with its name, on the left.
-                            group.firstOrNull()?.metadata?.subscription
-                                ?.supportUrl?.takeIf { it.isNotBlank() }?.let { url ->
-                                    LinkButton(
-                                        icon = PkIcons.Send,
-                                        description = "Contact support",
-                                        onClick = { onOpenUrl(url) }
-                                    )
-                                }
-
-                            if (group.any { it.config?.let(canPing) == true }) {
-                                LatencyButton(
-                                    isRunning = isGroupRefreshing,
-                                    onClick = { onRefreshClick(groupIds) },
-                                    tint = MaterialTheme.colorScheme.primary
-                                )
-                            }
-                            if (!groupUrl.isNullOrBlank()) {
-                                SubscriptionRefreshButton(
-                                    isRefreshing = groupUrl == refreshingSubscriptionUrl,
-                                    onClick = { onRefreshSubscriptionClick(groupUrl) },
-                                    tint = MaterialTheme.colorScheme.primary
-                                )
-                            }
-                        }
-                    }
+                    SubscriptionGroupHeader(
+                        locations = group,
+                        collapsed = isCollapsed,
+                        // Folding one away must not hide the fact that the
+                        // exit in use is inside it.
+                        holdsSelection = group.any { it.storageId == selectedLocationId },
+                        collapsible = collapsible,
+                        isPinging = isGroupRefreshing,
+                        isRefreshing = groupUrl != null && groupUrl == refreshingSubscriptionUrl,
+                        canPingGroup = group.any { it.config?.let(canPing) == true },
+                        subscriptionUrl = groupUrl,
+                        onToggle = { toggle(groupKey) },
+                        onOpenUrl = onOpenUrl,
+                        onPingClick = { onRefreshClick(groupIds) },
+                        onRefreshSubscriptionClick = { groupUrl?.let(onRefreshSubscriptionClick) },
+                        modifier = Modifier.fillMaxWidth()
+                    )
 
                     if (!isCollapsed) {
                         Spacer(modifier = Modifier.height(2.dp))
@@ -532,55 +498,70 @@ private fun SubscriptionGroupHeader(
     collapsed: Boolean,
     collapsible: Boolean,
     holdsSelection: Boolean,
+    isPinging: Boolean,
+    isRefreshing: Boolean,
+    canPingGroup: Boolean,
+    subscriptionUrl: String?,
     onToggle: () -> Unit,
     onOpenUrl: (String) -> Unit,
+    onPingClick: () -> Unit,
+    onRefreshSubscriptionClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val pk = LocalPkPalette.current
     val first = locations.firstOrNull()
+    val subscription = first?.metadata?.subscription
     val title = first?.subscriptionTitle().orEmpty().ifBlank { "Server lists" }
-    val refreshLine = first?.subscriptionRefreshLine()
-    val quotaLine = first?.subscriptionQuotaLine()
+    // Folded, one line that says how much is hidden and what is left of the plan.
+    val metaLine = if (collapsed) {
+        listOfNotNull(
+            "${locations.size} " + if (locations.size == 1) "location" else "locations",
+            first?.subscriptionQuota()
+        ).joinToString(" · ")
+    } else {
+        subscriptionMetaLine(
+            quota = first?.subscriptionQuota(),
+            expiresAtEpochMs = subscription?.expiresAtEpochMs,
+            lastRefreshAtEpochMs = subscription?.lastRefreshAtEpochMs,
+            nowEpochMs = nowMillis(),
+            formatDate = ::formatDate
+        )
+    }
     // A quarter turn rather than two icons: the same arrow points at the rows
     // when they are there and at the title when they are not.
     val turn by animateFloatAsState(if (collapsed) -90f else 0f, label = "groupChevron")
 
-    Row(
+    // A column, not a row. The metadata used to live inside the title's own
+    // weight(1f) column with four icon buttons beside it, which left it roughly
+    // half the screen and truncated "Expires 09.09.2026" into "Expires…" while
+    // two thirds of the row sat empty under the buttons.
+    Column(
         modifier = modifier
+            .fillMaxWidth()
             .clip(RoundedCornerShape(10.dp))
             .then(if (collapsible) Modifier.clickable(onClick = onToggle) else Modifier)
-            .padding(start = 4.dp, top = 2.dp, bottom = 2.dp, end = 4.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .padding(start = 4.dp, top = 2.dp, bottom = 2.dp, end = 4.dp)
     ) {
-        // No chevron where folding is switched off: an arrow that does not fold
-        // anything is a promise the screen does not keep.
-        if (collapsible) {
-            Icon(
-                imageVector = PkIcons.ChevronRight,
-                contentDescription = if (collapsed) "Expand" else "Collapse",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier
-                    .size(18.dp)
-                    .rotate(turn + 90f)
-            )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            // No chevron where folding is switched off: an arrow that does not fold
+            // anything is a promise the screen does not keep.
+            if (collapsible) {
+                Icon(
+                    imageVector = PkIcons.ChevronRight,
+                    contentDescription = if (collapsed) "Expand" else "Collapse",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .size(18.dp)
+                        .rotate(turn + 90f)
+                )
 
-            Spacer(modifier = Modifier.width(2.dp))
-        }
+                Spacer(modifier = Modifier.width(2.dp))
+            }
 
-        // An i in a circle, first thing on the row: this is about the
-        // subscription rather than an action on it.
-        first?.metadata?.subscription?.webPageUrl?.takeIf { it.isNotBlank() }?.let { url ->
-            LinkButton(
-                icon = PkIcons.Info,
-                description = "Open the provider's site",
-                onClick = { onOpenUrl(url) }
-            )
-        }
-
-        Spacer(modifier = Modifier.width(4.dp))
-
-        Column(modifier = Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                modifier = Modifier.weight(1f),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Text(
                     text = title,
                     style = MaterialTheme.typography.titleSmall,
@@ -605,28 +586,54 @@ private fun SubscriptionGroupHeader(
                 }
             }
 
-            // Folded, one line that says how much is hidden and what is left of
-            // the plan. Unfolded, both lines the provider gave us.
-            val lines = if (collapsed) {
-                listOfNotNull(
-                    listOfNotNull(
-                        "${locations.size} " + if (locations.size == 1) "location" else "locations",
-                        quotaLine
-                    ).joinToString(" · ")
+            // Every control the group has, on the title's line: an i in a circle
+            // for the provider's page, a paper plane for its support, a bolt that
+            // measures and circling arrows that fetch the list again.
+            subscription?.webPageUrl?.takeIf { it.isNotBlank() }?.let { url ->
+                LinkButton(
+                    icon = PkIcons.Info,
+                    description = "Open the provider's site",
+                    onClick = { onOpenUrl(url) }
                 )
-            } else {
-                listOfNotNull(refreshLine, quotaLine)
             }
+            subscription?.supportUrl?.takeIf { it.isNotBlank() }?.let { url ->
+                LinkButton(
+                    icon = PkIcons.Send,
+                    description = "Contact support",
+                    onClick = { onOpenUrl(url) }
+                )
+            }
+            if (canPingGroup) {
+                LatencyButton(
+                    isRunning = isPinging,
+                    onClick = onPingClick,
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
+            if (!subscriptionUrl.isNullOrBlank()) {
+                SubscriptionRefreshButton(
+                    isRefreshing = isRefreshing,
+                    onClick = onRefreshSubscriptionClick,
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
+        }
 
-            lines.forEach { line ->
-                Text(
-                    text = line,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
+        // A provider that told us nothing gets no line, rather than an empty row
+        // of the height of one.
+        if (!metaLine.isNullOrBlank()) {
+            Text(
+                text = metaLine,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    // Under the title, not under the chevron: the icon and the
+                    // spacer beside it are what the title itself starts after.
+                    .padding(start = if (collapsible) 20.dp else 0.dp)
+            )
         }
     }
 }
@@ -741,10 +748,12 @@ private fun LocationItem.subscriptionTitle(): String {
     val subscription = metadata?.subscription
     // Falling back to the literal "Server lists" labelled every unnamed
     // subscription identically, so two of them read as the same heading twice.
-    // Identify by host instead, which is what actually distinguishes them.
+    // Identify by host instead — except for an encrypted subscription, whose host
+    // is one of the things its link was hiding.
+    val secret = subscriptionUrl?.let { pkSubscriptionIsSecret(it, subscriptionOriginLink) } == true
     val name = subscription?.name?.takeIf { it.isNotBlank() }
-        ?: subscriptionUrl?.let { subscriptionHost(it) }
-        ?: "Server list"
+        ?: subscriptionUrl?.takeUnless { secret }?.let { pkSubscriptionHost(it) }
+        ?: if (secret) "Encrypted list" else "Server list"
 
     return listOfNotNull(
         subscription?.icon?.takeIf { it.isNotBlank() },
@@ -752,61 +761,70 @@ private fun LocationItem.subscriptionTitle(): String {
     ).joinToString(" ")
 }
 
-/** `https://proofkit.org/sub/<token>` → `proofkit.org`. */
-private fun subscriptionHost(url: String): String? {
-    val withoutScheme = url.trim().substringAfter("://", missingDelimiterValue = "")
-    if (withoutScheme.isBlank()) return null
-    return withoutScheme.substringBefore('/').substringBefore(':')
-        .takeIf { it.isNotBlank() }
-}
-
 /**
- * The two lines Happ shows under a subscription's name: when it last refreshed
- * and how often, then how much of it is left and until when.
+ * The one line a subscription gets under its name: what is left of the plan,
+ * when it runs out, and how stale the list is.
  *
- * All of it comes from the provider's own response headers, which were being
- * downloaded and thrown away — so the list called a subscription by its
- * *hostname*, which is the least useful name it has and the one thing worth not
- * printing on a screen someone might show to a friend.
+ * All of it comes from the provider's own response headers. It used to be two
+ * lines *inside* the title's own column, which is why it truncated — four icon
+ * buttons sat beside it and left it about half the width. Compacting it is the
+ * other half of that fix: `Auto-update 12h` is gone because it is a setting
+ * rather than a status and the Server lists screen states it, and the last
+ * refresh became an age because "2h" is both shorter and the actual question.
+ *
+ * Pure, so it can be tested without a device clock or a platform formatter.
  */
-private fun LocationItem.subscriptionRefreshLine(): String? {
-    val subscription = metadata?.subscription ?: return null
-    return listOfNotNull(
-        subscription.lastRefreshAtEpochMs?.let { formatDateTime(it) },
-        subscription.updateIntervalHours?.let { "Auto-update ${it}h" }
-            ?: subscription.refresh?.takeIf { it.isNotBlank() }?.let { "Refresh $it" }
-    ).joinToString(" | ").takeIf { it.isNotBlank() }
-}
+internal fun subscriptionMetaLine(
+    quota: String?,
+    expiresAtEpochMs: Long?,
+    lastRefreshAtEpochMs: Long?,
+    nowEpochMs: Long,
+    formatDate: (Long) -> String
+): String? = listOfNotNull(
+    quota?.takeIf { it.isNotBlank() },
+    // The year stays. "exp 09.09" reads as expired for a plan that runs to 2027,
+    // and four characters are not worth a wrong answer.
+    expiresAtEpochMs?.let { "exp ${formatDate(it)}" },
+    lastRefreshAtEpochMs?.let { "upd ${subscriptionAge(it, nowEpochMs)}" }
+).joinToString(" · ").takeIf { it.isNotBlank() }
 
-private fun LocationItem.subscriptionQuotaLine(): String? {
-    val subscription = metadata?.subscription ?: return null
-    return listOfNotNull(
-        quotaText(subscription.used, subscription.available),
-        subscription.expiresAtEpochMs?.let { "Expires ${formatDate(it)}" }
-    ).joinToString(" · ").takeIf { it.isNotBlank() }
-}
-
-private fun LocationItem.subscriptionDetails(): String? {
-    val subscription = metadata?.subscription ?: return null
-
-    return listOfNotNull(
-        quotaText(subscription.used, subscription.available),
-        subscription.refresh?.takeIf { it.isNotBlank() }?.let { "Refresh $it" }
-    ).joinToString(" · ").takeIf { it.isNotBlank() }
-}
-
-private fun quotaText(used: String?, available: String?): String? {
+/** `now` / `12m` / `2h` / `3d`. A device whose clock ran backwards reads as `now`. */
+internal fun subscriptionAge(lastRefreshAtEpochMs: Long, nowEpochMs: Long): String {
+    val delta = (nowEpochMs - lastRefreshAtEpochMs).coerceAtLeast(0L)
     return when {
-        // "9.4 MB / 300 GB", the way a provider states a plan.
-        !used.isNullOrBlank() && !available.isNullOrBlank() -> "$used / $available"
+        delta < MINUTE_MILLIS -> "now"
+        delta < HOUR_MILLIS -> "${delta / MINUTE_MILLIS}m"
+        delta < DAY_MILLIS -> "${delta / HOUR_MILLIS}h"
+        else -> "${delta / DAY_MILLIS}d"
+    }
+}
+
+private fun LocationItem.subscriptionQuota(): String? {
+    val subscription = metadata?.subscription ?: return null
+    return quotaText(subscription.used, subscription.available)
+}
+
+internal fun quotaText(used: String?, available: String?): String? {
+    return when {
+        // "6.3/300 GB" when both sides are in the same unit, "9.4 MB / 300 GB"
+        // when they are not. Saying GB twice costs five characters on a line that
+        // has to fit a phone, and says nothing the once did not.
+        !used.isNullOrBlank() && !available.isNullOrBlank() -> compactQuota(used, available)
         !used.isNullOrBlank() -> "$used used"
         !available.isNullOrBlank() -> "$available available"
         else -> null
     }
 }
 
-private fun plural(value: Long, unit: String): String {
-    return "$value $unit${if (value == 1L) "" else "s"}"
+private fun compactQuota(used: String, available: String): String {
+    val usedUnit = used.trim().substringAfterLast(' ', missingDelimiterValue = "")
+    val availableUnit = available.trim().substringAfterLast(' ', missingDelimiterValue = "")
+    if (usedUnit.isBlank() || !usedUnit.equals(availableUnit, ignoreCase = true)) {
+        return "$used / $available"
+    }
+    val usedValue = used.trim().substringBeforeLast(' ')
+    val availableValue = available.trim().substringBeforeLast(' ')
+    return "$usedValue/$availableValue $availableUnit"
 }
 
 private const val MINUTE_MILLIS = 60_000L

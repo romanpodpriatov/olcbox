@@ -98,7 +98,7 @@ import org.olcbox.app.CurrentAppInfo
 import org.olcbox.app.admin.AdminState
 import org.olcbox.app.data.share.SubscriptionShareItem
 import org.olcbox.app.update.AppUpdateSettings
-import org.olcbox.app.ui.components.kit.pkMaskSubscriptionUrl
+import org.olcbox.app.ui.components.kit.pkSubscriptionSourceLine
 import org.olcbox.app.ui.components.kit.PkSectionLabel
 import org.olcbox.app.ui.components.kit.pkVersionLine
 import org.olcbox.app.ui.features.home.components.LogLines
@@ -1158,7 +1158,9 @@ private fun SubscriptionsSharingSettingsContent(
                 subscriptions.forEach { item ->
                     SubscriptionShareRow(
                         item = item,
-                        onShareClick = { onShareClick(item.url) },
+                        // The encrypted link when there is one; url stays the key
+                        // Refresh and Remove use.
+                        onShareClick = { onShareClick(item.shareText) },
                         onRefreshClick = { onRefreshClick(item.url) },
                         onDeleteClick = { onDeleteClick(item.url) }
                     )
@@ -1222,7 +1224,13 @@ private fun SubscriptionShareRow(
                         overflow = TextOverflow.Ellipsis
                     )
                     Text(
-                        text = pkMaskSubscriptionUrl(item.url),
+                        text = pkSubscriptionSourceLine(
+                            url = item.url,
+                            originLink = item.originLink,
+                            // Fails closed: a build with no admin hash must not
+                            // start printing credentials again.
+                            revealed = AdminState.plumbingVisible
+                        ),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 12.sp,
                         maxLines = 1,
