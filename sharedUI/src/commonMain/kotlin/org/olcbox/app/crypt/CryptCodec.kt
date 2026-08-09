@@ -49,6 +49,12 @@ class CryptCodec(masterKey: ByteArray) {
             return CryptCodec(key)
         }
 
+        /**
+         * Marker-only: is this one of our encrypted links? Answers without a key,
+         * because the answer is needed even in a build that cannot open the link.
+         */
+        fun isCryptLink(text: String): Boolean = text.trim().startsWith(LINK_PREFIX)
+
         /** Accept standard or url-safe base64, padded or not; must decode to 32 bytes. */
         fun decodeMaster(b64: String): ByteArray? {
             if (b64.isBlank()) return null

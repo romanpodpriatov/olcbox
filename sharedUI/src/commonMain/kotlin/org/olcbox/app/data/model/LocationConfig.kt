@@ -398,6 +398,17 @@ data class LocationEntry(
     val name: String = "",
     @SerialName("subscription_url")
     val subscriptionUrl: String? = null,
+    /**
+     * The encrypted link this subscription arrived as — `olcrtc://crypt1/…` or a
+     * partner's `happ://crypt5/…` — when it did.
+     *
+     * Its presence is what makes a subscription secret: the link exists so the
+     * endpoint is not readable, and [subscriptionUrl] holds exactly the endpoint it
+     * was hiding. Also what QR/share hands out, so moving a subscription to a second
+     * device does not decrypt it on the way.
+     */
+    @SerialName("subscription_origin_link")
+    val subscriptionOriginLink: String? = null,
     val endpoint: LocationEndpointConfig? = null,
     @SerialName("auth_provider")
     val authProvider: String? = null,
@@ -479,6 +490,7 @@ data class LocationEntry(
             storageId = storageId.trim(),
             name = config.name,
             subscriptionUrl = firstNotBlank(subscriptionUrl, legacySubscriptionUrl).ifBlank { null },
+            subscriptionOriginLink = subscriptionOriginLink?.trim()?.ifBlank { null },
             endpoint = LocationEndpointConfig(
                 roomId = config.id,
                 key = config.key
@@ -498,6 +510,7 @@ data class LocationEntry(
             storageId: String,
             location: LocationConfig,
             subscriptionUrl: String? = null,
+            subscriptionOriginLink: String? = null,
             metadata: LocationMetadata? = null
         ): LocationEntry {
             val config = location.normalized()
@@ -505,6 +518,7 @@ data class LocationEntry(
                 storageId = storageId,
                 name = config.name,
                 subscriptionUrl = subscriptionUrl,
+                subscriptionOriginLink = subscriptionOriginLink,
                 endpoint = LocationEndpointConfig(
                     roomId = config.id,
                     key = config.key

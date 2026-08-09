@@ -81,6 +81,8 @@ class LocationsRepositoryImpl(
     private data class ImportSource(
         val content: String,
         val subscriptionUrl: String? = null,
+        /** The encrypted link the user pasted, when the import began with one. */
+        val originLink: String? = null,
         val updateIntervalHours: Int? = null,
         val profile: SubscriptionProfile? = null,
         val requestMode: SubscriptionRequestMode = SubscriptionRequestMode.Identity
@@ -260,6 +262,10 @@ class LocationsRepositoryImpl(
 
         groupedByUrl.forEach { (url, previousEntries) ->
             val previousInterval = previousEntries.subscriptionUpdateIntervalHours()
+            // A refresh re-imports from the stored plaintext URL and never sees the
+            // encrypted link the subscription arrived as. Without this, the first
+            // auto-refresh quietly declassifies it.
+            val previousOriginLink = previousEntries.firstNotNullOfOrNull { it.subscriptionOriginLink }
             // Keep the last reported reason: it belongs to the attempt that
             // ultimately failed (Identity is retried in Compatibility mode).
             var lastFailure: SubscriptionRefreshFailure? = null
@@ -307,6 +313,7 @@ class LocationsRepositoryImpl(
                 entry.copy(
                     storageId = storageId,
                     subscriptionUrl = url,
+                    subscriptionOriginLink = entry.subscriptionOriginLink ?: previousOriginLink,
                     metadata = entry.metadata.withSubscriptionRefreshState(
                         updateIntervalHours = updateInterval,
                         lastRefreshAtEpochMs = refreshTimestamp,
@@ -521,6 +528,13 @@ class LocationsRepositoryImpl(
         val input = text.normalizedImportText()
         if (input.isBlank()) return null
 
+        // What the user actually pasted, when that was an encrypted link. Everything
+        // below sees only plaintext — the resolver and the codec have done their work
+        // by then — so this is the last place the origin can still be observed, and
+        // the list has to be able to say "Encrypted link" instead of printing the URL
+        // we decrypted out of it.
+        val originLink = input.takeIf { isPartnerLink(it) || CryptCodec.isCryptLink(it) }
+
         // A partner's Happ link is opaque to us. Whoever minted it can say what it
         // points at and hands back a crypt1 link, which the next step already knows
         // how to open. Marker-only, so nothing else takes this detour.
@@ -563,7 +577,7 @@ class LocationsRepositoryImpl(
             }
         } ?: return null
 
-        var parsed = parseImportSource(source, fallbackSubscriptionInterval)
+        var parsed = parseImportSource(source, fallbackSubscriptionInterval, originLink)
         if (parsed == null && effective.isHttpUrl() && source.requestMode != SubscriptionRequestMode.Compatibility) {
             val fallbackSource = resolveImportSource(
                 text = effective,
@@ -573,7 +587,7 @@ class LocationsRepositoryImpl(
             )
             if (fallbackSource != null) {
                 source = fallbackSource
-                parsed = parseImportSource(fallbackSource, fallbackSubscriptionInterval)
+                parsed = parseImportSource(fallbackSource, fallbackSubscriptionInterval, originLink)
             }
         }
 
@@ -582,7 +596,8 @@ class LocationsRepositoryImpl(
 
     private fun parseImportSource(
         source: ImportSource,
-        fallbackSubscriptionInterval: Int? = null
+        fallbackSubscriptionInterval: Int? = null,
+        originLink: String? = null
     ): ParsedImport? {
         val initialSubscriptionInterval = source.updateIntervalHours
             ?: fallbackSubscriptionInterval
@@ -601,13 +616,28 @@ class LocationsRepositoryImpl(
         // the arrows — at which point the name, the quota and the expiry all
         // appeared, which looks like the first fetch simply failed to ask.
         // The first fetch *is* a refresh, and this is the one funnel both take.
-        if (source.profile == null) return parsed
+        //
+        // The origin link rides along for the same reason, and only for a real
+        // subscription: a crypt1 link that decrypts to inline olcrtc lines makes
+        // custom locations, which have no URL to hide.
+        val stampProfile = source.profile != null
+        val stampOrigin = originLink != null && source.subscriptionUrl != null
+        if (!stampProfile && !stampOrigin) return parsed
         val stampedAt = nowEpochMs()
         return parsed.copy(
             bundle = parsed.bundle.copy(
                 locations = parsed.bundle.locations.map { entry ->
                     entry.copy(
-                        metadata = entry.metadata.withSubscriptionProfile(source.profile, stampedAt)
+                        metadata = if (stampProfile) {
+                            entry.metadata.withSubscriptionProfile(source.profile, stampedAt)
+                        } else {
+                            entry.metadata
+                        },
+                        subscriptionOriginLink = if (stampOrigin) {
+                            originLink
+                        } else {
+                            entry.subscriptionOriginLink
+                        }
                     )
                 }
             )
