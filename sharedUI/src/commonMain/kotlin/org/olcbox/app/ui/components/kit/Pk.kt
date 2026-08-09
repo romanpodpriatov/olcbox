@@ -59,23 +59,37 @@ object PkBrand {
 }
 
 /**
- * Hides the secret part of a subscription URL for display: the last path segment
- * is a bearer token, and anyone glancing at the screen could copy it.
+ * Hides the secret parts of a subscription URL for display: a path segment long
+ * enough to be a bearer token is one, and anyone glancing at the screen could
+ * copy it.
  *
- * `https://proofkit.org/sub/c0e79f…17e95` — enough to tell two subscriptions apart,
- * not enough to reuse one.
+ * Every such segment, not merely the last — which is what this used to do, and
+ * which is wrong for our own URLs: `/sub/<token>/olcrtc` ends in a six-character
+ * literal, so the function returned the string untouched and the row ellipsised
+ * it. That looks like masking and is not.
+ *
+ * The host is never masked. It is not a secret, it is the only part a user can
+ * recognise, and it is long enough that masking by length alone would mangle it.
+ *
+ * `https://proofkit.org/sub/c0e79f…17e95/olcrtc?…` — enough to tell two
+ * subscriptions apart, not enough to reuse one.
  */
 fun pkMaskSubscriptionUrl(url: String): String {
     val trimmed = url.trim()
-    val query = trimmed.indexOf('?').takeIf { it >= 0 }
-    val path = query?.let { trimmed.substring(0, it) } ?: trimmed
-    val cut = path.lastIndexOf('/')
-    if (cut < 0 || cut == path.lastIndex) return trimmed
-    val token = path.substring(cut + 1)
-    if (token.length <= 12) return trimmed
-    val masked = token.take(6) + "…" + token.takeLast(5)
-    return path.substring(0, cut + 1) + masked + (query?.let { "?…" } ?: "")
+    val queryAt = trimmed.indexOf('?')
+    val path = if (queryAt >= 0) trimmed.substring(0, queryAt) else trimmed
+    val schemeEnd = path.indexOf("://").let { if (it >= 0) it + 3 else 0 }
+    val masked = path.substring(schemeEnd)
+        .split('/')
+        // Index 0 is the authority, which stays readable.
+        .mapIndexed { index, segment -> if (index == 0) segment else maskUrlSegment(segment) }
+        .joinToString("/")
+    return path.substring(0, schemeEnd) + masked + (if (queryAt >= 0) "?…" else "")
 }
+
+/** Short segments are route names, not secrets, and hiding them only costs legibility. */
+private fun maskUrlSegment(segment: String): String =
+    if (segment.length <= 12) segment else segment.take(6) + "…" + segment.takeLast(5)
 
 /**
  * Pure so it is unit-testable: "PROOFKIT · v1.0.273 · 9f3c1ab".

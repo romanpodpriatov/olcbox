@@ -62,4 +62,28 @@ class PkVersionLineTest {
             )
         )
     }
+
+    @Test
+    fun masksATokenThatIsNotTheLastSegment() {
+        // Our own subscription URL. The last segment is the literal "olcrtc", so
+        // the old mask returned the string untouched and the row ellipsised it —
+        // which looks like masking and is not.
+        assertEquals(
+            "https://proofkit.org/sub/c0e79f…17e95/olcrtc?…",
+            pkMaskSubscriptionUrl(
+                "https://proofkit.org/sub/c0e79fc61f942fe0e7b2032fd273967f4d3b807d1ba11dfd8f9a8d17ad817e95" +
+                    "/olcrtc?crypt=1"
+            )
+        )
+    }
+
+    @Test
+    fun maskingNeverTouchesTheHost() {
+        // A host is longer than 12 characters often enough that masking by length
+        // alone would mangle it into something nobody can identify.
+        assertEquals(
+            "https://sub.reviewassistant.org/sub/j7k9e/54vnsk…w2y1j?…",
+            pkMaskSubscriptionUrl("https://sub.reviewassistant.org/sub/j7k9e/54vnskyn4srw2y1j?x=1")
+        )
+    }
 }
