@@ -36,6 +36,7 @@ import org.olcbox.app.ui.OlcboxAppContent
 import org.olcbox.app.ui.components.ApplicationUpdateOfferSheet
 import org.olcbox.app.ui.features.home.HomeScreenViewModel
 import org.olcbox.app.ui.features.locations.LocationViewModel
+import org.olcbox.app.ui.features.locations.subscriptionShareItems
 import org.olcbox.app.ui.navigation.AppScreen
 import org.olcbox.app.vpn.AndroidConnectionMode
 import org.olcbox.app.vpn.AndroidSplitTunnelList
@@ -104,28 +105,7 @@ fun AndroidMainScreen(
     var updateDownloadProgress by remember { mutableStateOf<Float?>(null) }
     var updateOffer by remember { mutableStateOf<AppUpdateInfo?>(null) }
     var relaunchAfterInstall by remember { mutableStateOf(false) }
-    val subscriptionShareItems = locationViewModel.locations.toList()
-        .mapNotNull { item ->
-            val url = item.subscriptionUrl
-                ?.trim()
-                ?.takeIf { it.startsWith("https://") || it.startsWith("http://") }
-                ?: return@mapNotNull null
-            url to item
-        }
-        .groupBy({ it.first }, { it.second })
-        .entries
-        .sortedBy { it.key }
-        .map { (url, items) ->
-            val metadata = items.firstNotNullOfOrNull { it.metadata?.subscription }
-            org.olcbox.app.data.share.SubscriptionShareItem(
-                url = url,
-                name = metadata?.name?.takeIf { it.isNotBlank() }
-                    ?: items.first().fullName,
-                updateIntervalHours = metadata?.updateIntervalHours,
-                lastRefreshAtEpochMs = metadata?.lastRefreshAtEpochMs,
-                locationCount = items.size
-            )
-        }
+    val subscriptionRows = subscriptionShareItems(locationViewModel.locations.toList())
 
     val updateInstallLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -430,7 +410,7 @@ fun AndroidMainScreen(
             updateSettings = updateSettings,
             updateStatusText = updateStatusText,
             updateDownloadProgress = updateDownloadProgress,
-            subscriptions = subscriptionShareItems,
+            subscriptions = subscriptionRows,
             subscriptionSettings = subscriptionSettings,
             onSubscriptionSettingsChanged = viewModel::updateSubscriptionSettings,
             enabled = !homeState.isVpnLoading,

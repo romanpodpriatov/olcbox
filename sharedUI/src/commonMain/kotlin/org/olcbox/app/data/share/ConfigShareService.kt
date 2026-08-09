@@ -60,7 +60,8 @@ object ConfigShareService {
                         ?: first.location.displayName(),
                     updateIntervalHours = metadata?.updateIntervalHours,
                     lastRefreshAtEpochMs = metadata?.lastRefreshAtEpochMs,
-                    locationCount = subscriptionEntries.size
+                    locationCount = subscriptionEntries.size,
+                    originLink = subscriptionEntries.firstNotNullOfOrNull { it.subscriptionOriginLink }
                 )
             }
     }
@@ -71,5 +72,14 @@ data class SubscriptionShareItem(
     val name: String,
     val updateIntervalHours: Int?,
     val lastRefreshAtEpochMs: Long?,
-    val locationCount: Int
-)
+    val locationCount: Int,
+    /** The encrypted link this subscription arrived as, when it did. */
+    val originLink: String? = null
+) {
+    /**
+     * What QR/share hands out. Handing out the URL of a subscription that arrived
+     * encrypted would decrypt it on the way to the second device — the endpoint is
+     * exactly what the link was hiding.
+     */
+    val shareText: String get() = originLink ?: url
+}

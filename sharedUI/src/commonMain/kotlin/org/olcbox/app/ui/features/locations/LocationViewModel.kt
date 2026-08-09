@@ -28,6 +28,8 @@ data class LocationItem(
     val fullName: String,
     val config: LocationConfig? = null,
     val subscriptionUrl: String? = null,
+    /** See LocationEntry.subscriptionOriginLink — an encrypted subscription never prints its URL. */
+    val subscriptionOriginLink: String? = null,
     val metadata: LocationMetadata? = null
 )
 
@@ -141,6 +143,7 @@ class LocationViewModel(
                     fullName = normalized.displayName(),
                     config = normalized,
                     subscriptionUrl = entry.subscriptionUrl,
+                    subscriptionOriginLink = entry.subscriptionOriginLink,
                     metadata = entry.metadata
                 )
             }

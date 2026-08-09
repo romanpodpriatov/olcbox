@@ -17,12 +17,11 @@ import org.olcbox.app.data.exporter.IosLogExporter
 import org.olcbox.app.data.importer.IosConfigImporter
 import org.olcbox.app.data.model.LocationConfig
 import org.olcbox.app.data.share.ConfigShareService
-import org.olcbox.app.data.share.SubscriptionShareItem
 import org.olcbox.app.ui.OlcboxAppContent
 import org.olcbox.app.ui.components.ApplicationSettingsSheet
 import org.olcbox.app.ui.features.home.HomeScreenViewModel
-import org.olcbox.app.ui.features.locations.LocationItem
 import org.olcbox.app.ui.features.locations.LocationViewModel
+import org.olcbox.app.ui.features.locations.subscriptionShareItems
 import org.olcbox.app.ui.navigation.AppScreen
 import org.olcbox.app.ui.theme.AppTheme
 import org.olcbox.app.net.TransportGroup
@@ -228,7 +227,7 @@ private fun IosApp(
                     updateStatusText = null,
                     updateDownloadProgress = null,
                     updateOffer = null,
-                    subscriptions = iosSubscriptionItems(dependencies.locationViewModel.locations.toList()),
+                    subscriptions = subscriptionShareItems(dependencies.locationViewModel.locations.toList()),
                     logs = logs,
                     connectionSummary = connectionSummary,
                     connectionDetails = listOfNotNull(
@@ -298,29 +297,4 @@ private fun IosApp(
             }
         }
     }
-}
-
-private fun iosSubscriptionItems(items: List<LocationItem>): List<SubscriptionShareItem> {
-    return items
-        .mapNotNull { item ->
-            val url = item.subscriptionUrl
-                ?.trim()
-                ?.takeIf { it.startsWith("https://") || it.startsWith("http://") }
-                ?: return@mapNotNull null
-            url to item
-        }
-        .groupBy({ it.first }, { it.second })
-        .entries
-        .sortedBy { it.key }
-        .map { (url, locations) ->
-            val metadata = locations.firstNotNullOfOrNull { it.metadata?.subscription }
-            SubscriptionShareItem(
-                url = url,
-                name = metadata?.name?.takeIf { it.isNotBlank() }
-                    ?: locations.first().fullName,
-                updateIntervalHours = metadata?.updateIntervalHours,
-                lastRefreshAtEpochMs = metadata?.lastRefreshAtEpochMs,
-                locationCount = locations.size
-            )
-        }
 }

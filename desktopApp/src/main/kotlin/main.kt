@@ -84,7 +84,6 @@ import org.olcbox.app.data.exporter.JvmLogExporter
 import org.olcbox.app.data.identity.PersistentDeviceIdentityProvider
 import org.olcbox.app.data.importer.JvmConfigImporter
 import org.olcbox.app.data.share.ConfigShareService
-import org.olcbox.app.data.share.SubscriptionShareItem
 import org.olcbox.app.ui.components.kit.PkBrand
 import org.olcbox.app.ui.OlcboxAppContent
 import org.olcbox.app.ui.components.ApplicationConnectionModeOption
@@ -92,8 +91,8 @@ import org.olcbox.app.ui.components.ApplicationSocksProxySettings
 import org.olcbox.app.ui.components.ApplicationSettingsSheet
 import org.olcbox.app.ui.components.ApplicationUpdateOfferSheet
 import org.olcbox.app.ui.features.home.HomeScreenViewModel
-import org.olcbox.app.ui.features.locations.LocationItem
 import org.olcbox.app.ui.features.locations.LocationViewModel
+import org.olcbox.app.ui.features.locations.subscriptionShareItems
 import org.olcbox.app.ui.navigation.AppScreen
 import org.olcbox.app.ui.theme.AppTheme
 import org.olcbox.app.update.AppUpdateInfo
@@ -432,7 +431,7 @@ fun main(args: Array<String>) = application {
                         updateStatusText = updateMessage,
                         updateDownloadProgress = updateProgress,
                         updateOffer = updateOffer,
-                        subscriptions = desktopSubscriptionItems(dependencies.locationViewModel.locations.toList()),
+                        subscriptions = subscriptionShareItems(dependencies.locationViewModel.locations.toList()),
                         logs = logs,
                         connectionSummary = effectiveConnectionMode?.summary.orEmpty(),
                         connectionModeTitle = effectiveConnectionMode?.title.orEmpty(),
@@ -801,31 +800,6 @@ private fun generateDesktopProxyPassword(length: Int = 24): String {
 
 private const val DESKTOP_PROXY_PASSWORD_ALPHABET =
     "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789"
-
-private fun desktopSubscriptionItems(items: List<LocationItem>): List<SubscriptionShareItem> {
-    return items
-        .mapNotNull { item ->
-            val url = item.subscriptionUrl
-                ?.trim()
-                ?.takeIf { it.startsWith("https://") || it.startsWith("http://") }
-                ?: return@mapNotNull null
-            url to item
-        }
-        .groupBy({ it.first }, { it.second })
-        .entries
-        .sortedBy { it.key }
-        .map { (url, subscriptionItems) ->
-            val metadata = subscriptionItems.firstNotNullOfOrNull { it.metadata?.subscription }
-            SubscriptionShareItem(
-                url = url,
-                name = metadata?.name?.takeIf { it.isNotBlank() }
-                    ?: subscriptionItems.first().fullName,
-                updateIntervalHours = metadata?.updateIntervalHours,
-                lastRefreshAtEpochMs = metadata?.lastRefreshAtEpochMs,
-                locationCount = subscriptionItems.size
-            )
-        }
-}
 
 private fun chooseConfigFile(owner: Frame): File? {
     val dialog = FileDialog(owner, "Import ProofKit Config", FileDialog.LOAD)

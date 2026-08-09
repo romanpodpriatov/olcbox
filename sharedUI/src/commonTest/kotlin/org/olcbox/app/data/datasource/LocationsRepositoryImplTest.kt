@@ -1110,6 +1110,26 @@ class LocationsRepositoryImplTest {
     }
 
     @Test
+    fun sharingAnEncryptedSubscriptionHandsBackTheEncryptedLink() {
+        val encrypted = LocationEntry.from(
+            "alpha",
+            LocationConfig("Alpha", "room-a", "a".repeat(64), LocationConfig.PROVIDER_WB_STREAM),
+            subscriptionUrl = "https://proofkit.org/sub/TESTTOKEN/olcrtc?crypt=1",
+            subscriptionOriginLink = "olcrtc://crypt1/blob"
+        )
+        val plain = LocationEntry.from(
+            "beta",
+            LocationConfig("Beta", "room-b", "b".repeat(64), LocationConfig.PROVIDER_WB_STREAM),
+            subscriptionUrl = "https://example.test/sub"
+        )
+
+        val items = ConfigShareService.subscriptionShareItems(listOf(encrypted, plain))
+
+        assertEquals("olcrtc://crypt1/blob", items.single { it.originLink != null }.shareText)
+        assertEquals("https://example.test/sub", items.single { it.originLink == null }.shareText)
+    }
+
+    @Test
     fun theOriginLinkSurvivesASaveRoundTrip() {
         // normalized() rebuilds the entry field by field and runs on every save, so
         // a field it forgets is a field that never persists.

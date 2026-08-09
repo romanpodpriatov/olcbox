@@ -183,6 +183,7 @@ class HomeScreenViewModel(
             fullName = normalized.displayName(),
             config = normalized,
             subscriptionUrl = active.subscriptionUrl,
+            subscriptionOriginLink = active.subscriptionOriginLink,
             metadata = active.metadata
         )
 
