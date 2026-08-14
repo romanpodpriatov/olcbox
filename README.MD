@@ -1,9 +1,24 @@
 # ProofKit
 
-A VPN client for servers you already have. Kotlin Multiplatform and Compose,
-one codebase for Android, iOS, macOS, Windows and Linux.
+A VPN client that can hide a tunnel inside a video call. Kotlin Multiplatform
+and Compose, one codebase for Android, iOS, macOS, Windows and Linux.
 
-It ships as **ProofKit** and is built on the olcbox codebase — the app's own
+**olcRTC** is why this exists. Most tunnels are recognisable, and a network that
+inspects what crosses it drops them on shape rather than on content. olcRTC opens
+a WebRTC media session to a public meeting service and moves traffic inside it,
+so what stays on the wire is a call the network already carries. Its relays hold
+a fixed number of slots, and the app shows how full each room is before you join
+one. We maintain the engine at
+[romanpodpriatov/olcrtc](https://github.com/romanpodpriatov/olcrtc), forked from
+[openlibrecommunity/olcrtc](https://github.com/openlibrecommunity/olcrtc) and
+carrying our own UDP wire, multi-key support and metering.
+
+It speaks the ordinary protocols too, because a call-shaped tunnel costs
+bandwidth and is not needed until it is — and the moment you need the fallback is
+the worst possible moment to be installing a second app.
+
+It ships as **ProofKit** and is built on the olcbox codebase, a fork of
+[alananisimov/olcbox](https://github.com/alananisimov/olcbox) — the app's own
 footer says `PROOFKIT • OLCBOX CORE` for the same reason, and so does the
 repository name.
 
@@ -23,11 +38,11 @@ up for, and nothing to buy here.
 
 | Protocol | Engine |
 | --- | --- |
+| olcRTC — a tunnel inside a WebRTC video call | our own engine fork |
 | VLESS + Reality | sing-box |
 | VLESS over TLS, incl. behind a CDN | sing-box |
 | Hysteria2, with Salamander obfuscation | sing-box |
 | XHTTP | Xray, behind sing-box's tun |
-| olcRTC | our own transport, riding inside a video call |
 
 One subscription usually carries several. The app groups them by provider,
 filters by protocol, and remembers the exit last used.

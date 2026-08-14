@@ -24,8 +24,14 @@ ProofKit
 **Subtitle** (30 max) — [28]
 
 ```
-Reality, Hysteria2 and XHTTP
+A tunnel inside a video call
 ```
+
+> It used to read `Reality, Hysteria2 and XHTTP`, which is the protocol list every
+> client in this category prints, and it is part of what cost a **4.3(a) spam**
+> rejection on 2026-08-12. The subtitle is indexed for search and is the second
+> thing a reviewer reads; spend it on what only this app does. See
+> `docs/app-review-4.3-reply.md`.
 
 **Category** — Primary: *Utilities*. Secondary: *Productivity*.
 
@@ -34,14 +40,14 @@ Reality, Hysteria2 and XHTTP
 
 ---
 
-## Promotional text (170 max) — [148]
+## Promotional text (170 max) — [164]
 
 Editable without a new build, so this is the line to change when something
 ships.
 
 ```
-A client for your own VPN subscription. Paste a link, pick an exit, connect.
-Reality, Hysteria2, XHTTP and olcRTC — no account here, nothing logged.
+olcRTC carries your traffic inside a WebRTC video call, so a network that blocks
+every VPN protocol sees a call it already allows. Reality, Hysteria2 and XHTTP too.
 ```
 
 ---
@@ -49,29 +55,43 @@ Reality, Hysteria2, XHTTP and olcRTC — no account here, nothing logged.
 ## Description (4000 max)
 
 ```
-ProofKit connects to a VPN subscription you already have.
+ProofKit carries your traffic inside a video call.
 
-It is a client, not a service: you bring a subscription link from your
-provider, and the app turns it into a list of servers you can connect to. There
-is no account to create here and nothing to sign up for.
+Most tunnels are recognisable. On a network that inspects what passes through it
+and drops anything shaped like a VPN, they stop working — not because the
+encryption failed, but because the shape of the connection gave it away.
 
-WHAT IT SPEAKS
+olcRTC is a different answer. It opens a WebRTC media session to a public
+meeting service — the same kind of call the network already carries all day —
+and moves your traffic inside it. What stays on the wire is a video call.
+
+ROOMS, AND HOW FULL THEY ARE
+
+An olcRTC relay holds a fixed number of slots, and a full room cannot take you.
+So the app asks each room how full it is and shows that in the list, before you
+pick one. It is the sort of thing you only need when the thing you are
+connecting to has rooms.
+
+IT ALSO SPEAKS THE ORDINARY PROTOCOLS
+
+A call-shaped tunnel costs bandwidth, and it is not needed until it is. The same
+app connects over the standard transports too, and you move between them as the
+network around you changes:
 
 • VLESS with Reality
 • VLESS over TLS, including through a CDN
 • Hysteria2, with Salamander obfuscation
 • XHTTP
-• olcRTC — an encrypted transport that rides inside a video call
 
-One subscription usually carries several of these. The app groups them by
-provider, filters them by protocol, and remembers which exit you last used.
+One app, because the moment you need the fallback is the worst possible moment
+to be installing another one.
 
-HOW IT WORKS
+BRINGING YOUR OWN SERVERS
 
-Add a subscription by pasting its link, scanning its QR code, or importing a
-file. The app fetches the server list, shows what the provider says about your
-plan — how much traffic is left, when it expires — and keeps it up to date on a
-schedule you choose.
+Add a server list by pasting its link, scanning its QR code, or importing a
+file. The app groups servers by where they came from, filters them by protocol,
+remembers which exit you last used, and refreshes the list on a schedule you
+choose.
 
 Connecting routes the whole device through the exit you picked, using Apple's
 own packet tunnel. The status screen shows how long the session has been up and
@@ -87,17 +107,17 @@ guessed.
 PRIVACY
 
 Nothing is collected. No account, no analytics, no advertising identifier, no
-crash reporting service. Your subscriptions, your server list and the app's own
-log stay on the device and are never sent anywhere.
+crash reporting service. Your server lists and the app's own log stay on the
+device and are never sent anywhere.
 
-The app talks to exactly two kinds of address: your provider's subscription URL,
+The app talks to exactly two kinds of address: the server-list URL you added,
 and the VPN servers in it. The one exception is a partner link that has to be
-resolved into a subscription URL, and that request carries the link and nothing
+resolved into a server-list URL, and that request carries the link and nothing
 about you.
 
 REQUIREMENTS
 
-A server configuration from a VPN provider: a subscription URL, a QR code, or a
+A server configuration from a VPN provider: a server-list URL, a QR code, or a
 pasted link. ProofKit does not sell one and does not include one. Any provider
 that speaks the protocols above will work.
 
@@ -116,14 +136,25 @@ github.com/romanpodpriatov/olcbox
 
 ---
 
-## Keywords (100 max, comma-separated, no spaces after commas) — [96]
+## Keywords (100 max, comma-separated, no spaces after commas) — [95]
 
 ```
-vless,reality,hysteria2,xhttp,proxy,subscription,tunnel,sing-box,xray,client,socks,relay,privacy
+olcrtc,webrtc,videocall,jitsi,telemost,censorship,dpi,firewall,obfuscation,tunnel,relay,traffic
 ```
 
 > Do not repeat the app name or subtitle — Apple already indexes those, and the
 > characters are scarce.
+
+> **`sing-box` and `xray` were in this field**, and they are the names of the two
+> engines this app shares with the clients it was mistaken for. We wrote the
+> similarity into the metadata ourselves, next to `vless`, `proxy`, `socks` and
+> `subscription` — the rest of the cluster's signature. All of them are gone.
+>
+> This costs real discoverability: Apple indexes the name, subtitle and this field
+> for search, and **not** the description, so dropping `reality` and `hysteria2`
+> means the app will not surface for them. That is the trade, and it is worth it
+> while a 4.3(a) rejection is open. Revisit after approval — carefully, one term at
+> a time, and never `sing-box` or `xray` again.
 
 ---
 
@@ -247,27 +278,43 @@ self-classification report for ECCN 5D992.c**, emailed each January.
 Paste into "Notes" in App Store Connect:
 
 ```
-ProofKit is a client for a VPN subscription the user already has. It does not
-sell or include one, so it cannot be tested without a subscription link.
+ProofKit's distinguishing feature is olcRTC: a transport that carries the
+device's traffic inside a WebRTC media session — an ordinary video call to a
+public meeting service — so that on networks which drop every VPN protocol by
+signature, what remains on the wire is a call the network already permits. We
+maintain the transport engine and publish it at github.com/romanpodpriatov/olcrtc.
+This app is its only implementation on iOS.
 
-A working test subscription is below. Paste it into the app: tap + in the top
-right, choose "Paste link or URI", then tap START.
+TO SEE THAT PART
 
-Subscription link:
+A working test server list is below. Tap + in the top right, choose "Paste link
+or URI", paste it, then open the server list. THE FIRST ENTRY IS AN olcRTC
+LOCATION — select it and tap START. The occupancy bar on that entry is live: it
+shows how many slots the relay room has left, and it moves as slots are taken.
+
+Server list:
   <PASTE A LIVE LINK HERE>
 
-The link carries several servers over different protocols. Any of them will
-connect. Traffic is routed through Apple's NEPacketTunnelProvider.
+The same list also carries servers on the standard protocols (Reality,
+Hysteria2, XHTTP), which the app supports so that a user does not need a second
+app when the ordinary transports stop working. Any of them will connect. Traffic
+is routed through Apple's NEPacketTunnelProvider.
 
-The app collects no data. There is no account and no sign-in. The camera is
-used only to scan a subscription QR code, and only when the user taps that
-button.
+The app collects no data. There is no account, no sign-in and no purchase of any
+kind. The server list above is a free test configuration provided for review; it
+was not bought. The camera is used only to scan a server-list QR code, and only
+when the user taps that button.
 ```
 
 > **This is the single most likely cause of a rejection.** A reviewer who
 > cannot connect cannot review, and "we could not test the app's core
 > functionality" is 2.1. The link must be live on the day of review and for
-> some days after — a subscription that expires mid-review fails it.
+> some days after — a server list that expires mid-review fails it.
+
+> **The first entry must be an olcRTC location with free slots**, because these
+> notes and the 4.3 reply both tell review to select it. A reviewer who follows the
+> instruction and lands on a Reality server has been shown the generic half of the
+> app, which is the half that got it rejected.
 
 ---
 
@@ -337,23 +384,34 @@ you about afterwards: a size off by a pixel, an alpha channel an editor left
 behind, and a file that is a JPEG wearing a `.png`. It validates and never
 resizes — a screenshot scaled to fit is a screenshot of the wrong thing.
 
-### The six, in the order a new user meets the app
+### The six, strongest first
 
-These are the files in `docs/screenshots/`, and they are the set uploaded on
-2026-08-08. Keep the two in step: the repository is linked from the listing as
-OPEN SOURCE, so a reviewer who follows that link should meet the same app.
+These are the files in `docs/screenshots/`. Keep them in step with the app: the
+repository is linked from the listing as OPEN SOURCE, so a reviewer who follows
+that link should meet the same app.
 
-1. `01-empty` — **empty state**, "Add relay setup" and the ways to add a server
-   list.
-2. `02-vpnpopup` — **the system VPN permission prompt**, so it is plain what the
+**Order matters more than it looks.** The set uploaded on 2026-08-08 opened on
+`01-empty` — a blank screen reading "Import a server list to start". That is the
+first thing review saw of the app, and it is indistinguishable from every other
+empty client in the category; it is part of what earned 4.3(a). Slot 1 and slot 2
+are the only two most people ever look at, so they have to carry the thing no
+other app has.
+
+1. **connected over olcRTC** — the dial running, and the transport named. The one
+   screen that shows what this app is. Shoot this on a real device against an
+   olcRTC location.
+2. **the server list with occupancy** — rooms showing how full they are. No other
+   client has this, because no other client connects to something with rooms.
+3. `03-connected` — **connected** generally: session timer, traffic counters.
+4. `02-vpnpopup` — **the system VPN permission prompt**, so it is plain what the
    app asks for and when.
-3. `03-connected` — **connected**: the lime dial on STOP, session timer running,
-   traffic counters underneath.
-4. `04-settings` — **settings**, the switches, so it is clear the app is
+5. `04-settings` — **settings**, the switches, so it is clear the app is
    configurable rather than a black box.
-5. `05-serverlistnotconnected` — **the server list** before connecting, protocol
-   filter chips visible.
 6. `06-addconnection` — **adding a connection**: scan, paste, or import.
+
+`01-empty` comes out of the set entirely. An empty state is not a feature and it
+is a poor first frame; if a slot is spare, `05-serverlistnotconnected` is a better
+use of it than a blank screen.
 
 Nothing in the set may show a purchase, a price, or a way to get one — that is
 the reading that cost two rejections under 3.1.1. See
@@ -364,7 +422,7 @@ the reading that cost two rejections under 3.1.1. See
 - **Build with the admin gate on.** A screenshot showing the per-location
   configurator or "create custom location" invites questions about what else is
   hidden, and shows an operator's addresses to anyone who zooms in.
-- **Use the demo subscription**, the same one that goes in the review notes. A
+- **Use the demo server list**, the same one that goes in the review notes. A
   real one puts a real provider's server names and quota in a public listing.
 
 No device frames and no marketing text over the top. Apple allows both; both
