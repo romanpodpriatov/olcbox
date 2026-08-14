@@ -94,28 +94,39 @@ fun VpnDisclosureScreen(
 }
 
 /**
- * Deliberately specific about the VpnService API rather than about privacy in
- * general. A reviewer is checking that the user was told what the tunnel does
- * with their traffic, and a paragraph of reassurance that never mentions it does
- * not answer that.
+ * Deliberately specific about what the tunnel does rather than about privacy in
+ * general. A reviewer is checking that the user was told what happens to their
+ * traffic, and a paragraph of reassurance that never mentions it does not answer
+ * that.
+ *
+ * **This is commonMain and iOS renders it too.** It was written for Play's
+ * prominent disclosure and said "Android will ask you", which is what an iPhone
+ * showed until 2026-08-14 — keep the wording platform-neutral, or split it
+ * properly per platform, but do not name one of them here.
+ *
+ * **Do not write "subscription" in this text.** Every other user-visible string
+ * says "server list"; the word means a configuration feed to us and a monthly
+ * charge to App Review, and it cost two rejections under Guideline 3.1.1. Wire
+ * and storage names keep the old spelling on purpose — this is about what a user
+ * reads.
  */
 private const val DISCLOSURE_BODY = """ProofKit connects using your device's system VPN.
 
 WHAT IT DOES
 
-While connected, network traffic from this device is routed through the server you selected from your own subscription. This is what a VPN is, and it is the only reason this app asks for VPN permission.
+While connected, network traffic from this device is routed through the server you selected from your own server list. This is what a VPN is, and it is the only reason this app asks for VPN permission.
 
-Android will ask you to allow this separately, in its own dialog, the first time you connect. You can end the connection at any time from this app or from system settings.
+Your device will ask you to allow this separately, in its own dialog, the first time you connect. You can end the connection at any time from this app or from system settings.
 
 WHAT THIS APP DOES WITH IT
 
 Nothing is collected. The app does not read, record or transmit the contents of your traffic, the addresses you visit, or anything identifying you. There is no account here, no analytics, and no advertising identifier.
 
-Your subscriptions, your server list and the app's own log stay on this device.
+Your server lists and the app's own log stay on this device.
 
 WHERE YOUR TRAFFIC GOES
 
-To the server in your subscription, and nowhere else. That server is operated by whoever gave you the subscription, and what it does with your traffic is governed by them — ProofKit does not run it and does not sell one.
+To the server you selected, and nowhere else. That server is operated by whoever gave you the server list, and what it does with your traffic is governed by them — ProofKit does not run it and does not sell one.
 
 Traffic is encrypted between this device and that server.
 

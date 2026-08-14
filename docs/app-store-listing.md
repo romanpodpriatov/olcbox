@@ -340,17 +340,17 @@ app gets rejected for something nobody intended to ship.
 Required size: **6.9" iPhone — 1320 × 2868**. Apple derives every smaller size
 itself.
 
-### The Simulator cannot make all six
+### What the Simulator cannot make
 
 **Network Extension does not exist in the Simulator.** Not "does not work
 well" — the framework is absent, `saveToPreferences` fails, and the app now
 says so plainly instead of reporting "no VPN configuration", which reads as
 something missing that could be supplied.
 
-**Two** of the six therefore need a real device, not one: `03-connected`, and
-also `02-vpnpopup` — the system permission prompt is raised by the very
-framework the Simulator lacks, so there is nothing there to photograph. The
-other four are Simulator work.
+So anything showing a live tunnel — `01-olcrtc-connected`, and the system
+permission prompt if it is ever shot — needs a real device. The rest, including
+`02-rooms-occupancy`, is Simulator work: occupancy is fetched over the network
+and does not need the tunnel up to be shown.
 
 The device has to be the right size: App Store Connect accepts **1320 × 2868**
 (iPhone 16/17 Pro Max) or **1290 × 2796** (iPhone 14/15 Pro Max, or a Plus) for
@@ -370,7 +370,7 @@ xcrun simctl list devices available | grep "Pro Max"     # pick the 6.9" one
 xcrun simctl boot "iPhone 17 Pro Max"
 open -a Simulator
 # …drive the app to the state you want, then, per screen:
-xcrun simctl io booted screenshot screenshots/1-empty.png
+xcrun simctl io booted screenshot screenshots/02-rooms-occupancy.png
 ```
 
 Then, before uploading anything:
@@ -384,7 +384,11 @@ you about afterwards: a size off by a pixel, an alpha channel an editor left
 behind, and a file that is a JPEG wearing a `.png`. It validates and never
 resizes — a screenshot scaled to fit is a screenshot of the wrong thing.
 
-### The six, strongest first
+> It needs `sips` and so **runs on macOS only**. On a Linux box the same three
+> checks read out of the PNG header directly — magic bytes, the `IHDR` width and
+> height, and colour type 2 for truecolour without alpha.
+
+### The set, strongest first
 
 These are the files in `docs/screenshots/`. Keep them in step with the app: the
 repository is linked from the listing as OPEN SOURCE, so a reviewer who follows
@@ -397,21 +401,28 @@ empty client in the category; it is part of what earned 4.3(a). Slot 1 and slot 
 are the only two most people ever look at, so they have to carry the thing no
 other app has.
 
-1. **connected over olcRTC** — the dial running, and the transport named. The one
-   screen that shows what this app is. Shoot this on a real device against an
-   olcRTC location.
-2. **the server list with occupancy** — rooms showing how full they are. No other
-   client has this, because no other client connects to something with rooms.
-3. `03-connected` — **connected** generally: session timer, traffic counters.
-4. `02-vpnpopup` — **the system VPN permission prompt**, so it is plain what the
-   app asks for and when.
-5. `04-settings` — **settings**, the switches, so it is clear the app is
-   configurable rather than a black box.
-6. `06-addconnection` — **adding a connection**: scan, paste, or import.
+The set as shot on 2026-08-14, all four at 1320 × 2868, on a real device:
 
-`01-empty` comes out of the set entirely. An empty state is not a feature and it
-is a poor first frame; if a slot is spare, `05-serverlistnotconnected` is a better
-use of it than a blank screen.
+1. `01-olcrtc-connected` — **connected over olcRTC**: `RELAY ACTIVE · OLCRTC`,
+   session timer, traffic counters, "Traffic exits via US", and the protocol chips
+   with `OLCRTC 16` selected. The one frame that carries the whole argument.
+2. `02-rooms-occupancy` — **the rooms, and how full they are**: `US · olcRTC`,
+   `Telemost · VP8`, `1 / 8` with the bar part-filled. No other client has this,
+   because no other client connects to something with rooms.
+3. `03-settings` — **settings**, so it is clear the app is configurable rather
+   than a black box.
+4. `04-addconnection` — **adding a connection**: scan, paste, or import.
+
+Apple requires a minimum of one screenshot, so four is a set. Two files that were
+in the 2026-08-08 upload are deliberately gone:
+
+- `01-empty` — an empty state is not a feature and was the worst possible first
+  frame; opening on it is part of what earned 4.3(a).
+- `02-vpnpopup` — it photographed `VpnDisclosureScreen`, not the system prompt,
+  and that screen said "**Android** will ask you" on an iPhone and used the word
+  "subscription" five times. Both fixed in the source on 2026-08-14. If it is
+  re-shot, read it first: it is the one screen whose text nobody checked against
+  either the 3.1.1 rename or the platform it renders on.
 
 Nothing in the set may show a purchase, a price, or a way to get one — that is
 the reading that cost two rejections under 3.1.1. See
