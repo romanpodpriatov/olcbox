@@ -76,7 +76,7 @@ fun RoomDetailPane(
     val (emoji, name) = locationDisplayParts(selected)
     val config = selected.config
     val slots = board.olcrtcSlots[selected.storageId]
-    val seats = seatDisplay(slots)
+    val seats = seatDisplay(slots, mine = board.isConnected)
     val ping = board.pingsState.pingFor(selected.storageId)
     val measuring = board.pingsState.isChecking(selected.storageId)
 

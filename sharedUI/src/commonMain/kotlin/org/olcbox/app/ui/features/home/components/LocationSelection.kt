@@ -40,6 +40,7 @@ import org.olcbox.app.ui.components.kit.PkPlanBar
 import org.olcbox.app.ui.components.kit.PkRoomCard
 import org.olcbox.app.ui.components.kit.PkSectionEyebrow
 import org.olcbox.app.ui.components.kit.planFraction
+import org.olcbox.app.ui.components.kit.roomIsBlocked
 import org.olcbox.app.ui.components.kit.pkSubscriptionHost
 import org.olcbox.app.ui.components.kit.pkSubscriptionIsSecret
 import org.olcbox.app.ui.components.kit.seatCountText
@@ -429,15 +430,17 @@ private fun BoardRoomCard(
     onMeasure: () -> Unit
 ) {
     val (emoji, name) = locationDisplayParts(location)
-    val seats = seatDisplay(slots)
+    // The one thing the app is certain of: it is connected, and to this location.
+    val connectedHere = selected && isConnected
+    val seats = seatDisplay(slots, mine = connectedHere)
     val config = location.config
     PkRoomCard(
         title = name,
         tag = transportTag(config),
         emoji = emoji,
         selected = selected,
-        connectedHere = selected && isConnected,
-        blocked = slots?.isBlocked == true,
+        connectedHere = connectedHere,
+        blocked = roomIsBlocked(slots, mine = connectedHere),
         seats = seats,
         seatCountText = seatCountText(slots),
         freeText = seatFreeText(slots),

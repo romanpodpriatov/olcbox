@@ -85,34 +85,44 @@ sealed interface SeatDisplay {
 internal const val MAX_SEAT_PIPS = 16
 
 /**
- * How many seats to treat as taken.
+ * `3 / 8`. Null where there are no seats to count.
  *
- * `used` already clamps a capacity lowered below use. The `holds_slot` clause is
- * the other direction: the server answers presence and capacity with two
- * different reads and they disagree — notably for the five minutes after you
- * leave, when presence still counts you and the capacity figure no longer does.
- *
- * **Everything that shows occupancy must read this, not `slots.used`.** The pips
- * did and the count beside them did not, so a card drew your seat in lime next to
- * the words "0 / 8" — the card contradicting itself in the space of one line.
+ * The server's own figure, unmodified. It briefly was not: `holds_slot` was
+ * treated as proof that at least one seat was taken, which put a 1 on every empty
+ * room in the list — see [seatDisplay] for why that field cannot carry that
+ * weight.
  */
-fun effectiveUsed(slots: OlcrtcSlots): Int =
-    if (slots.holds_slot) slots.used.coerceAtLeast(1) else slots.used
-
-/** `1 / 8`. Null where there are no seats to count. */
 fun seatCountText(slots: OlcrtcSlots?): String? {
     if (slots == null || slots.slots_total <= 0) return null
-    return "${effectiveUsed(slots)} / ${slots.slots_total}"
+    return "${slots.used} / ${slots.slots_total}"
 }
 
-fun seatDisplay(slots: OlcrtcSlots?): SeatDisplay {
+/**
+ * Seats as pips, or as a proportion where there are too many to count.
+ *
+ * [mine] is **the app's own connection state** — connected, to this location —
+ * and not the server's `holds_slot`. That field is the answer to "does this key
+ * occupy a slot", the key is derived from the location's room key, and a server
+ * list issues one key across all its rooms; on top of that presence lingers for
+ * five minutes after a session ends. So it came back true for rooms the user had
+ * never joined, and every card in the list drew a lime seat and read 1 / 8 with
+ * nobody in any of them.
+ *
+ * The app knows whether it is connected and to what. That is a local fact, it is
+ * never wrong, and it is the only thing that should ever paint a seat as yours.
+ *
+ * A seat is painted yours only when the server has actually counted somebody: if
+ * we have just joined and the count is still zero, the honest picture is an empty
+ * room for one more poll, not a seat invented to match our own optimism.
+ */
+fun seatDisplay(slots: OlcrtcSlots?, mine: Boolean = false): SeatDisplay {
     if (slots == null || slots.slots_total <= 0) return SeatDisplay.None
     val total = slots.slots_total
-    val used = effectiveUsed(slots)
+    val used = slots.used
     if (total > MAX_SEAT_PIPS) {
         return SeatDisplay.Bar(
             fraction = (used.toFloat() / total).coerceIn(0f, 1f),
-            mine = slots.holds_slot
+            mine = mine && used > 0
         )
     }
     return SeatDisplay.Pips(
@@ -120,13 +130,25 @@ fun seatDisplay(slots: OlcrtcSlots?): SeatDisplay {
             when {
                 // Yours is drawn first so it is in the same place on every card,
                 // rather than wherever the server happened to seat you.
-                index == 0 && slots.holds_slot -> SeatState.Mine
+                index == 0 && mine && used > 0 -> SeatState.Mine
                 index < used -> SeatState.Taken
                 else -> SeatState.Free
             }
         }
     )
 }
+
+/**
+ * Whether this room will turn us away: no free seat, and we are not in it.
+ *
+ * [mine] is the app's own connection state, for the reason given on
+ * [seatDisplay]. `OlcrtcSlots.isBlocked` answers the same question from
+ * `holds_slot`, which is true for rooms we have never joined — harmless there
+ * because it errs towards letting the tap through, but not something to build a
+ * second control on.
+ */
+fun roomIsBlocked(slots: OlcrtcSlots?, mine: Boolean): Boolean =
+    slots != null && slots.slots_free <= 0 && !mine
 
 /** `7 free`, `full`, or nothing at all where there are no seats to count. */
 fun seatFreeText(slots: OlcrtcSlots?): String? {
@@ -174,16 +196,49 @@ fun sparklinePoints(
 /**
  * Appends a sample and drops the oldest beyond [OCCUPANCY_HISTORY_LIMIT].
  *
- * Reads [effectiveUsed], like the pips and the count: a trace that disagreed
- * with the seats drawn beside it would be the same bug in a third place.
+ * The server's figure, like the count beside it. The trace is a record of what
+ * the node reported, and nothing the app believes about itself belongs in it.
  */
 fun appendOccupancy(history: List<Float>?, slots: OlcrtcSlots): List<Float> {
     val value = if (slots.slots_total > 0) {
-        (effectiveUsed(slots).toFloat() / slots.slots_total).coerceIn(0f, 1f)
+        (slots.used.toFloat() / slots.slots_total).coerceIn(0f, 1f)
     } else {
         0f
     }
     return ((history ?: emptyList()) + value).takeLast(OCCUPANCY_HISTORY_LIMIT)
+}
+
+// ── the live throughput trace ──────────────────────────────────────────────
+
+/** How many one-second samples the status strip's trace remembers. */
+const val THROUGHPUT_TRACE_LIMIT = 44
+
+/**
+ * The floor the trace scales against, per one-second sample.
+ *
+ * Scaling purely against the window's own peak would make any traffic at all fill
+ * the height — a trickle of keepalives would draw the same mountain range as a
+ * download, which is a lie told confidently. Below this the trace stays near the
+ * floor and reads as "barely anything", which is what it is.
+ */
+const val THROUGHPUT_TRACE_FLOOR_BYTES = 96L * 1024L
+
+/** Appends one sample of bytes-since-last-tick. Negative deltas read as zero. */
+fun appendThroughput(history: List<Long>, deltaBytes: Long): List<Long> =
+    (history + deltaBytes.coerceAtLeast(0L)).takeLast(THROUGHPUT_TRACE_LIMIT)
+
+/**
+ * Scales a throughput window into 0f..1f for drawing.
+ *
+ * Against the window's own peak, so the shape of the last minute is always
+ * legible whatever the absolute rate — but never below
+ * [THROUGHPUT_TRACE_FLOOR_BYTES], so an idle tunnel draws a flat line along the
+ * bottom instead of a dramatic one made of nothing.
+ */
+fun throughputTrace(history: List<Long>): List<Float> {
+    if (history.isEmpty()) return emptyList()
+    val peak = maxOf(history.max(), THROUGHPUT_TRACE_FLOOR_BYTES)
+    return history.map { (it.toDouble() / peak).coerceIn(0.0, 1.0).toFloat() }
 }
 
 // ── the action bar ─────────────────────────────────────────────────────────
@@ -234,8 +289,8 @@ fun boardAction(
             name?.let { "LEAVE $it" } ?: "DISCONNECT",
             PkActionKind.Stop
         )
-        // Only blocks a room the user does not already hold a seat on; the caller
-        // derives this from OlcrtcSlots.isBlocked, which knows the difference.
+        // Only blocks a room the user is not already in; the caller derives this
+        // from roomIsBlocked, which asks the app rather than the server.
         selectedIsFull -> PkAction("ROOM IS FULL", PkActionKind.Blocked)
         selectedIsRoom -> PkAction(
             name?.let { "TAKE A SEAT IN $it" } ?: "TAKE A SEAT",

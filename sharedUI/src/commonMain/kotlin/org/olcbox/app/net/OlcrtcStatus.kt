@@ -37,11 +37,20 @@ data class OlcrtcSlots(
     val used: Int get() = (slots_total - slots_free).coerceAtLeast(0)
 
     /**
-     * Whether this location should be offered.
+     * Whether this location should be offered, as the wire format describes it.
      *
      * A node with no free slot is still connectable **for someone already on it** — they
      * hold their slot. Treating "full" as "unavailable" for that person would grey out
      * the server they are currently connected to.
+     *
+     * **The board does not use this, and neither should any new screen.**
+     * [holds_slot] is "does this key occupy a slot", the key id is derived from the
+     * location's own room key, and one server list issues the same key across all of
+     * its rooms — so it comes back true for rooms the user has never joined, and stays
+     * true for five minutes after a session ends. Here that only errs towards letting a
+     * tap through, which is harmless. Painting a seat from it put a lime "your seat" and
+     * the words 1 / 8 on every empty room in the list. The UI asks
+     * `PkBoardModel.roomIsBlocked` instead, which reads the app's own connection state.
      */
     val isBlocked: Boolean get() = slots_free <= 0 && !holds_slot
 }

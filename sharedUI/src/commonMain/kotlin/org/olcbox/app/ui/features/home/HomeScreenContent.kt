@@ -63,6 +63,8 @@ data class HomeChrome(
     val statusValue: String,
     val isActive: Boolean,
     val isBusy: Boolean,
+    /** Per-second throughput, scaled 0f..1f. Empty while nothing is connected. */
+    val trafficTrace: List<Float>,
     val notice: String?,
     val heading: String,
     val sortLabel: String,
@@ -273,7 +275,8 @@ private fun HomeTopBands(
                 meta = chrome.statusMeta,
                 value = chrome.statusValue,
                 isActive = chrome.isActive,
-                isBusy = chrome.isBusy
+                isBusy = chrome.isBusy,
+                trafficTrace = chrome.trafficTrace
             )
             chrome.notice?.let { notice ->
                 Spacer(Modifier.height(11.dp))

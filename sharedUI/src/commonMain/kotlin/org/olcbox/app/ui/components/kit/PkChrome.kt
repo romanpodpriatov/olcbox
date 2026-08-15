@@ -7,6 +7,7 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -39,8 +40,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -280,7 +285,12 @@ fun PkStatusStrip(
     value: String,
     isActive: Boolean,
     isBusy: Boolean,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /**
+     * Per-second throughput, newest last, already scaled to 0f..1f by
+     * `throughputTrace`. Empty draws nothing.
+     */
+    trafficTrace: List<Float> = emptyList()
 ) {
     val palette = LocalPkPalette.current
     val stateColor = when {
@@ -293,15 +303,15 @@ fun PkStatusStrip(
         else MaterialTheme.colorScheme.outlineVariant,
         label = "stripBorder"
     )
-    Row(
+    Column(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
             .background(MaterialTheme.colorScheme.surfaceContainer)
             .border(1.dp, borderColor, RoundedCornerShape(16.dp))
-            .padding(horizontal = 15.dp, vertical = 13.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .padding(horizontal = 15.dp, vertical = 13.dp)
     ) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
         PkPulseDot(color = stateColor, pulse = isActive)
         Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
@@ -334,6 +344,59 @@ fun PkStatusStrip(
                 maxLines = 1
             )
         }
+    }
+
+        // The one thing on this screen that moves by itself. Occupancy answers
+        // "how full is the room" and barely changes; this answers "is anything
+        // actually going through", which is the question a user stares at the
+        // screen to have answered.
+        if (isActive && trafficTrace.isNotEmpty()) {
+            Spacer(Modifier.height(10.dp))
+            PkTrafficTrace(trace = trafficTrace, modifier = Modifier.fillMaxWidth())
+        }
+    }
+}
+
+/**
+ * A throughput waveform: the line, and the area under it.
+ *
+ * The fill is what makes it read as a signal rather than a graph — and it is why
+ * a busy second is legible at fourteen density-independent pixels, which is all
+ * the room a status strip has.
+ */
+@Composable
+fun PkTrafficTrace(trace: List<Float>, modifier: Modifier = Modifier) {
+    val palette = LocalPkPalette.current
+    val line = palette.accent
+    val fill = palette.accent.copy(alpha = 0.16f)
+    val floor = palette.seatFree
+    Canvas(modifier = modifier.height(22.dp)) {
+        drawLine(
+            color = floor,
+            start = Offset(0f, size.height - 1f),
+            end = Offset(size.width, size.height - 1f),
+            strokeWidth = 1.dp.toPx()
+        )
+        val points = sparklinePoints(trace, size.width, size.height, inset = 2f)
+        if (points.isEmpty()) return@Canvas
+
+        val area = Path().apply {
+            moveTo(points.first().x, size.height)
+            points.forEach { lineTo(it.x, it.y) }
+            lineTo(points.last().x, size.height)
+            close()
+        }
+        drawPath(path = area, color = fill)
+
+        val stroke = Path().apply {
+            moveTo(points.first().x, points.first().y)
+            points.drop(1).forEach { lineTo(it.x, it.y) }
+        }
+        drawPath(
+            path = stroke,
+            color = line,
+            style = Stroke(width = 1.6.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
+        )
     }
 }
 

@@ -6,6 +6,7 @@ import org.olcbox.app.net.LocationKind
 import org.olcbox.app.net.OlcrtcSlots
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -74,7 +75,8 @@ class PkBoardModelTest {
     @Test
     fun yourOwnSeatIsAlwaysDrawnFirst() {
         val display = seatDisplay(
-            OlcrtcSlots(slots_total = 8, slots_free = 2, holds_slot = true)
+            OlcrtcSlots(slots_total = 8, slots_free = 2),
+            mine = true
         )
         val pips = (display as SeatDisplay.Pips).seats
         assertEquals(SeatState.Mine, pips.first())
@@ -84,35 +86,51 @@ class PkBoardModelTest {
     }
 
     @Test
-    fun holdingASeatOnANodeThatReportsNoneTakenStillSeatsYou() {
-        // Not hypothetical: presence and capacity are two different reads on the
-        // server, and they can disagree — notably for the five minutes after you
-        // leave, when presence still counts you and capacity no longer does.
-        val display = seatDisplay(
-            OlcrtcSlots(slots_total = 4, slots_free = 4, holds_slot = true)
-        )
-        val pips = (display as SeatDisplay.Pips).seats
-        assertEquals(SeatState.Mine, pips.first())
-        assertEquals(3, pips.count { it == SeatState.Free })
-    }
-
-    @Test
-    fun theCountAgreesWithThePipsBesideIt() {
-        // The bug this exists to prevent, seen on a phone: the card drew a lime
-        // seat and printed "0 / 8" next to it, because the pips read the
-        // presence-corrected figure and the text read the raw one.
+    fun holdsSlotNeverPaintsASeat() {
+        // The bug an iPhone found: every room in the list drew a lime seat and
+        // read 1 / 8 with nobody in any of them. holds_slot answers "does this key
+        // occupy a slot", one server list issues one key across all its rooms, and
+        // presence lingers five minutes after a session — so it was true
+        // everywhere. Only the app's own connection state paints a seat.
         val slots = OlcrtcSlots(slots_total = 8, slots_free = 8, holds_slot = true)
-        val filled = (seatDisplay(slots) as SeatDisplay.Pips)
-            .seats.count { it != SeatState.Free }
-        assertEquals("$filled / 8", seatCountText(slots))
-        assertEquals("1 / 8", seatCountText(slots))
+        val pips = (seatDisplay(slots, mine = false) as SeatDisplay.Pips).seats
+        assertTrue(pips.all { it == SeatState.Free }, "an empty room draws no seat")
+        assertEquals("0 / 8", seatCountText(slots))
     }
 
     @Test
-    fun theCountIsTheServersFigureWhereNothingContradictsIt() {
+    fun aSeatIsOnlyYoursOnceTheServerHasCountedSomebody() {
+        // Just joined, the count has not caught up: an empty room for one more
+        // poll is honest, a seat invented to match our own optimism is not.
+        val notYetCounted = OlcrtcSlots(slots_total = 8, slots_free = 8)
+        val pips = (seatDisplay(notYetCounted, mine = true) as SeatDisplay.Pips).seats
+        assertTrue(pips.all { it == SeatState.Free })
+
+        val counted = OlcrtcSlots(slots_total = 8, slots_free = 7)
+        val seated = (seatDisplay(counted, mine = true) as SeatDisplay.Pips).seats
+        assertEquals(SeatState.Mine, seated.first())
+    }
+
+    @Test
+    fun theCountIsTheServersFigureAndNothingElse() {
         assertEquals("3 / 8", seatCountText(OlcrtcSlots(slots_total = 8, slots_free = 5)))
+        assertEquals(
+            "3 / 8",
+            seatCountText(OlcrtcSlots(slots_total = 8, slots_free = 5, holds_slot = true))
+        )
         assertNull(seatCountText(null))
         assertNull(seatCountText(OlcrtcSlots(slots_total = 0, slots_free = 0)))
+    }
+
+    @Test
+    fun aFullRoomBlocksUnlessWeAreInIt() {
+        val full = OlcrtcSlots(slots_total = 8, slots_free = 0)
+        assertTrue(roomIsBlocked(full, mine = false))
+        assertFalse(roomIsBlocked(full, mine = true))
+        // holds_slot does not get a vote, however loudly it claims otherwise.
+        assertTrue(roomIsBlocked(full.copy(holds_slot = true), mine = false))
+        assertFalse(roomIsBlocked(OlcrtcSlots(slots_total = 8, slots_free = 1), mine = false))
+        assertFalse(roomIsBlocked(null, mine = false))
     }
 
     @Test
@@ -202,13 +220,54 @@ class PkBoardModelTest {
     @Test
     fun theTraceRecordsTheSameOccupancyTheSeatsShow() {
         val slots = OlcrtcSlots(slots_total = 8, slots_free = 8, holds_slot = true)
-        assertEquals(listOf(1f / 8f), appendOccupancy(null, slots))
+        assertEquals(listOf(0f), appendOccupancy(null, slots))
+        assertEquals(
+            listOf(3f / 8f),
+            appendOccupancy(null, OlcrtcSlots(slots_total = 8, slots_free = 5))
+        )
     }
 
     @Test
     fun anUnmeteredNodeRecordsZeroRatherThanDividingByIt() {
         val history = appendOccupancy(null, OlcrtcSlots(slots_total = 0, slots_free = 0))
         assertEquals(listOf(0f), history)
+    }
+
+    // ── the live throughput trace ──────────────────────────────────────────
+
+    @Test
+    fun theTraceKeepsOnlyItsWindow() {
+        var h = emptyList<Long>()
+        repeat(THROUGHPUT_TRACE_LIMIT + 10) { h = appendThroughput(h, it.toLong()) }
+        assertEquals(THROUGHPUT_TRACE_LIMIT, h.size)
+        assertEquals((THROUGHPUT_TRACE_LIMIT + 9).toLong(), h.last())
+    }
+
+    @Test
+    fun aCounterThatWentBackwardsReadsAsIdleRatherThanNegative() {
+        assertEquals(listOf(0L), appendThroughput(emptyList(), -500L))
+    }
+
+    @Test
+    fun anIdleTunnelDrawsAlongTheBottom() {
+        // The point of the floor: without it a window of keepalives would scale to
+        // its own peak and draw a mountain range made of nothing.
+        val trace = throughputTrace(listOf(0L, 200L, 0L, 400L))
+        assertTrue(trace.all { it < 0.02f }, "a trickle must not fill the height")
+    }
+
+    @Test
+    fun realTrafficUsesTheWholeHeight() {
+        val peak = 4L * 1024 * 1024
+        val trace = throughputTrace(listOf(0L, peak / 2, peak))
+        assertEquals(0f, trace.first())
+        assertEquals(0.5f, trace[1], 0.01f)
+        assertEquals(1f, trace.last())
+    }
+
+    @Test
+    fun anEmptyWindowDrawsNothing() {
+        assertTrue(throughputTrace(emptyList()).isEmpty())
     }
 
     // ── the action bar ─────────────────────────────────────────────────────

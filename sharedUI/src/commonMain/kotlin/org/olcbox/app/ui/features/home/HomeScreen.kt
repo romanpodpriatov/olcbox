@@ -20,11 +20,14 @@ import org.olcbox.app.net.transportKind
 import org.olcbox.app.ui.components.AdminPasswordDialog
 import org.olcbox.app.ui.components.CameraRationaleSheet
 import org.olcbox.app.ui.components.VpnDisclosureScreen
+import org.olcbox.app.ui.components.kit.appendThroughput
 import org.olcbox.app.ui.components.kit.boardAction
 import org.olcbox.app.ui.components.kit.boardHeading
 import org.olcbox.app.ui.components.kit.nextSort
+import org.olcbox.app.ui.components.kit.roomIsBlocked
 import org.olcbox.app.ui.components.kit.shortenExitName
 import org.olcbox.app.ui.components.kit.sortLabel
+import org.olcbox.app.ui.components.kit.throughputTrace
 import org.olcbox.app.ui.features.home.components.AddConfigurationSheet
 import org.olcbox.app.ui.features.home.components.LogsSheet
 import org.olcbox.app.ui.features.home.components.buildBoardModel
@@ -106,11 +109,28 @@ fun HomeScreen(
     // resampled on a timer rather than recomputed on recomposition. Only while a
     // session is up: a loop ticking over an idle screen is a wakeup a second for
     // a number nobody is reading.
+    //
+    // The same tick samples throughput. The platform counters are cumulative, so
+    // what the trace wants is the difference between two of them — which means
+    // remembering the previous reading, and forgetting it when the session ends
+    // so the next one does not open with a spike the size of the last one's total.
     var nowTick by remember { mutableStateOf(nowMillis()) }
+    var trafficSamples by remember { mutableStateOf(emptyList<Long>()) }
     LaunchedEffect(state.isVpnConnected, connectedSince) {
-        while (state.isVpnConnected && connectedSince != null) {
+        if (!state.isVpnConnected) {
+            trafficSamples = emptyList()
+            return@LaunchedEffect
+        }
+        var previousTotal: Long? = null
+        while (state.isVpnConnected) {
             delay(1_000)
             nowTick = nowMillis()
+            val counters = traffic
+            if (counters != null) {
+                val total = counters.bytesIn + counters.bytesOut
+                previousTotal?.let { trafficSamples = appendThroughput(trafficSamples, total - it) }
+                previousTotal = total
+            }
         }
     }
 
@@ -295,7 +315,7 @@ fun HomeScreen(
                 bytesIn = traffic?.bytesIn,
                 bytesOut = traffic?.bytesOut,
                 requiresSetup = requiresSetup,
-                isFull = selectedSlots?.isBlocked == true,
+                isFull = roomIsBlocked(selectedSlots, mine = state.isVpnConnected),
                 protocolLine = selectedConfig?.protocolLabels()?.joinToString(" · ")
             ),
             statusValue = statusValue(
@@ -306,6 +326,7 @@ fun HomeScreen(
             ),
             isActive = state.isVpnConnected,
             isBusy = state.isVpnLoading,
+            trafficTrace = throughputTrace(trafficSamples),
             notice = state.notice(),
             heading = boardHeading(model.hasRooms),
             sortLabel = sortLabel(subscriptionSettings.sort),
@@ -314,7 +335,7 @@ fun HomeScreen(
                 isConnected = state.isVpnConnected,
                 isConnecting = state.isVpnLoading,
                 selectedIsRoom = selectedConfig?.transportKind() == TransportKind.Olcrtc,
-                selectedIsFull = selectedSlots?.isBlocked == true,
+                selectedIsFull = roomIsBlocked(selectedSlots, mine = state.isVpnConnected),
                 exitName = selectedName
             ),
             showAppSettingsButton = showAppSettingsButton,
