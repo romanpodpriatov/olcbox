@@ -91,3 +91,40 @@ Below the threshold nothing changes.
   word "subscription" — the rule from the 4.3 work.
 - Push to `proofkit`, poll `pr-checks` via the GitHub API.
 - Hand over to the user for an Xcode build on their Mac.
+
+## Execution notes
+
+What the repo turned out to need that the plan did not say.
+
+**Android keeps its own settings screen.** `AndroidAppSettingsSheets.kt` is 1400
+lines with private copies of the header, the navigation row and the switch —
+split tunnelling, the installed-app list and the connection modes exist only
+there. Android's *home* screen is the shared one and needed nothing extra, but
+the settings screen took the same three moves separately (step 5b). It cannot be
+compiled on this box; CI's `assembleDebug` is its first real check.
+
+**`HomeScreenContent` was split out of `HomeScreen`.** Not in the plan, and it
+paid for itself twice: it is what lets the layout be rendered from a test with
+fabricated data, and it is the one body the two-pane layout rearranges rather
+than a second copy to keep in step.
+
+**`PkSheetSurface` was split out of `PkBottomSheet`** for the same reason —
+`ModalBottomSheet` puts itself in a platform window an `ImageComposeScene` never
+captures, so every sheet was a layout nobody could look at off a device.
+
+**The screenshots caught three things reading the code had not:** the whole screen
+rendered white (`pkScreenBackground` drew a grid and a glow over a container
+colour a transparent scaffold no longer supplies), the room card ellipsised
+"United States" to nine characters, and with the title finally taking the row's
+weight the transport tag ran into the seat count as "SEI7 free".
+
+**`onCopyConfigRequested` was already dead** — declared on `HomeScreen` and never
+read, on `main`. Removed from all four files rather than left dangling.
+
+## Still open
+
+- The Android settings screen is unverified beyond CI's compile — nobody has
+  looked at it running.
+- The plan bar is not repeated in the two-pane detail pane.
+- The disclosure well scrolls with no fade at its edge, so on a short screen
+  there is no cue that there is more below.
