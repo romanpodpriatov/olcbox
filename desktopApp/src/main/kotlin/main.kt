@@ -424,6 +424,7 @@ fun main(args: Array<String>) = application {
 
                 if (showDesktopSettings) {
                     ApplicationSettingsSheet(
+                        onReplayOnboarding = { dependencies.homeViewModel.replayOnboarding() },
                         updateSettings = updateSettings,
                         updateStatusText = updateMessage,
                         updateDownloadProgress = updateProgress,

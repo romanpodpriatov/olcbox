@@ -98,6 +98,27 @@ class HomeScreenViewModel(
         viewModelScope.launch { locationsRepository.acceptVpnDisclosure(nowMillis()) }
     }
 
+    /**
+     * Whether the first-run walkthrough has run. Null until the stored answer
+     * arrives — the opposite of the flag above, and for the same kind of reason:
+     * defaulting to "not seen" would flash three screens of introduction at
+     * somebody on their hundredth launch, every launch, for as long as the read
+     * took.
+     */
+    private val _onboardingSeen = MutableStateFlow<Boolean?>(null)
+    val onboardingSeen = _onboardingSeen.asStateFlow()
+
+    fun markOnboardingSeen() {
+        _onboardingSeen.value = true
+        viewModelScope.launch { locationsRepository.setOnboardingSeen(nowMillis()) }
+    }
+
+    /** "Replay first run". Clears the note so the walkthrough is offered again. */
+    fun replayOnboarding() {
+        _onboardingSeen.value = false
+        viewModelScope.launch { locationsRepository.setOnboardingSeen(null) }
+    }
+
     init {
         loadCurrentConfig()
         viewModelScope.launch {
@@ -106,6 +127,9 @@ class HomeScreenViewModel(
         }
         viewModelScope.launch {
             _vpnDisclosureAccepted.value = locationsRepository.isVpnDisclosureAccepted()
+        }
+        viewModelScope.launch {
+            _onboardingSeen.value = locationsRepository.isOnboardingSeen()
         }
         startSubscriptionAutoRefresh()
 

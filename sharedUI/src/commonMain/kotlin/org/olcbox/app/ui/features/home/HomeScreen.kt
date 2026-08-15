@@ -32,6 +32,7 @@ import org.olcbox.app.ui.features.home.components.formatSessionDuration
 import org.olcbox.app.ui.features.home.components.locationDisplayParts
 import org.olcbox.app.ui.features.home.components.pingFor
 import org.olcbox.app.ui.features.locations.LocationViewModel
+import org.olcbox.app.ui.features.onboarding.OnboardingScreen
 import org.olcbox.app.util.formatByteSize
 import org.olcbox.app.util.nowMillis
 
@@ -111,6 +112,17 @@ fun HomeScreen(
             delay(1_000)
             nowTick = nowMillis()
         }
+    }
+
+    // Null while the stored answer is still arriving, so a returning user does
+    // not get three screens of introduction flashed at them on every launch.
+    val onboardingSeen by viewModel.onboardingSeen.collectAsState()
+    if (onboardingSeen == false) {
+        OnboardingScreen(
+            onFinished = { viewModel.markOnboardingSeen() },
+            onAddServerList = { isAddSheetOpen = true }
+        )
+        return
     }
 
     val vpnDisclosureAccepted by viewModel.vpnDisclosureAccepted.collectAsState()

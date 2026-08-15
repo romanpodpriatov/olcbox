@@ -46,6 +46,7 @@ import org.olcbox.app.ui.components.kit.PkSheetSurface
 import org.olcbox.app.ui.features.home.components.ADD_SUBTITLE
 import org.olcbox.app.ui.features.home.components.ADD_TITLE
 import org.olcbox.app.ui.features.home.components.AddConfigurationBody
+import org.olcbox.app.ui.features.onboarding.OnboardingScreen
 import org.olcbox.app.ui.theme.AppTheme
 import org.olcbox.app.update.AppUpdateSettings
 import java.io.File
@@ -375,6 +376,10 @@ class ScreenshotScratchTest {
                 onUpdateSubscriptionsClick = {},
                 onAddCustomLocationClick = {}
             )
+        }
+
+        shoot("13-onboarding", phoneW, phoneH) {
+            OnboardingScreen(onFinished = {}, onAddServerList = {})
         }
 
         println("wrote ${out.listFiles()?.size} shots to $out")

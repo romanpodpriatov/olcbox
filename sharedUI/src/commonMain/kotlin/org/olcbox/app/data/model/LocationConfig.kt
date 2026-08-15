@@ -562,7 +562,20 @@ data class LocationBundleV4(
      * thing already persisted identically on every platform.
      */
     @SerialName("vpn_disclosure_accepted_at")
-    val vpnDisclosureAcceptedAt: Long? = null
+    val vpnDisclosureAcceptedAt: Long? = null,
+    /**
+     * When the first-run walkthrough was last completed or skipped, in epoch
+     * millis; null until it has been, and null again after "replay first run".
+     *
+     * Nullable rather than a boolean because unlike the disclosure above this one
+     * is meant to be resettable — consent is a fact about the past, an
+     * introduction is a thing a user may want again.
+     *
+     * Kept beside [settings] for the reason stated there: this bundle is the one
+     * thing already persisted identically on every platform.
+     */
+    @SerialName("onboarding_seen_at")
+    val onboardingSeenAt: Long? = null
 ) {
     fun normalized(): LocationBundleV4 {
         val normalizedLocations = locations

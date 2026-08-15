@@ -1,9 +1,13 @@
 package org.olcbox.app.ui.features.home
 
 import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -18,6 +22,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -116,43 +121,115 @@ fun HomeScreenContent(
     snackbarHostState: SnackbarHostState,
     modifier: Modifier = Modifier
 ) {
-    Scaffold(
-        modifier = modifier.fillMaxSize().then(pkScreenBackground()),
-        containerColor = Color.Transparent,
-        snackbarHost = { SnackbarHost(snackbarHostState) },
-        topBar = { HomeTopBands(chrome, board, callbacks) },
-        bottomBar = { PkActionBar(action = chrome.action, onClick = callbacks.onActionClick) }
-    ) { innerPadding ->
-        // Pull down on the list to fetch the server lists again. It was reachable
-        // only from a menu item inside the "+" sheet, which is not where anyone
-        // looks for it on a list of servers.
-        PullToRefreshBox(
-            isRefreshing = board.isRefreshingSubscriptions,
-            onRefresh = callbacks.onPullToRefresh,
-            modifier = Modifier.fillMaxSize().padding(innerPadding)
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .verticalScroll(scrollState)
-                    .padding(horizontal = 16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Spacer(Modifier.height(14.dp))
-                HomeRoomBoard(board, callbacks)
-                Spacer(Modifier.height(20.dp))
-                PkVersionFooter()
-                Spacer(Modifier.height(16.dp))
+    BoxWithConstraints(modifier = modifier.fillMaxSize().then(pkScreenBackground())) {
+        // App Review ran on an iPad Air. A phone layout stretched across it reads
+        // as a template on its own, whatever is drawn inside — the seat pips grow
+        // to a foot wide and the names float alone on the left.
+        //
+        // A width breakpoint rather than material3-window-size-class: the question
+        // is "is there room for two panes", the answer is a number, and the
+        // desktop gets the same layout for free without a new dependency.
+        val twoPane = maxWidth >= TWO_PANE_BREAKPOINT
+
+        Scaffold(
+            modifier = Modifier.fillMaxSize(),
+            containerColor = Color.Transparent,
+            snackbarHost = { SnackbarHost(snackbarHostState) },
+            topBar = { HomeTopBands(chrome, board, callbacks, twoPane = twoPane) },
+            bottomBar = {
+                // On one pane the bar spans the screen. On two it belongs under
+                // the room it acts on, which is the right one.
+                if (!twoPane) {
+                    PkActionBar(action = chrome.action, onClick = callbacks.onActionClick)
+                }
+            }
+        ) { innerPadding ->
+            if (twoPane) {
+                Row(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
+                    HomeBoardColumn(
+                        board = board,
+                        callbacks = callbacks,
+                        scrollState = scrollState,
+                        modifier = Modifier.weight(BOARD_PANE_WEIGHT)
+                    )
+                    Column(modifier = Modifier.weight(DETAIL_PANE_WEIGHT).fillMaxHeight()) {
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .verticalScroll(rememberScrollState())
+                                .padding(top = 6.dp)
+                        ) {
+                            RoomDetailPane(board = board, callbacks = callbacks)
+                        }
+                        PkActionBar(
+                            action = chrome.action,
+                            onClick = callbacks.onActionClick
+                        )
+                    }
+                }
+            } else {
+                HomeBoardColumn(
+                    board = board,
+                    callbacks = callbacks,
+                    scrollState = scrollState,
+                    modifier = Modifier.fillMaxSize().padding(innerPadding)
+                )
             }
         }
     }
 }
 
+/**
+ * The board's own column, with pull-to-refresh over it.
+ *
+ * One function so the phone layout and the wide layout's left pane cannot drift
+ * apart — they are the same list, at two widths.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun HomeBoardColumn(
+    board: HomeBoard,
+    callbacks: HomeCallbacks,
+    scrollState: ScrollState,
+    modifier: Modifier = Modifier
+) {
+    // Pull down on the list to fetch the server lists again. It was reachable
+    // only from a menu item inside the "+" sheet, which is not where anyone
+    // looks for it on a list of servers.
+    PullToRefreshBox(
+        isRefreshing = board.isRefreshingSubscriptions,
+        onRefresh = callbacks.onPullToRefresh,
+        modifier = modifier
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(scrollState)
+                .padding(horizontal = 16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Spacer(Modifier.height(14.dp))
+            HomeRoomBoard(board, callbacks)
+            Spacer(Modifier.height(20.dp))
+            PkVersionFooter()
+            Spacer(Modifier.height(16.dp))
+        }
+    }
+}
+
+/** Wide enough for a board and a room side by side. An iPad in either rotation. */
+private val TWO_PANE_BREAKPOINT = 720.dp
+
+/** The board earns the larger share: it is the thing being read. */
+private const val BOARD_PANE_WEIGHT = 1.25f
+private const val DETAIL_PANE_WEIGHT = 1f
+
 @Composable
 private fun HomeTopBands(
     chrome: HomeChrome,
     board: HomeBoard,
-    callbacks: HomeCallbacks
+    callbacks: HomeCallbacks,
+    twoPane: Boolean
 ) {
     Column(modifier = Modifier.statusBarsPadding()) {
         PkHeaderRow(tag = chrome.tag, onBrandTap = callbacks.onBrandTap) {
@@ -205,11 +282,19 @@ private fun HomeTopBands(
             Spacer(Modifier.height(12.dp))
         }
 
+        // The head sits over the board, so on two panes it is only as wide as the
+        // board is — a heading centred over a room detail it does not describe is
+        // the stretched-phone problem in miniature.
         PkBoardHead(
             heading = chrome.heading,
             sortLabel = chrome.sortLabel,
             onSortClick = callbacks.onSortClick,
             showSort = !board.model.isEmpty,
+            modifier = if (twoPane) {
+                Modifier.fillMaxWidth(BOARD_PANE_WEIGHT / (BOARD_PANE_WEIGHT + DETAIL_PANE_WEIGHT))
+            } else {
+                Modifier
+            },
             chips = if (board.model.showChips) {
                 {
                     BoardFilterChips(

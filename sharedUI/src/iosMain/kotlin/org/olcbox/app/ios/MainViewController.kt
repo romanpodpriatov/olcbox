@@ -281,6 +281,7 @@ private fun IosApp(
                             }
                         }
                     },
+                    onReplayOnboarding = { dependencies.homeViewModel.replayOnboarding() },
                     onSubscriptionDeleteClick = { url ->
                         dependencies.homeViewModel.deleteSubscription(url) { removed ->
                             reloadLocationsAfterImport {

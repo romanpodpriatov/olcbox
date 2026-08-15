@@ -53,6 +53,18 @@ interface LocationsRepository {
      */
     suspend fun isVpnDisclosureAccepted(): Boolean
     suspend fun acceptVpnDisclosure(atMillis: Long)
+
+    /**
+     * Whether the first-run walkthrough has already been shown on this device.
+     *
+     * Nothing to do with the disclosure above, and deliberately separate: Play
+     * requires that consent not be combined with any other screen, so these two
+     * may never become one flag however alike they look.
+     */
+    suspend fun isOnboardingSeen(): Boolean
+
+    /** Null replays it — see "replay first run" in settings. */
+    suspend fun setOnboardingSeen(atMillis: Long?)
 }
 
 data class SubscriptionFetchProxy(

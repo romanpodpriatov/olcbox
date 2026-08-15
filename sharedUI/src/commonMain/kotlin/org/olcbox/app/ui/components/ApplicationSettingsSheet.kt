@@ -10,6 +10,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -187,7 +188,15 @@ fun ApplicationSettingsSheet(
     onSubscriptionRefreshClick: (String) -> Unit,
     onSubscriptionDeleteClick: (String) -> Unit = {},
     onSocksProxySettingsSaved: (String, String, Int) -> Unit = { _, _, _ -> },
-    onSocksProxyPasswordRegenerated: () -> Unit = {}
+    onSocksProxyPasswordRegenerated: () -> Unit = {},
+    /**
+     * Clears the note that the first-run walkthrough has been shown.
+     *
+     * Defaulted so a platform that has not wired it compiles; every platform does
+     * wire it, and one that stops will show a button that does nothing, which is
+     * the failure mode to watch for rather than a compile error.
+     */
+    onReplayOnboarding: () -> Unit = {}
 ) {
     var route by remember { mutableStateOf(SharedSettingsRoute.Hub) }
 
@@ -243,6 +252,7 @@ fun ApplicationSettingsSheet(
             when (currentRoute) {
                 SharedSettingsRoute.Hub -> SharedSettingsHubContent(
                     updateSettings = updateSettings,
+                    onReplayOnboarding = onReplayOnboarding,
                     subscriptionSettings = subscriptionSettings,
                     onSubscriptionOptionsClick = { route = SharedSettingsRoute.SubscriptionOptions },
                     showUpdates = showUpdates,
@@ -324,6 +334,7 @@ fun ApplicationSettingsSheet(
 @Composable
 private fun SharedSettingsHubContent(
     updateSettings: AppUpdateSettings,
+    onReplayOnboarding: () -> Unit,
     subscriptionSettings: SubscriptionSettings,
     onSubscriptionOptionsClick: () -> Unit,
     showUpdates: Boolean,
@@ -390,12 +401,27 @@ private fun SharedSettingsHubContent(
             onClick = onLogsClick
         )
 
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 4.dp),
-            contentAlignment = Alignment.Center
+        Spacer(Modifier.height(12.dp))
+
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            Text(
+                text = "REPLAY FIRST RUN",
+                style = pkMono(10, 1.2),
+                color = LocalPkPalette.current.textDim,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(10.dp))
+                    .border(
+                        1.dp,
+                        MaterialTheme.colorScheme.outlineVariant,
+                        RoundedCornerShape(10.dp)
+                    )
+                    .clickable(onClickLabel = "Replay first run") { onReplayOnboarding() }
+                    .padding(horizontal = 16.dp, vertical = 12.dp)
+            )
             Text(
                 text = pkVersionLine(CurrentAppInfo.value),
                 style = MaterialTheme.typography.labelSmall,

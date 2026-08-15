@@ -519,6 +519,18 @@ class LocationsRepositoryImpl(
         }
     }
 
+    override suspend fun isOnboardingSeen(): Boolean =
+        getBundle().onboardingSeenAt != null
+
+    override suspend fun setOnboardingSeen(atMillis: Long?) {
+        mutationMutex.withLock {
+            val bundle = getBundleUnlocked()
+            // Overwritten freely, unlike the disclosure timestamp: this one is a
+            // note to the app about what it has shown, not a record of consent.
+            saveBundleUnlocked(bundle.copy(onboardingSeenAt = atMillis))
+        }
+    }
+
     private suspend fun resolveParsedImport(
         text: String,
         fallbackSubscriptionInterval: Int? = null,
