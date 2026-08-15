@@ -31,9 +31,11 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBarsPaddingIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -194,7 +196,14 @@ internal fun AppSettingsSheet(
         modifier = Modifier.fillMaxSize().then(pkScreenBackground()),
         color = Color.Transparent
     ) {
-        Column(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                // The 32dp every route pads its own bottom with is not the home
+                // indicator, and on an iPhone it is four points short of it.
+                .navigationBarsPadding()
+        ) {
             if (route == AppSettingsRoute.Hub) {
                 PkScreenHeader(title = "Settings", onBack = { closeSheet() })
             }

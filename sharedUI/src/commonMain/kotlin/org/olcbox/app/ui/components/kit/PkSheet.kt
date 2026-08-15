@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -85,7 +86,15 @@ fun PkSheetSurface(
         } else {
             Spacer(Modifier.height(22.dp))
         }
-        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp)) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                // The sheet is told to ignore window insets so its own surface
+                // runs to the bottom edge; its content still has to clear the
+                // home indicator, and the last thing on every sheet is a button.
+                .navigationBarsPadding()
+                .padding(horizontal = 18.dp)
+        ) {
             Text(
                 text = title,
                 style = MaterialTheme.typography.titleLarge.copy(

@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -469,6 +470,10 @@ fun PkActionBar(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
+                // Inside the background, not around it: the bar's own surface has
+                // to reach the bottom edge of the screen, while the button it
+                // holds sits above the home indicator rather than under it.
+                .navigationBarsPadding()
                 .padding(horizontal = 16.dp, vertical = 12.dp)
                 .height(56.dp)
                 .clip(RoundedCornerShape(16.dp))

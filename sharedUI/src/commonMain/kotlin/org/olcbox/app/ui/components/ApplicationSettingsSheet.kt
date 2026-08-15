@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -211,7 +212,14 @@ fun ApplicationSettingsSheet(
         modifier = Modifier.fillMaxSize().then(pkScreenBackground()),
         color = Color.Transparent
     ) {
-        Column(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                // The 32dp every route pads its own bottom with is not the home
+                // indicator, and on an iPhone it is four points short of it.
+                .navigationBarsPadding()
+        ) {
             // Only the hub. Every sub-route draws its own header, with its own
             // back destination — a second one above them would be two arrows
             // pointing at two different places.
