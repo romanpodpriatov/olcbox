@@ -18,6 +18,7 @@ import org.olcbox.app.data.model.LocationConfig
 import org.olcbox.app.net.TransportKind
 import org.olcbox.app.net.transportKind
 import org.olcbox.app.ui.components.AdminPasswordDialog
+import org.olcbox.app.ui.components.CameraRationaleSheet
 import org.olcbox.app.ui.components.VpnDisclosureScreen
 import org.olcbox.app.ui.components.kit.boardAction
 import org.olcbox.app.ui.components.kit.boardHeading
@@ -73,6 +74,10 @@ fun HomeScreen(
     var isRefreshingSubscriptions by remember { mutableStateOf(false) }
     var refreshingSubscriptionUrl by remember { mutableStateOf<String?>(null) }
     var showAdminDialog by remember { mutableStateOf(false) }
+    // Asked once per launch, before the system's own prompt. On iOS that prompt
+    // cannot be shown twice, so arriving at it with no explanation attached is a
+    // permission spent.
+    var showCameraRationale by remember { mutableStateOf(false) }
     // 24 exits x 3 transports is 72 rows out of one server list; without a filter
     // the list is unusable. Chips only appear for transports actually present.
     var transportFilter by rememberSaveable { mutableStateOf<String?>(null) }
@@ -413,7 +418,7 @@ fun HomeScreen(
             onDismiss = { isAddSheetOpen = false },
             onScanQrClick = {
                 isAddSheetOpen = false
-                onScanQrRequested()
+                showCameraRationale = true
             },
             onPasteLinkClick = {
                 isAddSheetOpen = false
@@ -443,6 +448,18 @@ fun HomeScreen(
             // there and the admin gate here — so the button appeared or vanished
             // depending on which way in you took.
             showCustomLocation = showCustomLocation
+        )
+    }
+
+    if (showCameraRationale) {
+        CameraRationaleSheet(
+            onAllow = {
+                showCameraRationale = false
+                onScanQrRequested()
+            },
+            // Declining connects nothing and asks nothing: the three other ways of
+            // adding a list are still on the sheet behind this one.
+            onDismiss = { showCameraRationale = false }
         )
     }
 

@@ -20,8 +20,10 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -61,6 +63,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -75,7 +78,11 @@ import org.olcbox.app.data.model.SubscriptionSettings
 import org.olcbox.app.data.share.SubscriptionShareItem
 import org.olcbox.app.ui.components.kit.pkSubscriptionSourceLine
 import org.olcbox.app.ui.components.kit.PkBrand
+import org.olcbox.app.ui.components.kit.PkScreenHeader
+import org.olcbox.app.ui.components.kit.PkSectionEyebrow
 import org.olcbox.app.ui.components.kit.PkSectionLabel
+import org.olcbox.app.ui.components.kit.pkMono
+import org.olcbox.app.ui.components.kit.pkScreenBackground
 import org.olcbox.app.ui.components.kit.pkVersionLine
 import org.olcbox.app.ui.features.home.components.LogLines
 import org.olcbox.app.ui.theme.LocalPkPalette
@@ -182,20 +189,27 @@ fun ApplicationSettingsSheet(
     onSocksProxySettingsSaved: (String, String, Int) -> Unit = { _, _, _ -> },
     onSocksProxyPasswordRegenerated: () -> Unit = {}
 ) {
-    // rememberModalBottomSheetState is deprecated in favour of
-    // rememberBottomSheetState, which is itself alpha in the material3 this
-    // project pins. Suppressed rather than migrated: swapping a sheet API
-    // blind, mid-release, on a build nobody here can compile is a worse
-    // trade than a warning. Migrate all four together, deliberately.
-    @Suppress("DEPRECATION")
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var route by remember { mutableStateOf(SharedSettingsRoute.Hub) }
 
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        dragHandle = { BottomSheetDefaults.DragHandle() }
+    // A screen, not a sheet. Settings behind a half-height sheet you can flick
+    // away is the shape every client ships, and it left this app's longest
+    // content — a server list's options, the log, the connection detail — living
+    // inside something whose natural gesture is "dismiss".
+    //
+    // The name and the parameter list do not change, so no platform call site
+    // moves: only what this function draws around them.
+    Surface(
+        modifier = Modifier.fillMaxSize().then(pkScreenBackground()),
+        color = Color.Transparent
     ) {
+        Column(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
+            // Only the hub. Every sub-route draws its own header, with its own
+            // back destination — a second one above them would be two arrows
+            // pointing at two different places.
+            if (route == SharedSettingsRoute.Hub) {
+                PkScreenHeader(title = "Settings", onBack = onDismiss)
+            }
+
         AnimatedContent(
             targetState = route,
             transitionSpec = {
@@ -302,6 +316,7 @@ fun ApplicationSettingsSheet(
                     onShareClick = onShareLogsClick
                 )
             }
+            }
         }
     }
 }
@@ -319,27 +334,28 @@ private fun SharedSettingsHubContent(
     onUpdatesClick: () -> Unit,
     onLogsClick: () -> Unit
 ) {
+    // Grouped under eyebrows rather than run together as one list of five. Three
+    // of these rows are about the tunnel, two about where servers come from, and
+    // reading which is which off five identical cards is a small task the screen
+    // can do for the user.
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 24.dp)
+            .padding(horizontal = 20.dp)
             .padding(bottom = 32.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        SharedSettingsHeader(
-            icon = Icons.Outlined.Settings,
-            title = "Application Settings",
-            subtitle = PkBrand.name
-        )
-
-        Spacer(Modifier.height(8.dp))
+        PkSectionEyebrow("Connection")
 
         SharedNavigationRow(
-            title = "Connection Settings",
+            title = "Connection",
             value = connectionSummary,
             icon = PkIcons.Public,
             onClick = onConnectionClick
         )
+
+        Spacer(Modifier.height(8.dp))
+        PkSectionEyebrow("Server lists")
 
         SharedNavigationRow(
             title = "Server list updates",
@@ -349,15 +365,18 @@ private fun SharedSettingsHubContent(
         )
 
         SharedNavigationRow(
-            title = "Server lists & sharing",
+            title = "Server lists and sharing",
             value = subscriptionsCount.subscriptionSummary(),
             icon = Icons.Outlined.Share,
             onClick = onSubscriptionsClick
         )
 
+        Spacer(Modifier.height(8.dp))
+        PkSectionEyebrow("Diagnostics")
+
         if (showUpdates) {
             SharedNavigationRow(
-                title = "Update Settings",
+                title = "Application updates",
                 value = "Nightly · every ${updateSettings.intervalHours}h",
                 icon = Icons.Outlined.Refresh,
                 onClick = onUpdatesClick
@@ -365,7 +384,7 @@ private fun SharedSettingsHubContent(
         }
 
         SharedNavigationRow(
-            title = "Application Logs",
+            title = "Application log",
             value = "Diagnostics and export",
             icon = PkIcons.History,
             onClick = onLogsClick
@@ -1031,56 +1050,56 @@ private fun SharedNavigationRow(
     showChevron: Boolean = true,
     onClick: () -> Unit
 ) {
+    // No round icon chip. A column of filled circles down the left of a settings
+    // list is the Material signature this redesign is trying not to wear; the icon
+    // stays, small and plain, because it is what makes a row findable at a glance.
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .height(72.dp)
-            .clip(RoundedCornerShape(18.dp))
+            .clip(RoundedCornerShape(16.dp))
             .clickable(enabled = enabled, onClick = onClick),
-        shape = RoundedCornerShape(18.dp),
+        shape = RoundedCornerShape(16.dp),
         color = MaterialTheme.colorScheme.surfaceContainer,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 16.dp),
+            modifier = Modifier
+                .defaultMinSize(minHeight = 60.dp)
+                .padding(horizontal = 14.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Surface(
-                modifier = Modifier.size(40.dp),
-                shape = CircleShape,
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                contentColor = MaterialTheme.colorScheme.onSurfaceVariant
-            ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    modifier = Modifier.padding(10.dp)
-                )
-            }
-            Spacer(Modifier.width(14.dp))
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = LocalPkPalette.current.textDim,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(Modifier.width(13.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = title,
                     color = MaterialTheme.colorScheme.onSurface,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
+                Spacer(Modifier.height(3.dp))
                 Text(
                     text = value,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 13.sp,
-                    maxLines = 1,
+                    style = pkMono(10, 0.5),
+                    color = LocalPkPalette.current.textDim,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
             }
             if (showChevron) {
+                Spacer(Modifier.width(10.dp))
                 Icon(
                     imageVector = PkIcons.ChevronRight,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(24.dp)
+                    tint = LocalPkPalette.current.textMuted,
+                    modifier = Modifier.size(17.dp)
                 )
             }
         }
@@ -1206,87 +1225,20 @@ private fun SharedSelectableSettingsCard(
 }
 
 @Composable
-private fun SharedSettingsHeader(
-    icon: ImageVector,
-    title: String,
-    subtitle: String
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Surface(
-            modifier = Modifier.size(46.dp),
-            shape = CircleShape,
-            color = MaterialTheme.colorScheme.primaryContainer,
-            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                modifier = Modifier.padding(11.dp)
-            )
-        }
-        Spacer(Modifier.width(14.dp))
-        Column {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.headlineSmall,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
-}
-
-@Composable
 private fun SharedDetailHeader(
     title: String,
     subtitle: String,
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Row(
-        modifier = modifier,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Surface(
-            modifier = Modifier.size(46.dp),
-            shape = CircleShape,
-            color = MaterialTheme.colorScheme.surfaceContainerHighest,
-            contentColor = MaterialTheme.colorScheme.onSurfaceVariant
-        ) {
-            IconButton(onClick = onBack) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                    contentDescription = "Back"
-                )
-            }
-        }
-
-        Spacer(Modifier.width(14.dp))
-
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.headlineSmall,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-    }
+    // The one header shape the app has, so a sub-screen of settings and the
+    // settings screen itself do not arrive looking like two different apps.
+    PkScreenHeader(
+        title = title,
+        subtitle = subtitle,
+        onBack = onBack,
+        modifier = modifier
+    )
 }
 
 @Composable

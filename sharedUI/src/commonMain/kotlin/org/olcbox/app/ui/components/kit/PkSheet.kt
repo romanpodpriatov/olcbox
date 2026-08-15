@@ -47,49 +47,45 @@ import org.olcbox.app.ui.theme.LocalPkPalette
  * place — rather than four dialogs that happen to share a colour scheme.
  */
 
-/** Title over a mono subtitle, above a grab handle. The house style of a sheet. */
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * The house style of a sheet: a grab handle, a title, a mono subtitle, content.
+ *
+ * Split from [PkBottomSheet] so it can be rendered on its own. `ModalBottomSheet`
+ * puts itself in a separate platform window, which a headless `ImageComposeScene`
+ * does not capture — so with the two fused, every sheet in the app was a layout
+ * nobody could look at until it was on a phone.
+ */
 @Composable
-fun PkBottomSheet(
+fun PkSheetSurface(
     title: String,
     subtitle: String?,
-    onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
-    /**
-     * False for a sheet that has to be answered rather than waved away — the VPN
-     * disclosure, where "carry on without deciding" is exactly what the policy
-     * forbids.
-     */
-    dismissible: Boolean = true,
+    showHandle: Boolean = true,
     content: @Composable ColumnScope.() -> Unit
 ) {
     val palette = LocalPkPalette.current
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    ModalBottomSheet(
-        onDismissRequest = { if (dismissible) onDismiss() },
-        sheetState = sheetState,
-        modifier = modifier,
-        shape = RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp),
-        containerColor = MaterialTheme.colorScheme.surfaceContainer,
-        contentWindowInsets = { WindowInsets(0, 0, 0, 0) },
-        dragHandle = if (!dismissible) null else {
-            {
-                Box(
-                    modifier = Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 12.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Box(
-                        Modifier
-                            .size(width = 40.dp, height = 4.dp)
-                            .clip(RoundedCornerShape(99.dp))
-                            .background(MaterialTheme.colorScheme.outline)
-                    )
-                }
-            }
-        }
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainer)
     ) {
+        if (showHandle) {
+            Box(
+                modifier = Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 12.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Box(
+                    Modifier
+                        .size(width = 40.dp, height = 4.dp)
+                        .clip(RoundedCornerShape(99.dp))
+                        .background(MaterialTheme.colorScheme.outline)
+                )
+            }
+        } else {
+            Spacer(Modifier.height(22.dp))
+        }
         Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp)) {
-            if (!dismissible) Spacer(Modifier.height(22.dp))
             Text(
                 text = title,
                 style = MaterialTheme.typography.titleLarge.copy(
@@ -113,6 +109,37 @@ fun PkBottomSheet(
             content()
             Spacer(Modifier.height(28.dp))
         }
+    }
+}
+
+/** [PkSheetSurface], presented as a modal sheet over whatever is behind it. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun PkBottomSheet(
+    title: String,
+    subtitle: String?,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
+    /**
+     * False for a sheet that has to be answered rather than waved away — the VPN
+     * disclosure, where "carry on without deciding" is exactly what the policy
+     * forbids.
+     */
+    dismissible: Boolean = true,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(
+        onDismissRequest = { if (dismissible) onDismiss() },
+        sheetState = sheetState,
+        modifier = modifier,
+        shape = RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp),
+        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+        contentWindowInsets = { WindowInsets(0, 0, 0, 0) },
+        // The handle lives in the surface, so the surface is complete on its own.
+        dragHandle = null
+    ) {
+        PkSheetSurface(title = title, subtitle = subtitle, showHandle = dismissible, content = content)
     }
 }
 

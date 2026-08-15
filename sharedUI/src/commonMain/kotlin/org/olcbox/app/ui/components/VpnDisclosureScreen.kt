@@ -1,26 +1,31 @@
 package org.olcbox.app.ui.components
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
+import org.olcbox.app.ui.components.kit.PkBottomSheet
+import org.olcbox.app.ui.components.kit.pkMono
+import org.olcbox.app.ui.features.home.components.PkSheetButton
+import org.olcbox.app.ui.theme.LocalPkPalette
 
 /**
  * What the system VPN does here, said once and accepted deliberately.
@@ -37,8 +42,8 @@ import androidx.compose.ui.window.DialogProperties
  * the same everywhere and a screen that exists on one platform only is a screen
  * that stops matching the others the first time either is touched.
  *
- * Declining is a real outcome, not a dismissal: there is no close affordance and
- * no dismiss on back or outside tap, because "carry on without answering" is
+ * Declining is a real outcome, not a dismissal: `dismissible = false` removes the
+ * drag handle and refuses a tap outside, because "carry on without answering" is
  * exactly what the policy forbids and what a reviewer looks for.
  */
 @Composable
@@ -46,52 +51,116 @@ fun VpnDisclosureScreen(
     onAccept: () -> Unit,
     onDecline: () -> Unit,
 ) {
-    Dialog(
-        onDismissRequest = onDecline,
-        properties = DialogProperties(
-            dismissOnBackPress = false,
-            dismissOnClickOutside = false,
-        )
+    PkBottomSheet(
+        title = DISCLOSURE_TITLE,
+        subtitle = DISCLOSURE_SUBTITLE,
+        onDismiss = onDecline,
+        dismissible = false
     ) {
-        Surface(
-            shape = MaterialTheme.shapes.large,
-            color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 6.dp
+        VpnDisclosureBody(onAccept = onAccept, onDecline = onDecline)
+    }
+}
+
+internal const val DISCLOSURE_TITLE = "How the VPN connection works"
+internal const val DISCLOSURE_SUBTITLE = "System VPN · your approval"
+
+/** The sheet's contents, separately so a test can render them. */
+@Composable
+internal fun VpnDisclosureBody(onAccept: () -> Unit, onDecline: () -> Unit) {
+    val palette = LocalPkPalette.current
+    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .background(MaterialTheme.colorScheme.surfaceContainerLow)
+                .border(1.dp, palette.hairline, RoundedCornerShape(16.dp))
+                // Bounded and scrollable so the whole text can be read on a
+                // small screen — and so it can be scrolled through slowly on
+                // camera, which is what the Play declaration video has to show.
+                .heightIn(max = 380.dp)
+                .verticalScroll(rememberScrollState())
+                .padding(15.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            Column(modifier = Modifier.padding(24.dp)) {
-                Text(
-                    text = "How the VPN connection works",
-                    style = MaterialTheme.typography.headlineSmall,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Spacer(Modifier.height(16.dp))
-                Column(
-                    // Bounded and scrollable so the whole text can be read on a
-                    // small screen — and so it can be scrolled through slowly on
-                    // camera, which is what the Play declaration video has to show.
-                    modifier = Modifier
-                        .heightIn(max = 360.dp)
-                        .verticalScroll(rememberScrollState())
-                ) {
-                    Text(
-                        text = DISCLOSURE_BODY,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                Spacer(Modifier.height(24.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End
-                ) {
-                    TextButton(onClick = onDecline) { Text("Not now") }
-                    Spacer(Modifier.width(8.dp))
-                    Button(onClick = onAccept) { Text("I understand") }
+            disclosureBlocks(DISCLOSURE_BODY).forEach { block ->
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    block.heading?.let { heading ->
+                        Text(
+                            text = heading,
+                            style = pkMono(9, 1.5),
+                            color = palette.accent
+                        )
+                    }
+                    block.paragraphs.forEach { paragraph ->
+                        Row {
+                            Box(
+                                Modifier
+                                    .padding(top = 7.dp)
+                                    .size(5.dp)
+                                    .clip(CircleShape)
+                                    .background(palette.accent)
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            Text(
+                                text = paragraph,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
                 }
             }
         }
+
+        PkSheetButton(label = "I understand", onClick = onAccept, primary = true)
+        PkSheetButton(label = "Not now", onClick = onDecline)
     }
 }
+
+/** One section of the disclosure: an optional heading and the lines under it. */
+data class DisclosureBlock(val heading: String?, val paragraphs: List<String>)
+
+/**
+ * Splits [DISCLOSURE_BODY] into the sections it is already written in.
+ *
+ * A formatting change, not a wording one. The text is one string with ALL-CAPS
+ * headings and blank lines between paragraphs; this reads that structure back so
+ * the sheet can set the headings as eyebrows and the paragraphs as bullets,
+ * instead of rendering a wall of prose nobody scrolls.
+ *
+ * Every non-empty line of the source ends up in exactly one block — see the
+ * round-trip test. A parser that silently dropped a paragraph would remove part
+ * of a legally required notice and look fine doing it.
+ */
+fun disclosureBlocks(body: String): List<DisclosureBlock> {
+    val blocks = mutableListOf<DisclosureBlock>()
+    var heading: String? = null
+    var paragraphs = mutableListOf<String>()
+
+    fun flush() {
+        if (heading != null || paragraphs.isNotEmpty()) {
+            blocks += DisclosureBlock(heading, paragraphs.toList())
+        }
+        heading = null
+        paragraphs = mutableListOf()
+    }
+
+    body.split("\n\n").map { it.trim() }.filter { it.isNotEmpty() }.forEach { chunk ->
+        if (chunk.isDisclosureHeading()) {
+            flush()
+            heading = chunk
+        } else {
+            paragraphs += chunk
+        }
+    }
+    flush()
+    return blocks
+}
+
+/** A heading is a short line with no lower-case letter in it. */
+private fun String.isDisclosureHeading(): Boolean =
+    length <= 40 && none { it.isLowerCase() } && any { it.isLetter() }
 
 /**
  * Deliberately specific about what the tunnel does rather than about privacy in
@@ -110,7 +179,7 @@ fun VpnDisclosureScreen(
  * and storage names keep the old spelling on purpose — this is about what a user
  * reads.
  */
-private const val DISCLOSURE_BODY = """ProofKit connects using your device's system VPN.
+internal const val DISCLOSURE_BODY = """ProofKit connects using your device's system VPN.
 
 WHAT IT DOES
 

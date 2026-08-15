@@ -27,7 +27,27 @@ import org.olcbox.app.ui.features.home.HomeScreenContent
 import org.olcbox.app.ui.features.home.components.buildBoardModel
 import org.olcbox.app.ui.features.locations.LocationItem
 import org.olcbox.app.ui.features.locations.PingsState
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import org.olcbox.app.data.model.SubscriptionSettings
+import org.olcbox.app.ui.components.ApplicationSettingsSheet
+import org.olcbox.app.ui.components.CAMERA_SUBTITLE
+import org.olcbox.app.ui.components.CAMERA_TITLE
+import org.olcbox.app.ui.components.CameraRationaleBody
+import org.olcbox.app.ui.components.DISCLOSURE_SUBTITLE
+import org.olcbox.app.ui.components.DISCLOSURE_TITLE
+import org.olcbox.app.ui.components.VpnDisclosureBody
+import org.olcbox.app.ui.components.kit.PkSheetSurface
+import org.olcbox.app.ui.features.home.components.ADD_SUBTITLE
+import org.olcbox.app.ui.features.home.components.ADD_TITLE
+import org.olcbox.app.ui.features.home.components.AddConfigurationBody
 import org.olcbox.app.ui.theme.AppTheme
+import org.olcbox.app.update.AppUpdateSettings
 import java.io.File
 import kotlin.test.Test
 
@@ -227,6 +247,24 @@ class ScreenshotScratchTest {
         }
     }
 
+    private fun sheet(
+        name: String,
+        title: String,
+        subtitle: String,
+        handle: Boolean = true,
+        body: @Composable ColumnScope.() -> Unit
+    ) = shoot(name, 402 * 2, 900 * 2) {
+        Box(Modifier.fillMaxSize().background(Color(0xFF07080D))) {
+            PkSheetSurface(
+                title = title,
+                subtitle = subtitle,
+                showHandle = handle,
+                modifier = Modifier.align(Alignment.BottomCenter),
+                content = body
+            )
+        }
+    }
+
     private fun home(name: String, w: Int, h: Int, chrome: HomeChrome, board: HomeBoard) =
         shoot(name, w, h) {
             HomeScreenContent(
@@ -287,6 +325,58 @@ class ScreenshotScratchTest {
             chrome("idle", boardAction(false, false, false, true, false, "United States")),
             board()
         )
+        shoot("09-settings", phoneW, phoneH) {
+            ApplicationSettingsSheet(
+                updateSettings = AppUpdateSettings(),
+                updateStatusText = null,
+                updateDownloadProgress = null,
+                updateOffer = null,
+                subscriptions = emptyList(),
+                logs = emptyList(),
+                connectionSummary = "System VPN · olcRTC",
+                connectionDetails = emptyList(),
+                socksProxySettings = null,
+                isConnectionActive = true,
+                subscriptionSettings = SubscriptionSettings(),
+                connectionModeTitle = "System VPN",
+                connectionModeSummary = "All device traffic through the tunnel",
+                showUpdates = false,
+                onDismiss = {},
+                onCopyConfigClick = {},
+                onSaveLogsClick = {},
+                onShareLogsClick = {},
+                onUpdateIntervalSelected = {},
+                onCheckUpdatesClick = {},
+                onDownloadUpdateClick = {},
+                onLaterUpdateClick = {},
+                onSubscriptionShareClick = {},
+                onSubscriptionRefreshClick = {},
+                onSubscriptionDeleteClick = {}
+            )
+        }
+
+        // The sheets are rendered as their surface plus their body: a real
+        // ModalBottomSheet puts itself in a platform window an ImageComposeScene
+        // never sees, so shooting the sheet composable produces a blank PNG.
+        sheet("10-disclosure", DISCLOSURE_TITLE, DISCLOSURE_SUBTITLE, handle = false) {
+            VpnDisclosureBody(onAccept = {}, onDecline = {})
+        }
+        sheet("11-camera", CAMERA_TITLE, CAMERA_SUBTITLE) {
+            CameraRationaleBody(onAllow = {}, onDismiss = {})
+        }
+        sheet("12-add", ADD_TITLE, ADD_SUBTITLE) {
+            AddConfigurationBody(
+                canScanQr = true,
+                hasSubscriptions = true,
+                showCustomLocation = false,
+                onScanQrClick = {},
+                onPasteLinkClick = {},
+                onImportFileClick = {},
+                onUpdateSubscriptionsClick = {},
+                onAddCustomLocationClick = {}
+            )
+        }
+
         println("wrote ${out.listFiles()?.size} shots to $out")
     }
 

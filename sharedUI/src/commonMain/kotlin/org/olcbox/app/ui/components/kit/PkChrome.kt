@@ -199,6 +199,69 @@ fun PkHeaderRow(
     }
 }
 
+/**
+ * A back arrow and a title. What a screen that is not the board wears.
+ *
+ * The arrow is a bare 40dp target rather than a filled circle: a circular button
+ * beside a title is the Material detail-screen signature, and this app is trying
+ * not to wear it.
+ */
+@Composable
+fun PkScreenHeader(
+    title: String,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+    subtitle: String? = null,
+    actions: (@Composable RowScope.() -> Unit)? = null
+) {
+    val palette = LocalPkPalette.current
+    Row(
+        modifier = modifier.fillMaxWidth().padding(start = 10.dp, end = 16.dp, bottom = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .clip(CircleShape)
+                .clickable(onClickLabel = "Back", role = Role.Button) { onBack() },
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = PkIcons.ArrowBack,
+                contentDescription = "Back",
+                tint = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.size(21.dp)
+            )
+        }
+        Spacer(Modifier.width(6.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleLarge.copy(
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.SemiBold
+                ),
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            if (!subtitle.isNullOrBlank()) {
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = subtitle.uppercase(),
+                    style = pkMono(9, 1.3),
+                    color = palette.textDim,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+        if (actions != null) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), content = actions)
+        }
+    }
+}
+
 // ── status strip ───────────────────────────────────────────────────────────
 
 /**

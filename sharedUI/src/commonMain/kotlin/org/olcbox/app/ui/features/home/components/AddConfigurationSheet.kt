@@ -1,41 +1,41 @@
 package org.olcbox.app.ui.features.home.components
 
-import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import org.olcbox.app.ui.icons.PkIcons
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Refresh
-import androidx.compose.material3.BottomSheetDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import org.olcbox.app.ui.components.kit.PkBottomSheet
+import org.olcbox.app.ui.components.kit.pkMono
+import org.olcbox.app.ui.icons.PkIcons
+import org.olcbox.app.ui.theme.LocalPkPalette
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddConfigurationSheet(
     canScanQr: Boolean,
@@ -61,167 +61,206 @@ fun AddConfigurationSheet(
     showGetSubscription: Boolean = true,
     showCustomLocation: Boolean = true
 ) {
-    // rememberModalBottomSheetState is deprecated in favour of
-    // rememberBottomSheetState, which is itself alpha in the material3 this
-    // project pins. Suppressed rather than migrated: swapping a sheet API
-    // blind, mid-release, on a build nobody here can compile is a worse
-    // trade than a warning. Migrate all four together, deliberately.
-    @Suppress("DEPRECATION")
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        dragHandle = { BottomSheetDefaults.DragHandle() }
+    PkBottomSheet(
+        title = ADD_TITLE,
+        subtitle = ADD_SUBTITLE,
+        onDismiss = onDismiss
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp)
-                .padding(bottom = 32.dp)
-        ) {
-            AddSheetHeader(
-                title = "Add connection",
-                subtitle = "Server list or custom location"
+        AddConfigurationBody(
+            canScanQr = canScanQr,
+            hasSubscriptions = hasSubscriptions,
+            showCustomLocation = showCustomLocation,
+            onScanQrClick = onScanQrClick,
+            onPasteLinkClick = onPasteLinkClick,
+            onImportFileClick = onImportFileClick,
+            onUpdateSubscriptionsClick = onUpdateSubscriptionsClick,
+            onAddCustomLocationClick = onAddCustomLocationClick
+        )
+    }
+}
+
+internal const val ADD_TITLE = "Add connection"
+internal const val ADD_SUBTITLE = "From a provider's list"
+
+/** The sheet's contents, separately so a test can render them. */
+@Composable
+internal fun AddConfigurationBody(
+    canScanQr: Boolean,
+    hasSubscriptions: Boolean,
+    showCustomLocation: Boolean,
+    onScanQrClick: () -> Unit,
+    onPasteLinkClick: () -> Unit,
+    onImportFileClick: () -> Unit,
+    onUpdateSubscriptionsClick: () -> Unit,
+    onAddCustomLocationClick: () -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        // No row here points at a purchase. Someone with nothing yet gets the
+        // import actions below and nothing else — where they obtained a server
+        // list is not this app's business.
+
+        if (canScanQr) {
+            PkSheetActionRow(
+                title = "Scan QR code",
+                subtitle = "Server list or olcrtc URI",
+                icon = PkIcons.QrCodeScanner,
+                accent = true,
+                onClick = onScanQrClick
             )
+        }
 
-            Spacer(Modifier.height(20.dp))
+        PkSheetActionRow(
+            title = "Paste link or URI",
+            subtitle = "HTTP, HTTPS, or olcrtc URI",
+            icon = PkIcons.Input,
+            onClick = onPasteLinkClick
+        )
 
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                // No row here points at a purchase. Someone with nothing yet gets
-                // the import actions below and nothing else — where they obtained a
-                // server list is not this app's business.
+        PkSheetActionRow(
+            title = "Import from file",
+            subtitle = "Read server list or config file",
+            icon = PkIcons.FileOpen,
+            onClick = onImportFileClick
+        )
 
-                if (canScanQr) {
-                    AddSheetAction(
-                        title = "Scan QR code",
-                        value = "Server list or olcrtc URI",
-                        icon = PkIcons.QrCodeScanner,
-                        onClick = onScanQrClick
-                    )
-                }
+        if (hasSubscriptions) {
+            PkSheetActionRow(
+                title = "Update server lists",
+                subtitle = "Refresh imported server locations",
+                icon = Icons.Outlined.Refresh,
+                showChevron = false,
+                onClick = onUpdateSubscriptionsClick
+            )
+        }
 
-                AddSheetAction(
-                    title = "Paste link or URI",
-                    value = "HTTP, HTTPS, or olcrtc URI",
-                    icon = PkIcons.Input,
-                    onClick = onPasteLinkClick
-                )
-
-                AddSheetAction(
-                    title = "Import from file",
-                    value = "Read server list or config file",
-                    icon = PkIcons.FileOpen,
-                    onClick = onImportFileClick
-                )
-
-                if (hasSubscriptions) {
-                    AddSheetAction(
-                        title = "Update server lists",
-                        value = "Refresh imported server locations",
-                        icon = Icons.Outlined.Refresh,
-                        showChevron = false,
-                        onClick = onUpdateSubscriptionsClick
-                    )
-                }
-
-                if (showCustomLocation) {
-                    AddSheetAction(
-                        title = "Create custom location",
-                        value = "Enter room, key, provider, and transport",
-                        icon = Icons.Outlined.Add,
-                        onClick = onAddCustomLocationClick
-                    )
-                }
-            }
+        if (showCustomLocation) {
+            PkSheetActionRow(
+                title = "Create custom location",
+                subtitle = "Enter room, key, provider, and transport",
+                icon = Icons.Outlined.Add,
+                onClick = onAddCustomLocationClick
+            )
         }
     }
 }
 
+/**
+ * One thing a sheet offers to do: a round icon, a title, a mono sub, a chevron.
+ *
+ * [accent] lifts the one action that is the point of the sheet — scanning a code
+ * is how a server list arrives in the ordinary case, and the rest are the ways it
+ * arrives when that is not possible.
+ */
 @Composable
-private fun AddSheetHeader(
+fun PkSheetActionRow(
     title: String,
     subtitle: String,
+    icon: ImageVector,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    accent: Boolean = false,
+    showChevron: Boolean = true
 ) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Column {
+    val palette = LocalPkPalette.current
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(18.dp))
+            .clickable(onClickLabel = title, role = Role.Button) { onClick() }
+            .padding(14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = if (accent) palette.accent else palette.link,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+
+        Spacer(Modifier.width(13.dp))
+
+        Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = title,
-                style = MaterialTheme.typography.headlineSmall,
-                color = MaterialTheme.colorScheme.onSurface
+                style = MaterialTheme.typography.titleMedium.copy(
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold
+                ),
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
+            Spacer(Modifier.size(3.dp))
             Text(
                 text = subtitle,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                style = pkMono(10, 0.5),
+                color = palette.textDim,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+
+        if (showChevron) {
+            Spacer(Modifier.width(8.dp))
+            Icon(
+                imageVector = PkIcons.ChevronRight,
+                contentDescription = null,
+                tint = palette.textMuted,
+                modifier = Modifier.size(17.dp)
             )
         }
     }
 }
 
+/** A full-width button inside a sheet. Lime for the one that commits. */
 @Composable
-private fun AddSheetAction(
-    title: String,
-    value: String,
-    icon: ImageVector,
-    showChevron: Boolean = true,
-    onClick: () -> Unit
+fun PkSheetButton(
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    primary: Boolean = false,
+    enabled: Boolean = true
 ) {
-    Surface(
-        modifier = Modifier
+    val palette = LocalPkPalette.current
+    Box(
+        modifier = modifier
             .fillMaxWidth()
-            .height(72.dp)
-            .clip(RoundedCornerShape(18.dp))
-            .clickable(onClick = onClick),
-        shape = RoundedCornerShape(18.dp),
-        color = MaterialTheme.colorScheme.surfaceContainer,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+            .clip(RoundedCornerShape(15.dp))
+            .background(if (primary) palette.accent else Color.Transparent)
+            .then(
+                if (primary) {
+                    Modifier
+                } else {
+                    Modifier.border(
+                        1.dp,
+                        MaterialTheme.colorScheme.outline,
+                        RoundedCornerShape(15.dp)
+                    )
+                }
+            )
+            .clickable(enabled = enabled, onClickLabel = label, role = Role.Button) { onClick() }
+            .padding(vertical = 17.dp),
+        contentAlignment = Alignment.Center
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Surface(
-                modifier = Modifier.size(40.dp),
-                shape = CircleShape,
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                contentColor = MaterialTheme.colorScheme.onSurfaceVariant
-            ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    modifier = Modifier.padding(10.dp)
-                )
-            }
-
-            Spacer(modifier = Modifier.width(14.dp))
-
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = title,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = value,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 13.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-
-            if (showChevron) {
-                Icon(
-                    imageVector = PkIcons.ChevronRight,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(24.dp)
-                )
-            }
-        }
+        Text(
+            text = label.uppercase(),
+            style = pkMono(12, 1.5).copy(fontWeight = FontWeight.SemiBold),
+            color = when {
+                !enabled -> palette.textMuted
+                primary -> MaterialTheme.colorScheme.onTertiary
+                else -> MaterialTheme.colorScheme.onSurface
+            },
+            maxLines = 1
+        )
     }
 }
