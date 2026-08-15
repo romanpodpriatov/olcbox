@@ -187,9 +187,6 @@ private fun IosApp(
                         }
                     })
                 },
-                onCopyConfigRequested = {
-                    dependencies.homeViewModel.onCopyFullConfigClicked()
-                },
                 onShareLocationRequested = { config: LocationConfig ->
                     platformBridge.shareText("Location", ConfigShareService.olcRtcUri(config))
                 },

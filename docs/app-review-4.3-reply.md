@@ -7,8 +7,31 @@ rewritten listing** — see `docs/app-store-listing.md`. The listing is the part
 actually caused this, and a reply that arrives against the old metadata repeats the
 mistake that kept 3.1.1 alive for two rounds (`docs/app-review-3.1.1-reply.md`).
 
-No new build is required. A rejected version can be resubmitted with the same binary
-and changed metadata.
+## Send a new build. Do not resubmit 1.0.270.
+
+A rejected version *can* be resubmitted on the same binary with changed metadata, and
+this document said to do that. That was wrong, and here is why.
+
+1.0.270 was stamped on 2026-08-06 (`6c3abe5`) and resubmitted on the 7th. Three things
+this reply depends on landed **after** it:
+
+| | | in 1.0.270 |
+|---|---|---|
+| `52a8e39` `b5eb547` `6b30d10` | occupancy rendered at all, parsed, and re-asked | **no** |
+| `6c25303` (08-08) | olcRTC rooms are not pingable | **no** |
+| `646864a` (08-07) | "subscription" → "server list" | landed the same day as the resubmission; which side of the archive it fell on is not knowable from the repo |
+
+So on the binary review currently holds, the server list has **no occupancy bars**, and
+every olcRTC row reads **Offline** — including the one carrying the connection, because
+`canPing` returned true for olcRTC and `ping()` for an olcRTC config joins the room as a
+real client, which cannot succeed while the tunnel is up. Null renders as Offline.
+
+The review notes and the reply below both tell the reviewer to select the first olcRTC
+entry and watch its live occupancy. On 1.0.270 they would find no bar and a list of dead
+servers. That is Guideline 2.1 stacked on top of the open 4.3, self-inflicted, and it
+would arrive with a message from us claiming the opposite.
+
+**Ship a build from current `main`, then send this.**
 
 ---
 

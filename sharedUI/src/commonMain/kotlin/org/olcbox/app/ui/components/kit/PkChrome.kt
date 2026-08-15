@@ -288,6 +288,8 @@ fun PkBoardHead(
     sortLabel: String,
     onSortClick: () -> Unit,
     modifier: Modifier = Modifier,
+    /** False over an empty board: nothing to order is nothing to offer. */
+    showSort: Boolean = true,
     chips: (@Composable () -> Unit)? = null
 ) {
     val palette = LocalPkPalette.current
@@ -308,23 +310,36 @@ fun PkBoardHead(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
-            Row(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(MaterialTheme.colorScheme.surfaceContainer)
-                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(10.dp))
-                    .clickable(onClickLabel = "Change sorting", role = Role.Button) { onSortClick() }
-                    .padding(horizontal = 11.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    imageVector = PkIcons.SwapVert,
-                    contentDescription = null,
-                    tint = palette.textDim,
-                    modifier = Modifier.size(13.dp)
-                )
-                Spacer(Modifier.width(7.dp))
-                Text(text = sortLabel, style = pkMono(10, 1.1), color = palette.textDim, maxLines = 1)
+            if (showSort) {
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(MaterialTheme.colorScheme.surfaceContainer)
+                        .border(
+                            1.dp,
+                            MaterialTheme.colorScheme.outlineVariant,
+                            RoundedCornerShape(10.dp)
+                        )
+                        .clickable(onClickLabel = "Change sorting", role = Role.Button) {
+                            onSortClick()
+                        }
+                        .padding(horizontal = 11.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = PkIcons.SwapVert,
+                        contentDescription = null,
+                        tint = palette.textDim,
+                        modifier = Modifier.size(13.dp)
+                    )
+                    Spacer(Modifier.width(7.dp))
+                    Text(
+                        text = sortLabel,
+                        style = pkMono(10, 1.1),
+                        color = palette.textDim,
+                        maxLines = 1
+                    )
+                }
             }
         }
         if (chips != null) {

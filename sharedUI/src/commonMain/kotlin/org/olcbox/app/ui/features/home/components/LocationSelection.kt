@@ -1,399 +1,506 @@
 package org.olcbox.app.ui.features.home.components
 
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
-import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.toMutableStateList
-import androidx.compose.runtime.setValue
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import org.olcbox.app.ui.icons.PkIcons
+import org.olcbox.app.data.model.LocationConfig
+import org.olcbox.app.data.model.SubscriptionSort
+import org.olcbox.app.net.OlcrtcSlots
 import org.olcbox.app.net.TransportKind
 import org.olcbox.app.net.transportKind
+import org.olcbox.app.ui.components.kit.PkDashedAction
 import org.olcbox.app.ui.components.kit.PkFilterChip
-import org.olcbox.app.ui.components.kit.PkSectionLabel
+import org.olcbox.app.ui.components.kit.PkGroupHeader
+import org.olcbox.app.ui.components.kit.PkIconButton
+import org.olcbox.app.ui.components.kit.PkPlanBar
+import org.olcbox.app.ui.components.kit.PkRoomCard
+import org.olcbox.app.ui.components.kit.PkSectionEyebrow
+import org.olcbox.app.ui.components.kit.planFraction
 import org.olcbox.app.ui.components.kit.pkSubscriptionHost
 import org.olcbox.app.ui.components.kit.pkSubscriptionIsSecret
-import org.olcbox.app.ui.theme.LocalPkPalette
-import org.olcbox.app.data.model.SubscriptionSort
-import org.olcbox.app.util.formatDate
-import org.olcbox.app.util.nowMillis
+import org.olcbox.app.ui.components.kit.seatDisplay
+import org.olcbox.app.ui.components.kit.seatFreeText
+import org.olcbox.app.ui.components.kit.transportTag
+import org.olcbox.app.ui.components.kit.wireShape
 import org.olcbox.app.ui.features.locations.LocationItem
-import org.olcbox.app.data.model.LocationConfig
-import org.olcbox.app.net.OlcrtcSlots
 import org.olcbox.app.ui.features.locations.PingsState
-import org.olcbox.app.ui.features.locations.components.LocationRow
 import org.olcbox.app.ui.features.locations.components.LatencyButton
 import org.olcbox.app.ui.features.locations.components.SubscriptionRefreshButton
+import org.olcbox.app.ui.icons.PkIcons
+import org.olcbox.app.ui.theme.LocalPkPalette
+import org.olcbox.app.util.formatDate
+import org.olcbox.app.util.nowMillis
+import org.olcbox.app.util.parseEmojiAndName
+
+/**
+ * The board: what is on it, and how it is drawn.
+ *
+ * Split in two on purpose. The filter chips and the heading are pinned above the
+ * list while the rows scroll under them, so what the list *is* has to be computed
+ * once, up in the screen, and handed to both halves — otherwise the chip counts
+ * and the rows can disagree about the same list.
+ */
+
+// ── what is on the board ───────────────────────────────────────────────────
+
+/**
+ * A chip in the transport filter. [order] keeps chips in protocol order (Reality,
+ * Hysteria2, XHTTP, …) rather than whatever order locations happen to arrive in.
+ */
+data class TransportFilterOption(
+    val key: String,
+    val label: String,
+    val order: Int
+)
+
+/** One server list, with the rows it contributed after filtering and sorting. */
+data class BoardGroup(
+    val key: String,
+    val locations: List<LocationItem>
+)
+
+data class BoardModel(
+    val filterOptions: List<TransportFilterOption>,
+    val filterCounts: Map<String, Int>,
+    val totalCount: Int,
+    val subscriptionGroups: List<BoardGroup>,
+    val customLocations: List<LocationItem>,
+    /** Whether anything on the board has seats, which decides what it is called. */
+    val hasRooms: Boolean,
+    val isEmpty: Boolean
+) {
+    /** Chips earn their row only from two options up; one chip is noise. */
+    val showChips: Boolean get() = filterOptions.size > 1
+}
+
+/**
+ * Filters, sorts and groups in one pass.
+ *
+ * [activeFilterKey] is resolved rather than repaired: a filter left over from a
+ * server list that no longer serves that transport simply reads as "All". Writing
+ * the state back here would be a write during composition.
+ */
+fun buildBoardModel(
+    locations: List<LocationItem>,
+    activeFilterKey: String?,
+    sort: SubscriptionSort,
+    pingFor: (String) -> Int?
+): BoardModel {
+    // olcRTC's own carriers (VP8 / SEI / DataChannel) sit one level below the
+    // protocol — they describe how data rides inside the call, not how the tunnel
+    // is reached. They earn their own chips only when a user actually has more
+    // than one, so the usual single olcRTC entry stays one chip.
+    val splitOlcrtcCarriers = locations
+        .mapNotNull { it.config }
+        .filter { it.transportKind() == TransportKind.Olcrtc }
+        .map { it.transport }
+        .distinct()
+        .size > 1
+
+    val optionPerLocation = locations.mapNotNull { it.transportFilterOption(splitOlcrtcCarriers) }
+    val counts = optionPerLocation.groupingBy { it.key }.eachCount()
+    val options = optionPerLocation.distinctBy { it.key }.sortedBy { it.order }
+    val active = activeFilterKey?.let { key -> options.firstOrNull { it.key == key } }
+
+    val visible = active
+        ?.let { option ->
+            locations.filter { it.transportFilterOption(splitOlcrtcCarriers)?.key == option.key }
+        }
+        ?: locations
+
+    // Sorted within a group, never across: the grouping is what tells a user which
+    // provider a row came from, and ordering the whole list by ping would shuffle
+    // two server lists into each other.
+    fun List<LocationItem>.sorted(): List<LocationItem> = when (sort) {
+        SubscriptionSort.None -> this
+        SubscriptionSort.Alphabetical -> sortedBy { item ->
+            (item.metadata?.name?.takeIf { it.isNotBlank() } ?: item.fullName).lowercase()
+        }
+        // Unmeasured sinks rather than sorting as zero, which would put every row
+        // nobody has probed yet at the top as if it were the fastest.
+        SubscriptionSort.Ping -> sortedBy { item -> pingFor(item.storageId) ?: Int.MAX_VALUE }
+    }
+
+    val fromSubscriptions = visible.filter { !it.subscriptionUrl.isNullOrBlank() }
+    val groups = fromSubscriptions
+        .groupBy { it.subscriptionGroupKey() }
+        .map { (key, items) -> BoardGroup(key, items.sorted()) }
+
+    return BoardModel(
+        filterOptions = options,
+        filterCounts = counts,
+        totalCount = locations.size,
+        subscriptionGroups = groups,
+        customLocations = visible.filter { it.subscriptionUrl.isNullOrBlank() }.sorted(),
+        hasRooms = locations.any { it.config?.transportKind() == TransportKind.Olcrtc },
+        isEmpty = locations.isEmpty()
+    )
+}
+
+/** The name and flag a row and the action bar both print for one location. */
+fun locationDisplayParts(item: LocationItem): Pair<String, String> {
+    val metadata = item.metadata
+    val raw = metadata?.name?.takeIf { it.isNotBlank() } ?: item.fullName
+    val fallbackIcon = metadata?.icon?.takeIf { it.isNotBlank() }
+        ?: metadata?.subscription?.icon?.takeIf { it.isNotBlank() }
+        ?: ""
+    val (emoji, parsed) = parseEmojiAndName(raw, fallbackIcon)
+    return emoji to parsed.ifBlank { item.config?.displayName().orEmpty() }
+}
+
+// ── the pinned chips ───────────────────────────────────────────────────────
 
 @Composable
-fun LocationSelectorScreen(
-    onGetSubscriptionClick: () -> Unit = {},
-    showGetSubscription: Boolean = true,
-    modifier: Modifier = Modifier,
-    onRefreshClick: (targetLocationIds: List<String>) -> Unit,
-    /** Re-fetch this subscription from its URL. Nothing to do with latency. */
-    onRefreshSubscriptionClick: (subscriptionUrl: String) -> Unit = {},
-    refreshingSubscriptionUrl: String? = null,
-    /** Opens a provider's support or web link in the system browser. */
-    onOpenUrl: (String) -> Unit = {},
-    onAddSubscriptionClick: () -> Unit,
-    onAddLocationClick: () -> Unit,
-    locations: List<LocationItem>,
+fun BoardFilterChips(
+    model: BoardModel,
+    activeFilterKey: String?,
+    onFilterSelected: (String?) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val active = model.filterOptions.firstOrNull { it.key == activeFilterKey }
+    Row(
+        modifier = modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(7.dp)
+    ) {
+        // The row scrolls, so the last chip would otherwise sit flush against the
+        // screen edge and read as cut off rather than as scrollable.
+        PkFilterChip(
+            label = "All",
+            selected = active == null,
+            count = model.totalCount,
+            onClick = { onFilterSelected(null) }
+        )
+        model.filterOptions.forEach { option ->
+            PkFilterChip(
+                label = option.label,
+                selected = active?.key == option.key,
+                count = model.filterCounts[option.key],
+                onClick = {
+                    onFilterSelected(if (active?.key == option.key) null else option.key)
+                }
+            )
+        }
+        Spacer(Modifier.width(16.dp))
+    }
+}
+
+// ── the scrolling board ────────────────────────────────────────────────────
+
+@Composable
+fun RoomBoard(
+    model: BoardModel,
     selectedLocationId: String?,
+    isConnected: Boolean,
     pingsState: PingsState,
-    /** olcRTC occupancy by storage id; a missing entry renders no bar at all. */
-    olcrtcSlots: Map<String, OlcrtcSlots> = emptyMap(),
-    /**
-     * Whether a location can be measured at all, asked of the platform rather than
-     * guessed here — it is the same predicate the measurement itself consults, so the
-     * button cannot appear on a group where pressing it does nothing.
-     */
-    canPing: (LocationConfig) -> Boolean = { true },
+    /** olcRTC occupancy by storage id; a missing entry renders no seats at all. */
+    olcrtcSlots: Map<String, OlcrtcSlots>,
+    /** How full each room has been, by storage id. Empty until a second poll lands. */
+    occupancyHistory: Map<String, List<Float>>,
+    canPing: (LocationConfig) -> Boolean,
+    collapsible: Boolean,
+    showSettings: Boolean,
+    showCustomLocation: Boolean,
+    showGetSubscription: Boolean,
+    refreshingSubscriptionUrl: String?,
     onLocationSelected: (String) -> Unit,
     onLocationSettingsClick: (String) -> Unit,
-    sort: SubscriptionSort = SubscriptionSort.None,
-    collapsible: Boolean = true,
-    showSettings: Boolean = true,
-    showCustomLocation: Boolean = true
-) {
-    Column(modifier = modifier.fillMaxWidth()) {
-        // 24 exits x 3 transports is 72 rows out of one subscription; without a
-        // filter the list is unusable. Chips only appear for transports actually
-        // present, so a single-transport subscription looks exactly as before.
-        var transportFilter by rememberSaveable { mutableStateOf<String?>(null) }
-        // olcRTC's own carriers (VP8 / SEI / DataChannel) sit one level below the
-        // protocol — they describe how data rides inside the call, not how the
-        // tunnel is reached. They earn their own chips only when a user actually
-        // has more than one, so the usual single olcRTC entry stays one chip.
-        val splitOlcrtcCarriers = locations
-            .mapNotNull { it.config }
-            .filter { it.transportKind() == TransportKind.Olcrtc }
-            .map { it.transport }
-            .distinct()
-            .size > 1
-        val optionPerLocation = locations.mapNotNull { it.transportFilterOption(splitOlcrtcCarriers) }
-        val counts = optionPerLocation.groupingBy { it.key }.eachCount()
-        val options = optionPerLocation.distinctBy { it.key }.sortedBy { it.order }
-        // Resolve rather than repair: a filter left over from a subscription that no
-        // longer serves that transport simply reads as "All". Writing the state back
-        // here would be a write during composition.
-        val activeFilter = transportFilter?.let { key -> options.firstOrNull { it.key == key } }
-
-        if (options.size > 1) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState())
-                    .padding(bottom = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                PkFilterChip(
-                    label = "All",
-                    selected = activeFilter == null,
-                    count = locations.size,
-                    onClick = { transportFilter = null }
-                )
-                options.forEach { option ->
-                    PkFilterChip(
-                        label = option.label,
-                        selected = activeFilter?.key == option.key,
-                        count = counts[option.key],
-                        onClick = {
-                            transportFilter =
-                                if (activeFilter?.key == option.key) null else option.key
-                        }
-                    )
-                }
-            }
-        }
-
-        val visibleLocations = activeFilter
-            ?.let { option ->
-                locations.filter { it.transportFilterOption(splitOlcrtcCarriers)?.key == option.key }
-            }
-            ?: locations
-
-        // Sorted within a group, never across: the grouping is what tells a user
-        // which provider a row came from, and ordering the whole list by ping
-        // would shuffle two subscriptions into each other.
-        fun List<LocationItem>.sorted(): List<LocationItem> = when (sort) {
-            SubscriptionSort.None -> this
-            SubscriptionSort.Alphabetical -> sortedBy { item ->
-                (item.metadata?.name?.takeIf { it.isNotBlank() } ?: item.fullName).lowercase()
-            }
-            // Unmeasured sinks rather than sorting as zero, which would put every
-            // row nobody has probed yet at the top as if it were the fastest.
-            SubscriptionSort.Ping -> sortedBy { item ->
-                pingsState.pingFor(item.storageId) ?: Int.MAX_VALUE
-            }
-        }
-
-        val subscriptionLocations = visibleLocations.filter { !it.subscriptionUrl.isNullOrBlank() }
-        val subscriptionGroups = subscriptionLocations
-            .groupBy { it.subscriptionGroupKey() }
-            .values
-            .map { it.sorted() }
-            .toList()
-        val customLocations = visibleLocations.filter { it.subscriptionUrl.isNullOrBlank() }.sorted()
-
-        if (locations.isEmpty()) {
-            RelaySetupCard(
-                onGetSubscriptionClick = onGetSubscriptionClick,
-                showGetSubscription = showGetSubscription,
-                onAddSubscriptionClick = onAddSubscriptionClick,
-                onAddLocationClick = onAddLocationClick,
-                showCustomLocation = showCustomLocation
-            )
-            return@Column
-        }
-
-        // Which groups are folded away. Two subscriptions of a dozen exits each
-        // is most of a phone screen before a user has scrolled at all, and the
-        // one they are not using is pure noise.
-        //
-        // Saveable, not merely remembered: opening a location's settings and
-        // coming back would otherwise unfold everything again.
-        val collapsed = rememberSaveable(
-            saver = listSaver(save = { it.toList() }, restore = { it.toMutableStateList() })
-        ) { mutableStateListOf<String>() }
-
-        fun toggle(key: String) {
-            if (!collapsed.remove(key)) collapsed.add(key)
-        }
-
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            subscriptionGroups.forEachIndexed { index, group ->
-                val groupKey = group.firstOrNull()?.subscriptionGroupKey() ?: "group-$index"
-                val isCollapsed = collapsible && groupKey in collapsed
-                Column(
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    val groupIds = group.map { it.storageId }
-                    val isGroupRefreshing = pingsState is PingsState.Loading &&
-                            pingsState.pendingLocationIds.any { it in groupIds }
-                    val groupUrl = group.firstOrNull()?.subscriptionUrl?.trim()
-
-                    SubscriptionGroupHeader(
-                        locations = group,
-                        collapsed = isCollapsed,
-                        // Folding one away must not hide the fact that the
-                        // exit in use is inside it.
-                        holdsSelection = group.any { it.storageId == selectedLocationId },
-                        collapsible = collapsible,
-                        isPinging = isGroupRefreshing,
-                        isRefreshing = groupUrl != null && groupUrl == refreshingSubscriptionUrl,
-                        canPingGroup = group.any { it.config?.let(canPing) == true },
-                        subscriptionUrl = groupUrl,
-                        onToggle = { toggle(groupKey) },
-                        onOpenUrl = onOpenUrl,
-                        onPingClick = { onRefreshClick(groupIds) },
-                        onRefreshSubscriptionClick = { groupUrl?.let(onRefreshSubscriptionClick) },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    if (!isCollapsed) {
-                        Spacer(modifier = Modifier.height(2.dp))
-                    }
-
-                    Column(
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        if (isCollapsed) return@Column
-                        group.forEach { location ->
-                            LocationSelectorRow(
-                                location = location,
-                                selectedLocationId = selectedLocationId,
-                                pingsState = pingsState,
-                                olcrtcSlots = olcrtcSlots,
-                                onLocationSelected = onLocationSelected,
-                                onLocationSettingsClick = onLocationSettingsClick,
-                                showSettings = showSettings
-                            )
-                        }
-                    }
-                }
-            }
-
-            if (customLocations.isNotEmpty()) {
-                Column(
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        LocationGroupHeader(
-                            title = "Custom locations",
-                            modifier = Modifier.weight(1f)
-                        )
-
-                        // Loading state for the custom locations only.
-                        val customIds = customLocations.map { it.storageId }
-                        val isCustomRefreshing = pingsState is PingsState.Loading &&
-                                pingsState.pendingLocationIds.any { it in customIds }
-
-                        if (customLocations.any { it.config?.let(canPing) == true }) {
-                            LatencyButton(
-                                isRunning = isCustomRefreshing,
-                                onClick = { onRefreshClick(customIds) },
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(6.dp))
-
-                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        customLocations.forEach { location ->
-                            LocationSelectorRow(
-                                location = location,
-                                selectedLocationId = selectedLocationId,
-                                pingsState = pingsState,
-                                olcrtcSlots = olcrtcSlots,
-                                onLocationSelected = onLocationSelected,
-                                onLocationSettingsClick = onLocationSettingsClick,
-                                // Always, unlike the subscription rows above.
-                                // A subscription owns its locations and editing one
-                                // by hand is plumbing, so that stays behind the
-                                // admin gate. A custom location was added by the
-                                // person looking at it, and anyone who can add one
-                                // must be able to delete it — the gate was making a
-                                // location they created permanent.
-                                showSettings = true
-                            )
-                        }
-                    }
-                }
-            }
-
-            if (showCustomLocation) {
-                FilledTonalButton(
-                    onClick = onAddLocationClick,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(54.dp),
-                    shape = RoundedCornerShape(16.dp)
-                ) {
-                    Icon(Icons.Rounded.Add, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = "Add custom location",
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-            }
-
-            if (subscriptionLocations.isEmpty()) {
-                FilledTonalButton(
-                    onClick = onAddSubscriptionClick,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(54.dp),
-                    shape = RoundedCornerShape(16.dp)
-                ) {
-                    Icon(Icons.Rounded.Add, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = "Add server list",
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-            }
-        }
-    }
-}
-
-/** A provider's link, as an icon. Nothing to read, nothing to translate. */
-@Composable
-private fun LinkButton(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    description: String,
-    onClick: () -> Unit
-) {
-    IconButton(onClick = onClick, modifier = Modifier.size(38.dp)) {
-        Icon(
-            imageVector = icon,
-            contentDescription = description,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(18.dp)
-        )
-    }
-}
-
-@Composable
-private fun RelaySetupCard(
+    onMeasure: (List<String>) -> Unit,
+    onRefreshSubscriptionClick: (String) -> Unit,
+    onOpenUrl: (String) -> Unit,
     onAddSubscriptionClick: () -> Unit,
     onAddLocationClick: () -> Unit,
-    onGetSubscriptionClick: () -> Unit = {},
-    showGetSubscription: Boolean = true,
-    showCustomLocation: Boolean = true
+    onGetSubscriptionClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        Box(modifier = Modifier.padding(start = 4.dp)) {
-            PkSectionLabel("Add relay setup")
+    if (model.isEmpty) {
+        RelaySetupCard(
+            modifier = modifier,
+            onAddLocationClick = onAddLocationClick,
+            showCustomLocation = showCustomLocation
+        )
+        return
+    }
+
+    // Which groups are folded away. Two server lists of a dozen exits each is most
+    // of a phone screen before a user has scrolled at all, and the one they are not
+    // using is pure noise.
+    //
+    // Saveable, not merely remembered: opening a location's settings and coming
+    // back would otherwise unfold everything again.
+    val collapsed = rememberSaveable(
+        saver = listSaver(save = { it.toList() }, restore = { it.toMutableStateList() })
+    ) { mutableStateListOf<String>() }
+
+    Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        model.subscriptionGroups.forEach { group ->
+            val isCollapsed = collapsible && group.key in collapsed
+            val ids = group.locations.map { it.storageId }
+            val first = group.locations.firstOrNull()
+            val groupUrl = first?.subscriptionUrl?.trim()
+            val isPinging = pingsState is PingsState.Loading &&
+                pingsState.pendingLocationIds.any { it in ids }
+
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(9.dp)
+            ) {
+                val subscription = first?.metadata?.subscription
+                val fraction = planFraction(subscription?.used, subscription?.available)
+
+                PkGroupHeader(
+                    title = first?.subscriptionTitle().orEmpty().ifBlank { "Server list" },
+                    // Both the quota and the expiry move into the bar where there
+                    // is one, rather than being printed twice in two shapes. What
+                    // is left on this line is how stale the list is, which is
+                    // short enough to survive four buttons beside it.
+                    meta = subscriptionMetaLine(
+                        quota = if (fraction == null) first?.subscriptionQuota() else null,
+                        expiresAtEpochMs = subscription?.expiresAtEpochMs
+                            ?.takeIf { fraction == null },
+                        lastRefreshAtEpochMs = subscription?.lastRefreshAtEpochMs,
+                        nowEpochMs = nowMillis(),
+                        formatDate = ::formatDate
+                    ),
+                    collapsed = isCollapsed,
+                    collapsible = collapsible,
+                    holdsSelection = group.locations.any { it.storageId == selectedLocationId },
+                    onToggle = { if (!collapsed.remove(group.key)) collapsed.add(group.key) }
+                ) {
+                    // Every control the group has, on the title's line: an i in a
+                    // circle for the provider's page, a paper plane for its
+                    // support, a bolt that measures and circling arrows that fetch
+                    // the list again.
+                    subscription?.webPageUrl?.takeIf { it.isNotBlank() }?.let { url ->
+                        PkIconButton(
+                            icon = PkIcons.Info,
+                            contentDescription = "Open the provider's site",
+                            onClick = { onOpenUrl(url) },
+                            size = 32,
+                            corner = 9
+                        )
+                    }
+                    subscription?.supportUrl?.takeIf { it.isNotBlank() }?.let { url ->
+                        PkIconButton(
+                            icon = PkIcons.Send,
+                            contentDescription = "Contact support",
+                            onClick = { onOpenUrl(url) },
+                            size = 32,
+                            corner = 9
+                        )
+                    }
+                    if (group.locations.any { it.config?.let(canPing) == true }) {
+                        LatencyButton(isRunning = isPinging, onClick = { onMeasure(ids) })
+                    }
+                    if (!groupUrl.isNullOrBlank()) {
+                        SubscriptionRefreshButton(
+                            isRefreshing = groupUrl == refreshingSubscriptionUrl,
+                            onClick = { onRefreshSubscriptionClick(groupUrl) }
+                        )
+                    }
+                }
+
+                if (fraction != null && !isCollapsed) {
+                    PkPlanBar(
+                        label = planLabel(subscription?.expiresAtEpochMs, nowMillis()),
+                        value = first?.subscriptionQuota().orEmpty(),
+                        fraction = fraction
+                    )
+                }
+
+                if (!isCollapsed) {
+                    Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                        group.locations.forEach { location ->
+                            BoardRoomCard(
+                                location = location,
+                                selected = location.storageId == selectedLocationId,
+                                isConnected = isConnected,
+                                pingsState = pingsState,
+                                slots = olcrtcSlots[location.storageId],
+                                history = occupancyHistory[location.storageId].orEmpty(),
+                                canPing = canPing,
+                                onClick = { onLocationSelected(location.storageId) },
+                                onLongClick = if (showSettings) {
+                                    { onLocationSettingsClick(location.storageId) }
+                                } else {
+                                    null
+                                },
+                                onMeasure = { onMeasure(listOf(location.storageId)) }
+                            )
+                        }
+                    }
+                }
+            }
         }
 
-        // There is no row here that points at a purchase. It was removed rather
-        // than hidden: App Review read the app as a front end for a paid plan, and
-        // a control that only a flag stands between us and shipping is not an
-        // answer to that. `showGetSubscription` stays as the guard against one
-        // being added back.
-
-        SetupActionRow(
-            title = "Add server list",
-            subtitle = "Scan QR, paste URI, or import file",
-            icon = PkIcons.QrCodeScanner,
-            onClick = onAddSubscriptionClick
-        )
+        if (model.customLocations.isNotEmpty()) {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(9.dp)
+            ) {
+                val customIds = model.customLocations.map { it.storageId }
+                val isCustomPinging = pingsState is PingsState.Loading &&
+                    pingsState.pendingLocationIds.any { it in customIds }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    PkSectionEyebrow(text = "Custom locations", modifier = Modifier.weight(1f))
+                    if (model.customLocations.any { it.config?.let(canPing) == true }) {
+                        LatencyButton(
+                            isRunning = isCustomPinging,
+                            onClick = { onMeasure(customIds) }
+                        )
+                    }
+                }
+                model.customLocations.forEach { location ->
+                    BoardRoomCard(
+                        location = location,
+                        selected = location.storageId == selectedLocationId,
+                        isConnected = isConnected,
+                        pingsState = pingsState,
+                        slots = olcrtcSlots[location.storageId],
+                        history = occupancyHistory[location.storageId].orEmpty(),
+                        canPing = canPing,
+                        onClick = { onLocationSelected(location.storageId) },
+                        // Always, unlike the rows above. A server list owns its
+                        // locations and editing one by hand is plumbing, so that
+                        // stays behind the admin gate. A custom location was added
+                        // by the person looking at it, and anyone who can add one
+                        // must be able to delete it.
+                        onLongClick = { onLocationSettingsClick(location.storageId) },
+                        onMeasure = { onMeasure(listOf(location.storageId)) }
+                    )
+                }
+            }
+        }
 
         if (showCustomLocation) {
-            SetupActionRow(
-                title = "Create custom location",
-                subtitle = "Enter room, key, provider, and transport",
+            PkDashedAction(
+                label = "Create custom location",
+                icon = Icons.Outlined.Add,
+                onClick = onAddLocationClick
+            )
+        }
+
+        PkDashedAction(
+            label = "Add server list",
+            icon = Icons.Outlined.Add,
+            onClick = onAddSubscriptionClick
+        )
+    }
+}
+
+@Composable
+private fun BoardRoomCard(
+    location: LocationItem,
+    selected: Boolean,
+    isConnected: Boolean,
+    pingsState: PingsState,
+    slots: OlcrtcSlots?,
+    history: List<Float>,
+    canPing: (LocationConfig) -> Boolean,
+    onClick: () -> Unit,
+    onLongClick: (() -> Unit)?,
+    onMeasure: () -> Unit
+) {
+    val (emoji, name) = locationDisplayParts(location)
+    val seats = seatDisplay(slots)
+    val config = location.config
+    PkRoomCard(
+        title = name,
+        tag = transportTag(config),
+        emoji = emoji,
+        selected = selected,
+        connectedHere = selected && isConnected,
+        blocked = slots?.isBlocked == true,
+        seats = seats,
+        seatCountText = slots?.let { "${it.used} / ${it.slots_total}" },
+        freeText = seatFreeText(slots),
+        freeIsFull = slots != null && slots.slots_free <= 0,
+        freeIsTight = slots != null && slots.slots_free in 1..2,
+        history = history,
+        pingMs = pingsState.pingFor(location.storageId),
+        isMeasuring = pingsState.isChecking(location.storageId),
+        isOffline = pingsState.isOffline(location.storageId),
+        wire = wireShape(config),
+        onClick = onClick,
+        onLongClick = onLongClick,
+        // No MEASURE where the platform says nothing can be measured — a button
+        // whose only outcome is a snackbar explaining that it cannot work is
+        // worse than no button.
+        onMeasure = if (config?.let(canPing) == true) onMeasure else null
+    )
+}
+
+/** `PLAN · RESETS IN 12D`, or just `PLAN` where no expiry was reported. */
+internal fun planLabel(expiresAtEpochMs: Long?, nowEpochMs: Long): String {
+    val days = expiresAtEpochMs
+        ?.let { (it - nowEpochMs) / DAY_MILLIS }
+        ?.takeIf { it >= 0 }
+        ?: return "Plan"
+    return if (days == 0L) "Plan · resets today" else "Plan · resets in ${days}d"
+}
+
+// ── the empty board ────────────────────────────────────────────────────────
+
+/**
+ * What a board with nothing on it offers.
+ *
+ * There is no row here that points at a purchase. It was removed rather than
+ * hidden: App Review read the app as a front end for a paid plan, and a control
+ * that only a flag stands between us and shipping is not an answer to that.
+ * `RoomBoard`'s `showGetSubscription` stays as the guard against one being added
+ * back, which is why it is still a parameter nothing reads.
+ */
+@Composable
+private fun RelaySetupCard(
+    onAddLocationClick: () -> Unit,
+    showCustomLocation: Boolean,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        PkSectionEyebrow("Nothing here yet")
+
+        // What the app is, said once, on the one screen a first-run user and an
+        // App Store reviewer both see. The empty state used to be the words
+        // "Import a server list to start" and nothing else — which was submitted
+        // as screenshot one, and describes every client on the store.
+        PkEmptyBoardNote()
+
+        // No "add a server list" affordance here: the action bar at the bottom of
+        // this screen already is one, in lime, full width. Two of them a thumb
+        // apart is one control too many, not a choice.
+        if (showCustomLocation) {
+            Spacer(Modifier.height(2.dp))
+            PkDashedAction(
+                label = "Create custom location",
                 icon = Icons.Outlined.Add,
                 onClick = onAddLocationClick
             )
@@ -402,325 +509,55 @@ private fun RelaySetupCard(
 }
 
 @Composable
-private fun SetupActionRow(
-    title: String,
-    subtitle: String,
-    icon: ImageVector,
-    prominent: Boolean = false,
-    onClick: () -> Unit
-) {
-    val containerColor = if (prominent) {
-        MaterialTheme.colorScheme.secondaryContainer
-    } else {
-        MaterialTheme.colorScheme.surfaceContainerHigh
-    }
-
-    val borderColor = if (prominent) {
-        MaterialTheme.colorScheme.primary
-    } else {
-        MaterialTheme.colorScheme.outlineVariant
-    }
-
-    val contentColor = if (prominent) {
-        MaterialTheme.colorScheme.onSecondaryContainer
-    } else {
-        MaterialTheme.colorScheme.onSurface
-    }
-
-    Surface(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(18.dp),
-        color = containerColor,
-        border = BorderStroke(1.dp, borderColor)
+private fun PkEmptyBoardNote() {
+    val palette = LocalPkPalette.current
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerLow)
+            .border(1.dp, palette.hairline, RoundedCornerShape(16.dp))
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(72.dp)
-                .padding(horizontal = 18.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Surface(
-                modifier = Modifier.size(42.dp),
-                shape = CircleShape,
-                color = if (prominent) {
-                    MaterialTheme.colorScheme.primaryContainer
-                } else {
-                    MaterialTheme.colorScheme.secondaryContainer
-                },
-                contentColor = if (prominent) {
-                    MaterialTheme.colorScheme.onPrimaryContainer
-                } else {
-                    MaterialTheme.colorScheme.onSecondaryContainer
-                }
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(imageVector = icon, contentDescription = null)
-                }
-            }
-
-            Spacer(modifier = Modifier.width(14.dp))
-
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = contentColor,
-                    fontWeight = FontWeight.SemiBold
-                )
-
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = contentColor.copy(alpha = 0.72f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun LocationGroupHeader(
-    title: String,
-    modifier: Modifier = Modifier
-) {
-    Box(modifier = modifier.padding(top = 2.dp, start = 4.dp)) {
-        PkSectionLabel(title)
-    }
-}
-
-@Composable
-private fun SubscriptionGroupHeader(
-    locations: List<LocationItem>,
-    collapsed: Boolean,
-    collapsible: Boolean,
-    holdsSelection: Boolean,
-    isPinging: Boolean,
-    isRefreshing: Boolean,
-    canPingGroup: Boolean,
-    subscriptionUrl: String?,
-    onToggle: () -> Unit,
-    onOpenUrl: (String) -> Unit,
-    onPingClick: () -> Unit,
-    onRefreshSubscriptionClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val pk = LocalPkPalette.current
-    val first = locations.firstOrNull()
-    val subscription = first?.metadata?.subscription
-    val title = first?.subscriptionTitle().orEmpty().ifBlank { "Server lists" }
-    // Folded, one line that says how much is hidden and what is left of the plan.
-    val metaLine = if (collapsed) {
-        listOfNotNull(
-            "${locations.size} " + if (locations.size == 1) "location" else "locations",
-            first?.subscriptionQuota()
-        ).joinToString(" · ")
-    } else {
-        subscriptionMetaLine(
-            quota = first?.subscriptionQuota(),
-            expiresAtEpochMs = subscription?.expiresAtEpochMs,
-            lastRefreshAtEpochMs = subscription?.lastRefreshAtEpochMs,
-            nowEpochMs = nowMillis(),
-            formatDate = ::formatDate
+        Text(
+            text = "Rooms with seats",
+            style = MaterialTheme.typography.titleMedium.copy(fontSize = 15.sp),
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        Text(
+            text = "An olcRTC relay holds a fixed number of seats, and a full room " +
+                "cannot take you. Add a server list and its rooms appear here with " +
+                "their occupancy moving as people come and go.",
+            style = MaterialTheme.typography.bodySmall,
+            color = palette.textDim
         )
     }
-    // A quarter turn rather than two icons: the same arrow points at the rows
-    // when they are there and at the title when they are not.
-    val turn by animateFloatAsState(if (collapsed) -90f else 0f, label = "groupChevron")
-
-    // A column, not a row. The metadata used to live inside the title's own
-    // weight(1f) column with four icon buttons beside it, which left it roughly
-    // half the screen and truncated "Expires 09.09.2026" into "Expires…" while
-    // two thirds of the row sat empty under the buttons.
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .then(if (collapsible) Modifier.clickable(onClick = onToggle) else Modifier)
-            .padding(start = 4.dp, top = 2.dp, bottom = 2.dp, end = 4.dp)
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            // No chevron where folding is switched off: an arrow that does not fold
-            // anything is a promise the screen does not keep.
-            if (collapsible) {
-                Icon(
-                    imageVector = PkIcons.ChevronRight,
-                    contentDescription = if (collapsed) "Expand" else "Collapse",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier
-                        .size(18.dp)
-                        .rotate(turn + 90f)
-                )
-
-                Spacer(modifier = Modifier.width(2.dp))
-            }
-
-            Row(
-                modifier = Modifier.weight(1f),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false)
-                )
-
-                // Folded away, the group still has to admit it holds the exit
-                // currently in use — otherwise the screen shows no selection at
-                // all and the user goes looking for one.
-                if (collapsed && holdsSelection) {
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Box(
-                        modifier = Modifier
-                            .size(7.dp)
-                            .clip(CircleShape)
-                            .background(pk.accent)
-                    )
-                }
-            }
-
-            // Every control the group has, on the title's line: an i in a circle
-            // for the provider's page, a paper plane for its support, a bolt that
-            // measures and circling arrows that fetch the list again.
-            subscription?.webPageUrl?.takeIf { it.isNotBlank() }?.let { url ->
-                LinkButton(
-                    icon = PkIcons.Info,
-                    description = "Open the provider's site",
-                    onClick = { onOpenUrl(url) }
-                )
-            }
-            subscription?.supportUrl?.takeIf { it.isNotBlank() }?.let { url ->
-                LinkButton(
-                    icon = PkIcons.Send,
-                    description = "Contact support",
-                    onClick = { onOpenUrl(url) }
-                )
-            }
-            if (canPingGroup) {
-                LatencyButton(
-                    isRunning = isPinging,
-                    onClick = onPingClick,
-                    tint = MaterialTheme.colorScheme.primary
-                )
-            }
-            if (!subscriptionUrl.isNullOrBlank()) {
-                SubscriptionRefreshButton(
-                    isRefreshing = isRefreshing,
-                    onClick = onRefreshSubscriptionClick,
-                    tint = MaterialTheme.colorScheme.primary
-                )
-            }
-        }
-
-        // A provider that told us nothing gets no line, rather than an empty row
-        // of the height of one.
-        if (!metaLine.isNullOrBlank()) {
-            Text(
-                text = metaLine,
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    // Under the title, not under the chevron: the icon and the
-                    // spacer beside it are what the title itself starts after.
-                    .padding(start = if (collapsible) 20.dp else 0.dp)
-            )
-        }
-    }
 }
 
-@Composable
-private fun LocationSelectorRow(
-    location: LocationItem,
-    selectedLocationId: String?,
-    pingsState: PingsState,
-    /** olcRTC occupancy by storage id; a missing entry renders no bar at all. */
-    olcrtcSlots: Map<String, OlcrtcSlots>,
-    onLocationSelected: (String) -> Unit,
-    onLocationSettingsClick: (String) -> Unit,
-    showSettings: Boolean = true
-) {
-    val pingMs = pingsState.pingFor(location.storageId)
-    val isLoading = pingsState.isChecking(location.storageId)
-    val isOffline = pingsState.isOffline(location.storageId)
+// ── ping state readers ─────────────────────────────────────────────────────
 
-    LocationRow(
-        location = location,
-        isSelected = selectedLocationId == location.storageId,
-        isLoading = isLoading,
-        isError = isOffline,
-        pingMs = pingMs,
-        slots = olcrtcSlots[location.storageId],
-        settingsEnabled = showSettings,
-        onSettingsClick = {
-            onLocationSettingsClick(location.storageId)
-        },
-        onClick = {
-            onLocationSelected(location.storageId)
-        }
-    )
+internal fun PingsState.pingFor(locationId: String): Int? = when (this) {
+    PingsState.Idle -> null
+    is PingsState.Loading ->
+        if (currentPings.containsKey(locationId)) currentPings[locationId]
+        else lastPings?.get(locationId)
+    is PingsState.Success -> pings[locationId]
+    is PingsState.Error -> lastPings?.get(locationId)
 }
 
-private fun PingsState.pingFor(locationId: String): Int? {
-    return when (this) {
-        PingsState.Idle -> null
+internal fun PingsState.isChecking(locationId: String): Boolean =
+    this is PingsState.Loading && locationId in pendingLocationIds
 
-        is PingsState.Loading -> {
-            if (currentPings.containsKey(locationId)) {
-                currentPings[locationId]
-            } else {
-                lastPings?.get(locationId)
-            }
-        }
-
-        is PingsState.Success -> {
-            pings[locationId]
-        }
-
-        is PingsState.Error -> {
-            lastPings?.get(locationId)
-        }
-    }
+internal fun PingsState.isOffline(locationId: String): Boolean = when (this) {
+    PingsState.Idle -> false
+    is PingsState.Loading ->
+        currentPings.containsKey(locationId) && currentPings[locationId] == null
+    is PingsState.Success -> pings.containsKey(locationId) && pings[locationId] == null
+    is PingsState.Error -> false
 }
 
-private fun PingsState.isChecking(locationId: String): Boolean {
-    return this is PingsState.Loading && locationId in pendingLocationIds
-}
-
-private fun PingsState.isOffline(locationId: String): Boolean {
-    return when (this) {
-        PingsState.Idle -> false
-
-        is PingsState.Loading -> {
-            currentPings.containsKey(locationId) && currentPings[locationId] == null
-        }
-
-        is PingsState.Success -> {
-            pings.containsKey(locationId) && pings[locationId] == null
-        }
-
-        is PingsState.Error -> false
-    }
-}
-
-/**
- * A chip in the transport filter. [order] keeps chips in protocol order (Reality,
- * Hysteria2, XHTTP, …) rather than whatever order locations happen to arrive in.
- */
-private data class TransportFilterOption(
-    val key: String,
-    val label: String,
-    val order: Int
-)
+// ── naming and metadata ────────────────────────────────────────────────────
 
 private fun LocationItem.transportFilterOption(
     splitOlcrtcCarriers: Boolean
@@ -737,33 +574,32 @@ private fun LocationItem.transportFilterOption(
     return TransportFilterOption(key = kind.name, label = kind.label(), order = kind.ordinal)
 }
 
-private fun LocationItem.subscriptionGroupKey(): String {
-    return listOfNotNull(
-        metadata?.subscription?.name?.takeIf { it.isNotBlank() },
-        subscriptionUrl?.trim()?.takeIf { it.isNotBlank() }
-    ).joinToString("|").ifBlank { storageId }
-}
+private fun LocationItem.subscriptionGroupKey(): String = listOfNotNull(
+    metadata?.subscription?.name?.takeIf { it.isNotBlank() },
+    subscriptionUrl?.trim()?.takeIf { it.isNotBlank() }
+).joinToString("|").ifBlank { storageId }
 
 private fun LocationItem.subscriptionTitle(): String {
     val subscription = metadata?.subscription
-    // Falling back to the literal "Server lists" labelled every unnamed
-    // subscription identically, so two of them read as the same heading twice.
-    // Identify by host instead — except for an encrypted subscription, whose host
-    // is one of the things its link was hiding.
+    // Falling back to a literal labelled every unnamed server list identically, so
+    // two of them read as the same heading twice. Identify by host instead —
+    // except for an encrypted one, whose host is a thing its link was hiding.
     val secret = subscriptionUrl?.let { pkSubscriptionIsSecret(it, subscriptionOriginLink) } == true
     val name = subscription?.name?.takeIf { it.isNotBlank() }
         ?: subscriptionUrl?.takeUnless { secret }?.let { pkSubscriptionHost(it) }
         ?: if (secret) "Encrypted list" else "Server list"
 
-    return listOfNotNull(
-        subscription?.icon?.takeIf { it.isNotBlank() },
-        name
-    ).joinToString(" ")
+    return listOfNotNull(subscription?.icon?.takeIf { it.isNotBlank() }, name).joinToString(" ")
+}
+
+private fun LocationItem.subscriptionQuota(): String? {
+    val subscription = metadata?.subscription ?: return null
+    return quotaText(subscription.used, subscription.available)
 }
 
 /**
- * The one line a subscription gets under its name: what is left of the plan,
- * when it runs out, and how stale the list is.
+ * The one line a server list gets under its name: what is left of the plan, when
+ * it runs out, and how stale the list is.
  *
  * All of it comes from the provider's own response headers. It used to be two
  * lines *inside* the title's own column, which is why it truncated — four icon
@@ -799,21 +635,14 @@ internal fun subscriptionAge(lastRefreshAtEpochMs: Long, nowEpochMs: Long): Stri
     }
 }
 
-private fun LocationItem.subscriptionQuota(): String? {
-    val subscription = metadata?.subscription ?: return null
-    return quotaText(subscription.used, subscription.available)
-}
-
-internal fun quotaText(used: String?, available: String?): String? {
-    return when {
-        // "6.3/300 GB" when both sides are in the same unit, "9.4 MB / 300 GB"
-        // when they are not. Saying GB twice costs five characters on a line that
-        // has to fit a phone, and says nothing the once did not.
-        !used.isNullOrBlank() && !available.isNullOrBlank() -> compactQuota(used, available)
-        !used.isNullOrBlank() -> "$used used"
-        !available.isNullOrBlank() -> "$available available"
-        else -> null
-    }
+internal fun quotaText(used: String?, available: String?): String? = when {
+    // "6.3/300 GB" when both sides are in the same unit, "9.4 MB / 300 GB" when
+    // they are not. Saying GB twice costs five characters on a line that has to
+    // fit a phone, and says nothing the once did not.
+    !used.isNullOrBlank() && !available.isNullOrBlank() -> compactQuota(used, available)
+    !used.isNullOrBlank() -> "$used used"
+    !available.isNullOrBlank() -> "$available available"
+    else -> null
 }
 
 private fun compactQuota(used: String, available: String): String {
@@ -822,9 +651,8 @@ private fun compactQuota(used: String, available: String): String {
     if (usedUnit.isBlank() || !usedUnit.equals(availableUnit, ignoreCase = true)) {
         return "$used / $available"
     }
-    val usedValue = used.trim().substringBeforeLast(' ')
-    val availableValue = available.trim().substringBeforeLast(' ')
-    return "$usedValue/$availableValue $availableUnit"
+    return "${used.trim().substringBeforeLast(' ')}/${available.trim().substringBeforeLast(' ')} " +
+        availableUnit
 }
 
 private const val MINUTE_MILLIS = 60_000L

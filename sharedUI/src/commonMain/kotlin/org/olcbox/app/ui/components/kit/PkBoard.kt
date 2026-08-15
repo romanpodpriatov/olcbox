@@ -228,20 +228,27 @@ fun PkRoomCard(
                 color = if (selected) palette.accent else MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f, fill = false)
+                // The name takes the room, and the tag beside it is one word. Both
+                // used to be sized to their content with the tag carrying the whole
+                // of `protocolLabels()`, which left "United States" nine characters
+                // and an ellipsis.
+                modifier = Modifier.weight(1f)
             )
             if (!tag.isNullOrBlank()) {
                 Spacer(Modifier.width(8.dp))
                 Text(text = tag, style = pkMono(9, 0.6), color = palette.textMuted, maxLines = 1)
             }
-            if (selected) {
+            // No "SELECTED" badge: the lime border and the lime name already say
+            // that, three times over. "YOUR SEAT" stays because it says something
+            // else — that the session running right now is on this card.
+            if (connectedHere) {
                 Spacer(Modifier.width(8.dp))
-                PkBadge(
-                    text = if (connectedHere) "YOUR SEAT" else "SELECTED",
-                    highlighted = connectedHere
-                )
+                PkBadge(text = "YOUR SEAT", highlighted = true)
             }
-            Spacer(Modifier.weight(1f))
+            // The title carries the weight, so nothing after it is pushed apart on
+            // its own — without this the tag and the seat count ran together as
+            // "SEI7 free".
+            Spacer(Modifier.width(10.dp))
             if (!freeText.isNullOrBlank()) {
                 Text(
                     text = freeText,

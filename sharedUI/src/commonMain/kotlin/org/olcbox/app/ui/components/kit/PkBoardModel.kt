@@ -37,6 +37,20 @@ fun wireShape(config: LocationConfig?): String {
     }
 }
 
+/**
+ * The one word beside a card's name: `VP8`, `Reality`, `Salamander`.
+ *
+ * The word, not the sentence. The card used to print the whole of
+ * `protocolLabels()` here — "Telemost · VP8" — which on a name like "United
+ * States" left the name itself about nine characters and ellipsised it. What the
+ * longer form adds is already in the wire line under the selected card.
+ */
+fun transportTag(config: LocationConfig?): String? {
+    if (config == null) return null
+    if (config.transportKind() == TransportKind.Olcrtc) return config.transportName()
+    return config.protocolLabels().lastOrNull()?.takeIf { it.isNotBlank() }
+}
+
 // ── seats ──────────────────────────────────────────────────────────────────
 
 enum class SeatState {

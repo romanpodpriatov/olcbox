@@ -8,6 +8,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import org.olcbox.app.net.LocationKind
 import org.olcbox.app.net.OlcrtcSlots
+import org.olcbox.app.ui.components.kit.appendOccupancy
 import org.olcbox.app.net.OlcrtcStatusClient
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
@@ -77,6 +78,19 @@ class LocationViewModel(
      * invite people onto a node that may well be full.
      */
     var olcrtcSlots by mutableStateOf<Map<String, OlcrtcSlots>>(emptyMap())
+        private set
+
+    /**
+     * How full each olcRTC node has been over the last few polls, by storage id.
+     *
+     * Not persisted, and deliberately: the sparkline it draws answers "is this
+     * filling up or emptying out", which is a question about now. A line restored
+     * from yesterday's samples would answer a question nobody asked, and would do
+     * it confidently.
+     *
+     * Fed by [refreshOlcrtcSlots], which already runs on the screen's own tick.
+     */
+    var olcrtcHistory by mutableStateOf<Map<String, List<Float>>>(emptyMap())
         private set
 
     private var olcrtcSlotsJob: Job? = null
@@ -554,6 +568,12 @@ class LocationViewModel(
             // Merge rather than replace: a node that failed this pass keeps the number
             // it had, which is older but truer than nothing.
             olcrtcSlots = olcrtcSlots + fetched
+            // Only nodes that answered this pass get a sample. Repeating the last
+            // reading for one that did not would draw a flat line through an
+            // outage, which is the one shape that means "nothing is changing".
+            olcrtcHistory = olcrtcHistory + fetched.mapValues { (storageId, slots) ->
+                appendOccupancy(olcrtcHistory[storageId], slots)
+            }
         }
     }
 }

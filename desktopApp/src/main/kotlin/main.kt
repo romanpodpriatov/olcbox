@@ -380,9 +380,6 @@ fun main(args: Array<String>) = application {
                         )
                     },
                     onScanQrRequested = {},
-                    onCopyConfigRequested = {
-                        dependencies.homeViewModel.onCopyFullConfigClicked()
-                    },
                     onShareLocationRequested = { config ->
                         sharePayload = "Location QR" to ConfigShareService.olcRtcUri(config)
                     },

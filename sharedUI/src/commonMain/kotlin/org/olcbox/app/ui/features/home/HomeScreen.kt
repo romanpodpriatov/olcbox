@@ -1,48 +1,50 @@
 package org.olcbox.app.ui.features.home
 
 import androidx.compose.foundation.ScrollState
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import org.olcbox.app.data.model.LocationConfig
 import org.olcbox.app.admin.AdminState
-import org.olcbox.app.net.TransportGroup
+import org.olcbox.app.data.model.LocationConfig
+import org.olcbox.app.net.TransportKind
 import org.olcbox.app.net.transportKind
-import org.olcbox.app.ui.components.StartButton
+import org.olcbox.app.ui.components.AdminPasswordDialog
 import org.olcbox.app.ui.components.VpnDisclosureScreen
-import org.olcbox.app.ui.components.kit.PkVersionFooter
-import org.olcbox.app.ui.components.kit.pkScreenBackground
+import org.olcbox.app.ui.components.kit.boardAction
+import org.olcbox.app.ui.components.kit.boardHeading
+import org.olcbox.app.ui.components.kit.nextSort
+import org.olcbox.app.ui.components.kit.shortenExitName
+import org.olcbox.app.ui.components.kit.sortLabel
 import org.olcbox.app.ui.features.home.components.AddConfigurationSheet
-import org.olcbox.app.ui.features.home.components.HomeScreenAppBar
-import org.olcbox.app.ui.features.home.components.LocationSelectorScreen
 import org.olcbox.app.ui.features.home.components.LogsSheet
-import org.olcbox.app.ui.features.home.components.RelayNotice
-import org.olcbox.app.ui.features.home.components.RelayStatus
+import org.olcbox.app.ui.features.home.components.buildBoardModel
+import org.olcbox.app.ui.features.home.components.formatSessionDuration
+import org.olcbox.app.ui.features.home.components.locationDisplayParts
+import org.olcbox.app.ui.features.home.components.pingFor
 import org.olcbox.app.ui.features.locations.LocationViewModel
+import org.olcbox.app.util.formatByteSize
+import org.olcbox.app.util.nowMillis
 
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * The board, and the two pinned things that frame it.
+ *
+ * What changed from the layout this replaces, and why: the 200dp circular power
+ * dial is gone. It was the most recognisable piece of a silhouette shared with
+ * every other sing-box front end, it ate the top third of the screen to say one
+ * word, and it could not name what it would connect to. The bar at the bottom
+ * always does.
+ *
+ * Everything here is state and effects; the layout itself is `HomeScreenContent`.
+ */
 @Composable
 fun HomeScreen(
     viewModel: HomeScreenViewModel,
@@ -52,7 +54,6 @@ fun HomeScreen(
     onImportFileRequested: () -> Unit = {},
     onImportFromClipboardRequested: (onImported: () -> Unit, onError: (String) -> Unit) -> Unit = { _, _ -> },
     onScanQrRequested: () -> Unit = {},
-    onCopyConfigRequested: () -> Unit = { viewModel.onCopyFullConfigClicked() },
     onSaveLogsRequested: (onSaved: (String) -> Unit, onError: (String) -> Unit) -> Unit = { _, _ -> },
     showAppSettingsButton: Boolean = false,
     canScanQr: Boolean = false,
@@ -71,6 +72,10 @@ fun HomeScreen(
     var isAddSheetOpen by remember { mutableStateOf(false) }
     var isRefreshingSubscriptions by remember { mutableStateOf(false) }
     var refreshingSubscriptionUrl by remember { mutableStateOf<String?>(null) }
+    var showAdminDialog by remember { mutableStateOf(false) }
+    // 24 exits x 3 transports is 72 rows out of one server list; without a filter
+    // the list is unusable. Chips only appear for transports actually present.
+    var transportFilter by rememberSaveable { mutableStateOf<String?>(null) }
 
     val state by viewModel.state.collectAsState()
     val connectedSince by viewModel.connectedSince.collectAsState()
@@ -83,22 +88,24 @@ fun HomeScreen(
     val locations = locationViewModel.locations.toList()
     val hasSubscriptions = locations.any { !it.subscriptionUrl.isNullOrBlank() }
 
-    // The per-location editor and "create custom location" are plumbing, and
-    // this predicate fails closed: see AdminState.plumbingVisible. Everything a
-    // user legitimately needs — settings, subscription management, split
-    // tunneling, logs — is visible regardless.
-    //
-    // Locations come from a link, a file or a QR code. Building one by hand
-    // means typing a room, a key, a provider and a transport, which is not a
-    // thing to ask of anyone who did not set the network up.
+    // The per-location editor and "create custom location" are plumbing, and this
+    // predicate fails closed: see AdminState.plumbingVisible. Everything a user
+    // legitimately needs — settings, server lists, split tunneling, logs — is
+    // visible regardless.
     val admin = AdminState.plumbingVisible
 
     val requiresSetup = !state.canStartVpn && !state.isVpnConnected && !state.isVpnLoading
 
-    val primaryActionLabel = when {
-        requiresSetup -> "SETUP"
-        state.isVpnLoading || state.isVpnConnected -> "STOP"
-        else -> "START"
+    // Elapsed time is not derived from anything Compose can observe, so it is
+    // resampled on a timer rather than recomputed on recomposition. Only while a
+    // session is up: a loop ticking over an idle screen is a wakeup a second for
+    // a number nobody is reading.
+    var nowTick by remember { mutableStateOf(nowMillis()) }
+    LaunchedEffect(state.isVpnConnected, connectedSince) {
+        while (state.isVpnConnected && connectedSince != null) {
+            delay(1_000)
+            nowTick = nowMillis()
+        }
     }
 
     val vpnDisclosureAccepted by viewModel.vpnDisclosureAccepted.collectAsState()
@@ -112,8 +119,8 @@ fun HomeScreen(
                 onToggleClick()
             },
             // Declining leaves the app exactly as it was, connecting nothing.
-            // Pressing START again brings the screen back, which is the half of
-            // the flow the Play declaration video has to show.
+            // Pressing the bar again brings it back, which is the half of the flow
+            // the Play declaration video has to show.
             onDecline = { showVpnDisclosure = false }
         )
     }
@@ -123,7 +130,7 @@ fun HomeScreen(
      *
      * Captured before a refresh and compared after, because a refresh that changed
      * nothing about the active location has no reason to tear its tunnel down. Refresh
-     * used to restart unconditionally, so pressing the arrow on one subscription
+     * used to restart unconditionally, so pressing the arrow on one server list
      * dropped a connection running on another — the user pressed "update the list" and
      * got their traffic cut.
      */
@@ -145,10 +152,7 @@ fun HomeScreen(
             locationViewModel.loadLocations {
                 isRefreshingSubscriptions = false
                 restartIfActiveChanged(activeBefore)
-
-                scope.launch {
-                    snackbarHostState.showSnackbar(report.bulkMessage())
-                }
+                scope.launch { snackbarHostState.showSnackbar(report.bulkMessage()) }
             }
         }
     }
@@ -166,10 +170,10 @@ fun HomeScreen(
     }
 
     fun refreshHttpPings(targetLocationIds: List<String>? = null) {
-        // The button is always there; the measurement is not always possible.
-        // Latency is timed through a connection, so with nothing connected only
-        // an olcRTC room can be probed — say that instead of appearing to do
-        // nothing, which is what the user is left with otherwise.
+        // The control is always there; the measurement is not always possible.
+        // Latency is timed through a connection, so with nothing connected only an
+        // olcRTC room can be probed — say that instead of appearing to do nothing,
+        // which is what the user is left with otherwise.
         val measurable = locations.any { item ->
             (targetLocationIds == null || item.storageId in targetLocationIds) &&
                 item.config?.let { viewModel.canPing(it) } == true
@@ -190,9 +194,7 @@ fun HomeScreen(
 
         locationViewModel.refreshPings(
             targetLocationIds = targetLocationIds,
-            performPing = { config ->
-                viewModel.performPingFor(config)
-            },
+            performPing = { config -> viewModel.performPingFor(config) },
             canPing = { config -> viewModel.canPing(config) },
         )
     }
@@ -208,11 +210,12 @@ fun HomeScreen(
     // count moves and the moment the user is looking at it, and on a slow tick besides
     // for everyone else's comings and goings. The tick is well inside the server's
     // five-minute presence window, so a freed slot shows up long before it would
-    // matter, and each pass is one small request per olcRTC location.
+    // matter, and each pass is one small request per olcRTC location. It is also what
+    // feeds the sparkline on each card.
     LaunchedEffect(state.isVpnConnected) {
         while (true) {
             locationViewModel.refreshOlcrtcSlots()
-            kotlinx.coroutines.delay(OCCUPANCY_REFRESH_MS)
+            delay(OCCUPANCY_REFRESH_MS)
         }
     }
 
@@ -245,258 +248,270 @@ fun HomeScreen(
         }
     }
 
-    Scaffold(
-        snackbarHost = {
-            SnackbarHost(snackbarHostState)
-        },
-        topBar = {
-            HomeScreenAppBar(
-                onHistoryClick = { isLogsSheetOpen = true },
-                showAppSettingsButton = showAppSettingsButton,
-                showHistoryButton = true,
-                onAppSettingsClick = onAppSettingsClick,
-                showSplitTunnelingButton = showSplitTunnelingButton,
-                onSplitTunnelingClick = onSplitTunnelingClick,
-                onAddClick = { isAddSheetOpen = true }
-            )
-        }
-    ) { innerPadding ->
-        // Status and the button are pinned; only the list below them scrolls.
-        //
-        // One `verticalScroll` over the whole column meant that reaching a
-        // location further down the list carried the START button off the top of
-        // the screen with it — so selecting an exit and then connecting to it
-        // took a scroll back up, and on a long subscription the button was
-        // simply not visible while choosing.
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .then(pkScreenBackground())
-                .padding(innerPadding),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 32.dp)
-                    .padding(top = 16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                RelayStatus(
-                    isActive = state.isVpnConnected,
-                    requiresSetup = requiresSetup,
-                    transportLabel = state.selectedLocation?.config?.transportKind()?.label(),
-                    // strip the " · XHTTP" suffix: the pill already names the transport
-                    exitName = state.selectedLocation?.config?.displayName()
-                        ?.let { TransportGroup.baseName(it) },
-                    connectedSince = connectedSince,
-                    traffic = traffic
+    // ── what the board is, computed once for the head and the list ──────────
+
+    val model = buildBoardModel(
+        locations = locations,
+        activeFilterKey = transportFilter,
+        sort = subscriptionSettings.sort,
+        pingFor = { id -> pingsState.pingFor(id) }
+    )
+
+    val selectedId = locationViewModel.selectedLocationId
+    val selectedItem = locations.firstOrNull { it.storageId == selectedId }
+    val selectedConfig = selectedItem?.config
+    val selectedName = selectedItem?.let { locationDisplayParts(it).second }
+    val selectedSlots = selectedId?.let { locationViewModel.olcrtcSlots[it] }
+
+    HomeScreenContent(
+        chrome = HomeChrome(
+            tag = HEADER_TAG,
+            statusLabel = statusLabel(
+                isConnected = state.isVpnConnected,
+                isConnecting = state.isVpnLoading,
+                requiresSetup = requiresSetup,
+                hasSeats = selectedSlots != null,
+                transportLabel = selectedConfig?.transportKind()?.label()
+            ),
+            statusMeta = statusMeta(
+                isConnected = state.isVpnConnected,
+                bytesIn = traffic?.bytesIn,
+                bytesOut = traffic?.bytesOut,
+                requiresSetup = requiresSetup,
+                isFull = selectedSlots?.isBlocked == true,
+                protocolLine = selectedConfig?.protocolLabels()?.joinToString(" · ")
+            ),
+            statusValue = statusValue(
+                isConnected = state.isVpnConnected,
+                connectedSince = connectedSince,
+                nowEpochMs = nowTick,
+                exitName = selectedName
+            ),
+            isActive = state.isVpnConnected,
+            isBusy = state.isVpnLoading,
+            notice = state.notice(),
+            heading = boardHeading(model.hasRooms),
+            sortLabel = sortLabel(subscriptionSettings.sort),
+            action = boardAction(
+                requiresSetup = requiresSetup,
+                isConnected = state.isVpnConnected,
+                isConnecting = state.isVpnLoading,
+                selectedIsRoom = selectedConfig?.transportKind() == TransportKind.Olcrtc,
+                selectedIsFull = selectedSlots?.isBlocked == true,
+                exitName = selectedName
+            ),
+            showAppSettingsButton = showAppSettingsButton,
+            showSplitTunnelingButton = showSplitTunnelingButton,
+            showLock = AdminState.showLock
+        ),
+        board = HomeBoard(
+            model = model,
+            selectedLocationId = selectedId,
+            isConnected = state.isVpnConnected,
+            pingsState = pingsState,
+            olcrtcSlots = locationViewModel.olcrtcSlots,
+            occupancyHistory = locationViewModel.olcrtcHistory,
+            transportFilter = transportFilter,
+            isRefreshingSubscriptions = isRefreshingSubscriptions,
+            refreshingSubscriptionUrl = refreshingSubscriptionUrl,
+            collapsible = subscriptionSettings.collapsible,
+            showSettings = admin,
+            // The platform's answer, not the admin gate's. Where the app does build
+            // locations by hand, adding one is the same act as importing a link or
+            // scanning a QR code, and neither of those is gated — gating only this
+            // one made the app refuse in a dialog what it accepted from a clipboard.
+            showCustomLocation = showCustomLocation,
+            showGetSubscription = showGetSubscription
+        ),
+        callbacks = HomeCallbacks(
+            // Hidden admin gesture: 7 taps on the brand within ~3s.
+            onBrandTap = { if (AdminState.registerTitleTap(nowMillis())) showAdminDialog = true },
+            onDiagnosticsClick = { isLogsSheetOpen = true },
+            onLockClick = { AdminState.lock() },
+            onSplitTunnelingClick = onSplitTunnelingClick,
+            onAddClick = { isAddSheetOpen = true },
+            onSettingsClick = onAppSettingsClick,
+            onSortClick = {
+                viewModel.updateSubscriptionSettings(
+                    subscriptionSettings.copy(sort = nextSort(subscriptionSettings.sort))
                 )
-
-                state.notice()?.let { notice ->
-                    Spacer(modifier = Modifier.height(12.dp))
-                    RelayNotice(text = notice)
+            },
+            onFilterSelected = { transportFilter = it },
+            onActionClick = {
+                when {
+                    requiresSetup -> isAddSheetOpen = true
+                    // Only on the way up, and before the system's own VPN dialog:
+                    // the disclosure has to be what explains that prompt, not
+                    // something the user meets after granting it. Stopping never
+                    // asks.
+                    !vpnDisclosureAccepted && !state.isVpnConnected -> showVpnDisclosure = true
+                    else -> onToggleClick()
                 }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                StartButton(
-                    isActive = state.isVpnConnected,
-                    isLoading = state.isVpnLoading,
-                    requiresSetup = requiresSetup,
-                    label = primaryActionLabel,
-                    enabled = true,
-                    onClick = {
-                        if (requiresSetup) {
-                            isAddSheetOpen = true
-                        } else if (!vpnDisclosureAccepted && !state.isVpnConnected) {
-                            // Only on the way up, and before the system's own VPN
-                            // dialog: the disclosure has to be what explains that
-                            // prompt, not something the user meets after granting
-                            // it. Stopping never asks.
-                            showVpnDisclosure = true
-                        } else {
-                            onToggleClick()
+            },
+            onPullToRefresh = { refreshSubscriptions() },
+            onLocationSelected = { id ->
+                // Read before the switch: picking a card while connected tears the
+                // tunnel down and builds a new one, which took seconds and
+                // announced itself only as a spinner.
+                val wasConnected = state.isVpnConnected
+                val name = locations.firstOrNull { it.storageId == id }
+                    ?.let { locationDisplayParts(it).second }
+                locationViewModel.selectLocation(id) {
+                    viewModel.loadCurrentConfig()
+                    viewModel.restartVpnIfRunning()
+                    if (wasConnected) {
+                        scope.launch {
+                            snackbarHostState.showSnackbar(
+                                name?.takeIf { it.isNotBlank() }
+                                    ?.let { "Reconnecting through $it" }
+                                    ?: "Reconnecting through the new location"
+                            )
                         }
                     }
+                }
+            },
+            onLocationSettingsClick = { id -> onOpenLocationSettings(id) },
+            onMeasure = { ids -> refreshHttpPings(ids) },
+            onRefreshSubscriptionClick = { url -> refreshSubscription(url) },
+            onOpenUrl = onOpenExternalUrl,
+            onAddLocationClick = onAddLocation,
+            onGetSubscriptionClick = onGetSubscriptionClick,
+            canPing = { config -> viewModel.canPing(config) }
+        ),
+        scrollState = scrollState,
+        snackbarHostState = snackbarHostState
+    )
+
+    if (isLogsSheetOpen) {
+        val logs by viewModel.logs.collectAsState()
+        LogsSheet(
+            logs = logs,
+            onSaveClick = {
+                onSaveLogsRequested(
+                    { message -> scope.launch { snackbarHostState.showSnackbar(message) } },
+                    { message -> scope.launch { snackbarHostState.showSnackbar(message) } }
                 )
-
-                Spacer(modifier = Modifier.height(16.dp))
-            }
-
-            // Pull down on the list to fetch the subscriptions again. It was
-            // reachable only from a menu item inside the "+" sheet, which is
-            // not where anyone looks for it on a list of servers.
-            PullToRefreshBox(
-                isRefreshing = isRefreshingSubscriptions,
-                onRefresh = { refreshSubscriptions() },
-                modifier = Modifier.weight(1f)
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .verticalScroll(scrollState)
-                        .padding(horizontal = 32.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    LocationSelectorScreen(
-                        onGetSubscriptionClick = onGetSubscriptionClick,
-                        showGetSubscription = showGetSubscription,
-                        onRefreshClick = { targetIds ->
-                            refreshHttpPings(targetIds)
-                        },
-                        onRefreshSubscriptionClick = { url -> refreshSubscription(url) },
-                        onOpenUrl = onOpenExternalUrl,
-                        refreshingSubscriptionUrl = refreshingSubscriptionUrl,
-                        onAddSubscriptionClick = {
-                            isAddSheetOpen = true
-                        },
-                        locations = locations,
-                        selectedLocationId = locationViewModel.selectedLocationId,
-                        pingsState = pingsState,
-                        olcrtcSlots = locationViewModel.olcrtcSlots,
-                        canPing = { config -> viewModel.canPing(config) },
-                        onLocationSelected = { id ->
-                            // Read before the switch: picking a row while
-                            // connected tears the tunnel down and builds a new
-                            // one, which took seconds and announced itself only
-                            // as a spinner.
-                            val wasConnected = state.isVpnConnected
-                            val name = locations.firstOrNull { it.storageId == id }
-                                ?.let { item ->
-                                    item.metadata?.name?.takeIf { it.isNotBlank() }
-                                        ?: item.fullName
-                                }
-                            locationViewModel.selectLocation(id) {
-                                viewModel.loadCurrentConfig()
-                                viewModel.restartVpnIfRunning()
-                                if (wasConnected) {
-                                    scope.launch {
-                                        snackbarHostState.showSnackbar(
-                                            name?.let { "Reconnecting through $it" }
-                                                ?: "Reconnecting through the new location"
-                                        )
-                                    }
-                                }
-                            }
-                        },
-                        onLocationSettingsClick = { id ->
-                            onOpenLocationSettings(id)
-                        },
-                        onAddLocationClick = {
-                            onAddLocation()
-                        },
-                        sort = subscriptionSettings.sort,
-                        collapsible = subscriptionSettings.collapsible,
-                        showSettings = admin,
-                        // The platform's answer, not the admin gate's. Where the
-                        // app does build locations by hand, adding one is the
-                        // same act as importing a link or scanning a QR code, and
-                        // neither of those is gated — gating only this one made
-                        // the app refuse in a dialog what it accepted from a
-                        // clipboard, and left anyone who had just deleted a
-                        // custom location with no way to put it back.
-                        showCustomLocation = showCustomLocation
-                    )
-
-                    Spacer(modifier = Modifier.height(24.dp))
-
-                    PkVersionFooter()
-
-                    Spacer(modifier = Modifier.height(16.dp))
-                }
-            }
-        }
-
-        if (isLogsSheetOpen) {
-            val logs by viewModel.logs.collectAsState()
-
-            LogsSheet(
-                logs = logs,
-                onSaveClick = {
-                    onSaveLogsRequested(
-                        { message ->
-                            scope.launch {
-                                snackbarHostState.showSnackbar(message)
-                            }
-                        },
-                        { message ->
-                            scope.launch {
-                                snackbarHostState.showSnackbar(message)
-                            }
-                        }
-                    )
-                },
-                onShareClick = {
-                    viewModel.onShareLogs(
-                        onShared = { message ->
-                            scope.launch {
-                                snackbarHostState.showSnackbar(message)
-                            }
-                        },
-                        onError = { message ->
-                            scope.launch {
-                                snackbarHostState.showSnackbar(message)
-                            }
-                        }
-                    )
-                },
-                onDismiss = {
-                    isLogsSheetOpen = false
-                }
-            )
-        }
-
-        if (isAddSheetOpen) {
-            AddConfigurationSheet(
-                canScanQr = canScanQr,
-                hasSubscriptions = hasSubscriptions,
-                onDismiss = {
-                    isAddSheetOpen = false
-                },
-                onScanQrClick = {
-                    isAddSheetOpen = false
-                    onScanQrRequested()
-                },
-                onPasteLinkClick = {
-                    isAddSheetOpen = false
-                    onImportFromClipboardRequested(
-                        {
-                            scope.launch {
-                                snackbarHostState.showSnackbar("Imported from clipboard")
-                            }
-                        },
-                        { message ->
-                            scope.launch {
-                                snackbarHostState.showSnackbar(message)
-                            }
-                        }
-                    )
-                },
-                onImportFileClick = {
-                    isAddSheetOpen = false
-                    onImportFileRequested()
-                },
-                onUpdateSubscriptionsClick = {
-                    isAddSheetOpen = false
-                    refreshSubscriptions()
-                },
-                onAddCustomLocationClick = {
-                    isAddSheetOpen = false
-                    onAddLocation()
-                },
-                onGetSubscriptionClick = {
-                    isAddSheetOpen = false
-                    onGetSubscriptionClick()
-                },
-                showGetSubscription = showGetSubscription,
-                // The same answer as the locations list above. These two
-                // disagreed — `true` there and the admin gate here — so the
-                // button appeared or vanished depending on which way in you took.
-                showCustomLocation = showCustomLocation
-            )
-        }
+            },
+            onShareClick = {
+                viewModel.onShareLogs(
+                    onShared = { message ->
+                        scope.launch { snackbarHostState.showSnackbar(message) }
+                    },
+                    onError = { message ->
+                        scope.launch { snackbarHostState.showSnackbar(message) }
+                    }
+                )
+            },
+            onDismiss = { isLogsSheetOpen = false }
+        )
     }
+
+    if (isAddSheetOpen) {
+        AddConfigurationSheet(
+            canScanQr = canScanQr,
+            hasSubscriptions = hasSubscriptions,
+            onDismiss = { isAddSheetOpen = false },
+            onScanQrClick = {
+                isAddSheetOpen = false
+                onScanQrRequested()
+            },
+            onPasteLinkClick = {
+                isAddSheetOpen = false
+                onImportFromClipboardRequested(
+                    { scope.launch { snackbarHostState.showSnackbar("Imported from clipboard") } },
+                    { message -> scope.launch { snackbarHostState.showSnackbar(message) } }
+                )
+            },
+            onImportFileClick = {
+                isAddSheetOpen = false
+                onImportFileRequested()
+            },
+            onUpdateSubscriptionsClick = {
+                isAddSheetOpen = false
+                refreshSubscriptions()
+            },
+            onAddCustomLocationClick = {
+                isAddSheetOpen = false
+                onAddLocation()
+            },
+            onGetSubscriptionClick = {
+                isAddSheetOpen = false
+                onGetSubscriptionClick()
+            },
+            showGetSubscription = showGetSubscription,
+            // The same answer as the board above. These two disagreed — `true`
+            // there and the admin gate here — so the button appeared or vanished
+            // depending on which way in you took.
+            showCustomLocation = showCustomLocation
+        )
+    }
+
+    if (showAdminDialog) {
+        AdminPasswordDialog(
+            onDismiss = { showAdminDialog = false },
+            onSubmit = { AdminState.tryUnlock(it) },
+        )
+    }
+}
+
+/**
+ * The mono tag beside the brand.
+ *
+ * `OLCRTC CORE`, not the fork's name: olcRTC is the one thing in this app no
+ * other App Store client implements, and the header is the first place a
+ * reviewer's eye lands.
+ */
+private const val HEADER_TAG = "OLCRTC CORE"
+
+/** What the status strip's first line says. */
+internal fun statusLabel(
+    isConnected: Boolean,
+    isConnecting: Boolean,
+    requiresSetup: Boolean,
+    hasSeats: Boolean,
+    transportLabel: String?
+): String = when {
+    isConnected -> listOfNotNull(
+        if (hasSeats) "in a room" else "connected",
+        transportLabel
+    ).joinToString(" · ")
+    isConnecting -> if (hasSeats) "joining room" else "connecting"
+    requiresSetup -> "no server list"
+    else -> "not connected"
+}
+
+/** The second line: traffic while connected, and what would be joined while not. */
+internal fun statusMeta(
+    isConnected: Boolean,
+    bytesIn: Long?,
+    bytesOut: Long?,
+    requiresSetup: Boolean,
+    isFull: Boolean,
+    protocolLine: String?
+): String = when {
+    isConnected && bytesIn != null && bytesOut != null ->
+        "↓ ${formatByteSize(bytesIn)}   ↑ ${formatByteSize(bytesOut)}"
+    isConnected -> protocolLine.orEmpty()
+    requiresSetup -> "Add a server list to start"
+    isFull -> "this room is full"
+    else -> protocolLine.orEmpty()
+}
+
+/**
+ * The one number worth the weight: the session timer, or the exit's name before
+ * there is a session to time.
+ */
+internal fun statusValue(
+    isConnected: Boolean,
+    connectedSince: Long?,
+    nowEpochMs: Long,
+    exitName: String?
+): String = when {
+    isConnected && connectedSince != null -> formatSessionDuration(nowEpochMs - connectedSince)
+    isConnected -> ""
+    // Cut at a separator, not at character twelve: "United State" is a
+    // typo where "United States" is a country.
+    else -> exitName?.let { shortenExitName(it, max = 14) }.orEmpty()
 }
 
 /**

@@ -341,9 +341,6 @@ fun AndroidMainScreen(
         onScanQrRequested = {
             qrScannerLauncher.launch(Intent(context, QrScannerActivity::class.java))
         },
-        onCopyConfigRequested = {
-            viewModel.onCopyFullConfigClicked()
-        },
         onShareLocationRequested = { config ->
             shareSheetPayload = "Location QR" to ConfigShareService.olcRtcUri(config)
         },

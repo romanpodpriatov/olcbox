@@ -311,14 +311,24 @@ fun PkVersionFooter(modifier: Modifier = Modifier) {
     }
 }
 
-/** Site background: faint 48dp grid + indigo radial glow at the top. */
+/**
+ * Site background: the ground, a faint 48dp grid, and an indigo radial glow at
+ * the top.
+ *
+ * The ground is painted here rather than left to a container colour. It was left
+ * to one, and a screen whose scaffold is transparent — which the home screen's is,
+ * so this grid can show through it — came out white: every surface that set its
+ * own colour looked right, and every gap between them was the host's default.
+ */
 @Composable
 fun pkScreenBackground(): Modifier {
     val grid = LocalPkPalette.current.gridLine
+    val ground = MaterialTheme.colorScheme.background
     val glow = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
     val step = with(LocalDensity.current) { 48.dp.toPx() }
     return Modifier.drawBehind {
         if (size.width <= 0f || size.height <= 0f) return@drawBehind
+        drawRect(color = ground)
         drawRect(
             brush = Brush.radialGradient(
                 colors = listOf(glow, Color.Transparent),
