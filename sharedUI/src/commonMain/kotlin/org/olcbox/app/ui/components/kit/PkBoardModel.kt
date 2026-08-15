@@ -84,12 +84,31 @@ sealed interface SeatDisplay {
 /** Above this many seats, pips become a bar. */
 internal const val MAX_SEAT_PIPS = 16
 
+/**
+ * How many seats to treat as taken.
+ *
+ * `used` already clamps a capacity lowered below use. The `holds_slot` clause is
+ * the other direction: the server answers presence and capacity with two
+ * different reads and they disagree — notably for the five minutes after you
+ * leave, when presence still counts you and the capacity figure no longer does.
+ *
+ * **Everything that shows occupancy must read this, not `slots.used`.** The pips
+ * did and the count beside them did not, so a card drew your seat in lime next to
+ * the words "0 / 8" — the card contradicting itself in the space of one line.
+ */
+fun effectiveUsed(slots: OlcrtcSlots): Int =
+    if (slots.holds_slot) slots.used.coerceAtLeast(1) else slots.used
+
+/** `1 / 8`. Null where there are no seats to count. */
+fun seatCountText(slots: OlcrtcSlots?): String? {
+    if (slots == null || slots.slots_total <= 0) return null
+    return "${effectiveUsed(slots)} / ${slots.slots_total}"
+}
+
 fun seatDisplay(slots: OlcrtcSlots?): SeatDisplay {
     if (slots == null || slots.slots_total <= 0) return SeatDisplay.None
     val total = slots.slots_total
-    // `used` already clamps a capacity lowered below use, but a node that says we
-    // hold a seat while reporting none taken would otherwise draw us nowhere.
-    val used = if (slots.holds_slot) slots.used.coerceAtLeast(1) else slots.used
+    val used = effectiveUsed(slots)
     if (total > MAX_SEAT_PIPS) {
         return SeatDisplay.Bar(
             fraction = (used.toFloat() / total).coerceIn(0f, 1f),
@@ -123,11 +142,13 @@ data class PkPoint(val x: Float, val y: Float)
 const val OCCUPANCY_HISTORY_LIMIT = 16
 
 /**
- * A sparkline of how full a room has been, scaled into [width] x [height].
+ * A trace of how full a room has been, scaled into [width] x [height].
  *
- * Empty below two samples rather than drawing a dot or a flat line: a single
- * reading is not a trend, and a horizontal rule where a graph belongs reads as
- * "nothing is happening" instead of "nothing is known yet".
+ * A single sample draws a flat line at its level. That is not a fabricated
+ * trend: the height of the line *is* the occupancy, and one reading is a true
+ * statement about one moment. It used to draw nothing below two samples, which
+ * meant every card was blank for the first three quarters of a minute after
+ * launch — on a device that reads as broken, not as "nothing is known yet".
  *
  * y is inverted — a fuller room draws higher — and inset by a stroke's width at
  * each end so a line at 0 or 1 is not clipped by its own thickness.
@@ -138,20 +159,27 @@ fun sparklinePoints(
     height: Float,
     inset: Float = 1f
 ): List<PkPoint> {
-    if (history.size < 2 || width <= 0f || height <= 0f) return emptyList()
+    if (history.isEmpty() || width <= 0f || height <= 0f) return emptyList()
     val span = (height - inset * 2f).coerceAtLeast(0f)
+    fun y(value: Float) = height - inset - value.coerceIn(0f, 1f) * span
+    if (history.size == 1) {
+        val level = y(history.single())
+        return listOf(PkPoint(0f, level), PkPoint(width, level))
+    }
     return history.mapIndexed { index, value ->
-        PkPoint(
-            x = width * index / (history.size - 1),
-            y = height - inset - value.coerceIn(0f, 1f) * span
-        )
+        PkPoint(x = width * index / (history.size - 1), y = y(value))
     }
 }
 
-/** Appends a sample and drops the oldest beyond [OCCUPANCY_HISTORY_LIMIT]. */
+/**
+ * Appends a sample and drops the oldest beyond [OCCUPANCY_HISTORY_LIMIT].
+ *
+ * Reads [effectiveUsed], like the pips and the count: a trace that disagreed
+ * with the seats drawn beside it would be the same bug in a third place.
+ */
 fun appendOccupancy(history: List<Float>?, slots: OlcrtcSlots): List<Float> {
     val value = if (slots.slots_total > 0) {
-        (slots.used.toFloat() / slots.slots_total).coerceIn(0f, 1f)
+        (effectiveUsed(slots).toFloat() / slots.slots_total).coerceIn(0f, 1f)
     } else {
         0f
     }

@@ -42,6 +42,7 @@ import org.olcbox.app.ui.components.kit.PkSectionEyebrow
 import org.olcbox.app.ui.components.kit.planFraction
 import org.olcbox.app.ui.components.kit.pkSubscriptionHost
 import org.olcbox.app.ui.components.kit.pkSubscriptionIsSecret
+import org.olcbox.app.ui.components.kit.seatCountText
 import org.olcbox.app.ui.components.kit.seatDisplay
 import org.olcbox.app.ui.components.kit.seatFreeText
 import org.olcbox.app.ui.components.kit.transportTag
@@ -438,7 +439,7 @@ private fun BoardRoomCard(
         connectedHere = selected && isConnected,
         blocked = slots?.isBlocked == true,
         seats = seats,
-        seatCountText = slots?.let { "${it.used} / ${it.slots_total}" },
+        seatCountText = seatCountText(slots),
         freeText = seatFreeText(slots),
         freeIsFull = slots != null && slots.slots_free <= 0,
         freeIsTight = slots != null && slots.slots_free in 1..2,

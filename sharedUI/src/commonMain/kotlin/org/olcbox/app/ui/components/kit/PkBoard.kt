@@ -31,6 +31,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
@@ -131,6 +132,13 @@ fun PkSeats(display: SeatDisplay, modifier: Modifier = Modifier) {
  *
  * Small on purpose — it is not a chart, it is the answer to "is this filling up
  * or emptying out", which a single number cannot give however current it is.
+ *
+ * Two things this got wrong on a phone. It drew in `seatOther`, which is the
+ * colour of a seat somebody else holds — dark blue-grey, and on the card's own
+ * dark surface it was very nearly invisible, so every room the user was not in
+ * appeared to have no line at all. And a flat line carries its meaning entirely
+ * in its height, which cannot be read without knowing where the floor is; a room
+ * steady at five of eight looked exactly as dead as an empty one.
  */
 @Composable
 fun PkSparkline(
@@ -139,10 +147,19 @@ fun PkSparkline(
     modifier: Modifier = Modifier
 ) {
     val palette = LocalPkPalette.current
-    val color = if (mine) palette.accent else palette.seatOther
+    val color = if (mine) palette.accent else palette.textDim
+    val floor = palette.seatFree
     Canvas(modifier = modifier.size(width = 46.dp, height = 12.dp)) {
         val points = sparklinePoints(history, size.width, size.height, inset = 1.5f)
         if (points.isEmpty()) return@Canvas
+        // The floor, so the height of the trace above it is what says how full
+        // the room is. Without it a flat line is just a flat line.
+        drawLine(
+            color = floor,
+            start = Offset(0f, size.height - 1.5f),
+            end = Offset(size.width, size.height - 1.5f),
+            strokeWidth = 1.dp.toPx()
+        )
         val path = Path().apply {
             moveTo(points.first().x, points.first().y)
             points.drop(1).forEach { lineTo(it.x, it.y) }

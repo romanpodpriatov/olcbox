@@ -86,13 +86,33 @@ class PkBoardModelTest {
     @Test
     fun holdingASeatOnANodeThatReportsNoneTakenStillSeatsYou() {
         // Not hypothetical: presence and capacity are two different reads on the
-        // server, and they can disagree for one poll.
+        // server, and they can disagree — notably for the five minutes after you
+        // leave, when presence still counts you and capacity no longer does.
         val display = seatDisplay(
             OlcrtcSlots(slots_total = 4, slots_free = 4, holds_slot = true)
         )
         val pips = (display as SeatDisplay.Pips).seats
         assertEquals(SeatState.Mine, pips.first())
         assertEquals(3, pips.count { it == SeatState.Free })
+    }
+
+    @Test
+    fun theCountAgreesWithThePipsBesideIt() {
+        // The bug this exists to prevent, seen on a phone: the card drew a lime
+        // seat and printed "0 / 8" next to it, because the pips read the
+        // presence-corrected figure and the text read the raw one.
+        val slots = OlcrtcSlots(slots_total = 8, slots_free = 8, holds_slot = true)
+        val filled = (seatDisplay(slots) as SeatDisplay.Pips)
+            .seats.count { it != SeatState.Free }
+        assertEquals("$filled / 8", seatCountText(slots))
+        assertEquals("1 / 8", seatCountText(slots))
+    }
+
+    @Test
+    fun theCountIsTheServersFigureWhereNothingContradictsIt() {
+        assertEquals("3 / 8", seatCountText(OlcrtcSlots(slots_total = 8, slots_free = 5)))
+        assertNull(seatCountText(null))
+        assertNull(seatCountText(OlcrtcSlots(slots_total = 0, slots_free = 0)))
     }
 
     @Test
@@ -127,8 +147,30 @@ class PkBoardModelTest {
     // ── occupancy history ──────────────────────────────────────────────────
 
     @Test
-    fun oneSampleIsNotATrend() {
-        assertTrue(sparklinePoints(listOf(0.5f), 54f, 16f).isEmpty())
+    fun oneSampleDrawsItsLevelRatherThanNothing() {
+        // This asserted the opposite until a phone showed what it meant: no
+        // second sample arrives for forty-five seconds, so every card was blank
+        // for the first three quarters of a minute and read as broken. One
+        // reading is a true statement about the level, which is what the height
+        // of the line says.
+        val flat = sparklinePoints(listOf(0.5f), 54f, 16f)
+        assertEquals(2, flat.size)
+        assertEquals(0f, flat[0].x)
+        assertEquals(54f, flat[1].x)
+        assertEquals(flat[0].y, flat[1].y)
+    }
+
+    @Test
+    fun aRoomStandingStillDrawsHigherThanAnEmptyOne() {
+        // "The line is flat like the patient is dead" — a steady room and an
+        // empty one are both flat, and only the height tells them apart.
+        val busy = sparklinePoints(listOf(0.75f, 0.75f), 54f, 16f)
+        val empty = sparklinePoints(listOf(0f, 0f), 54f, 16f)
+        assertTrue(busy[0].y < empty[0].y, "a fuller room must sit higher")
+    }
+
+    @Test
+    fun noSamplesAtAllDrawsNothing() {
         assertTrue(sparklinePoints(emptyList(), 54f, 16f).isEmpty())
     }
 
@@ -155,6 +197,12 @@ class PkBoardModelTest {
         }
         assertEquals(OCCUPANCY_HISTORY_LIMIT, history.size)
         assertTrue(history.all { it == 0.5f })
+    }
+
+    @Test
+    fun theTraceRecordsTheSameOccupancyTheSeatsShow() {
+        val slots = OlcrtcSlots(slots_total = 8, slots_free = 8, holds_slot = true)
+        assertEquals(listOf(1f / 8f), appendOccupancy(null, slots))
     }
 
     @Test

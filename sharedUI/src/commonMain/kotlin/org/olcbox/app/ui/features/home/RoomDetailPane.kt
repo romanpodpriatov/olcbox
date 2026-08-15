@@ -30,6 +30,7 @@ import org.olcbox.app.ui.components.kit.PkSparkline
 import org.olcbox.app.ui.components.kit.SeatDisplay
 import org.olcbox.app.ui.components.kit.pkMono
 import org.olcbox.app.ui.components.kit.pkPingColor
+import org.olcbox.app.ui.components.kit.seatCountText
 import org.olcbox.app.ui.components.kit.seatDisplay
 import org.olcbox.app.ui.components.kit.seatFreeText
 import org.olcbox.app.ui.components.kit.transportTag
@@ -121,7 +122,7 @@ fun RoomDetailPane(
             Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
                 DetailStat(label = "Transport", value = transportTag(config) ?: "—")
                 slots?.let {
-                    DetailStat(label = "Seats", value = "${it.used} / ${it.slots_total}")
+                    DetailStat(label = "Seats", value = seatCountText(it).orEmpty())
                     DetailStat(
                         label = "Free",
                         value = seatFreeText(it).orEmpty(),
