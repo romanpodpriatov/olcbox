@@ -18,9 +18,10 @@ bandwidth and is not needed until it is — and the moment you need the fallback
 the worst possible moment to be installing a second app.
 
 It ships as **ProofKit** and is built on the olcbox codebase, a fork of
-[alananisimov/olcbox](https://github.com/alananisimov/olcbox) — the app's own
-footer says `PROOFKIT • OLCBOX CORE` for the same reason, and so does the
-repository name.
+[alananisimov/olcbox](https://github.com/alananisimov/olcbox) — the repository
+name says so, and both copyrights stand side by side in `LICENSE`, as MIT
+requires. The app's header names the protocol rather than the fork:
+`ProofKit · OLCRTC CORE`.
 
 It is a client, not a service: you bring a server list from your provider — a
 subscription URL, a QR code, or a pasted link — and the app turns it into
