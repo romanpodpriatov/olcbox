@@ -29,8 +29,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.statusBarsPaddingIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -48,7 +52,6 @@ import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Person
-import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
@@ -58,14 +61,12 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.key
@@ -80,6 +81,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -93,7 +95,12 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.olcbox.app.ui.components.kit.PkScreenHeader
+import org.olcbox.app.ui.components.kit.PkSwitch
+import org.olcbox.app.ui.components.kit.pkMono
+import org.olcbox.app.ui.components.kit.pkScreenBackground
 import org.olcbox.app.ui.icons.PkIcons
+import org.olcbox.app.ui.theme.LocalPkPalette
 import org.olcbox.app.CurrentAppInfo
 import org.olcbox.app.admin.AdminState
 import org.olcbox.app.data.share.SubscriptionShareItem
@@ -148,15 +155,16 @@ internal fun AppSettingsSheet(
     onSplitTunnelAppToggled: (AndroidSplitTunnelList, String) -> Unit,
     onSplitTunnelAppsSelected: (AndroidSplitTunnelList, Set<String>) -> Unit
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
     var route by remember(initialRoute) { mutableStateOf(initialRoute.toRoute()) }
     var autoBypassPackages by remember { mutableStateOf<Set<String>>(emptySet()) }
     var russianBypassPresetEnabled by remember { mutableStateOf(false) }
 
+    // Still a coroutine, still ordered: several call sites hand it work to run
+    // after the screen is gone, and doing that on the spot would run it under a
+    // screen that is still on top.
     fun closeSheet(afterClose: () -> Unit = {}) {
         scope.launch {
-            sheetState.hide()
             onDismiss()
             afterClose()
         }
@@ -178,136 +186,144 @@ internal fun AppSettingsSheet(
         }
     }
 
-    ModalBottomSheet(
-        onDismissRequest = { closeSheet() },
-        sheetState = sheetState,
-        dragHandle = { BottomSheetDefaults.DragHandle() }
+    // A screen, not a sheet — the same move the shared settings screen made, for
+    // the same reason: this is the longest content in the app and its natural
+    // gesture was "flick away". Android's settings are their own file because
+    // split tunnelling, the app list and the connection modes exist only here.
+    Surface(
+        modifier = Modifier.fillMaxSize().then(pkScreenBackground()),
+        color = Color.Transparent
     ) {
-        AnimatedContent(
-            targetState = route,
-            transitionSpec = {
-                fadeIn(
-                    animationSpec = tween(
-                        durationMillis = 180,
-                        delayMillis = 60,
-                        easing = LinearOutSlowInEasing
-                    )
-                ).togetherWith(
-                    fadeOut(
+        Column(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
+            if (route == AppSettingsRoute.Hub) {
+                PkScreenHeader(title = "Settings", onBack = { closeSheet() })
+            }
+            AnimatedContent(
+                targetState = route,
+                transitionSpec = {
+                    fadeIn(
                         animationSpec = tween(
-                            durationMillis = 90,
-                            easing = FastOutLinearInEasing
+                            durationMillis = 180,
+                            delayMillis = 60,
+                            easing = LinearOutSlowInEasing
+                        )
+                    ).togetherWith(
+                        fadeOut(
+                            animationSpec = tween(
+                                durationMillis = 90,
+                                easing = FastOutLinearInEasing
+                            )
+                        )
+                    ).using(
+                        SizeTransform(
+                            clip = false,
+                            sizeAnimationSpec = { _, _ ->
+                                tween(
+                                    durationMillis = 320,
+                                    easing = FastOutSlowInEasing
+                                )
+                            }
                         )
                     )
-                ).using(
-                    SizeTransform(
-                        clip = false,
-                        sizeAnimationSpec = { _, _ ->
-                            tween(
-                                durationMillis = 320,
-                                easing = FastOutSlowInEasing
-                            )
-                        }
+                },
+                label = "appSettingsRoute"
+            ) { currentRoute ->
+                when (currentRoute) {
+                    AppSettingsRoute.SubscriptionOptions -> SubscriptionSettingsScreen(
+                        settings = subscriptionSettings,
+                        onChanged = onSubscriptionSettingsChanged,
+                        onBack = { route = AppSettingsRoute.Hub }
                     )
-                )
-            },
-            label = "appSettingsRoute"
-        ) { currentRoute ->
-            when (currentRoute) {
-                AppSettingsRoute.SubscriptionOptions -> SubscriptionSettingsScreen(
-                    settings = subscriptionSettings,
-                    onChanged = onSubscriptionSettingsChanged,
-                    onBack = { route = AppSettingsRoute.Hub }
-                )
 
-                AppSettingsRoute.Hub -> AppSettingsHubContent(
-                    selectedMode = selectedMode,
-                    updateSettings = updateSettings,
-                    subscriptionsCount = subscriptions.size,
-                    enabled = enabled,
-                    onConnectionSettingsClick = { route = AppSettingsRoute.ConnectionSettings },
-                    onSubscriptionsSharingClick = { route = AppSettingsRoute.SubscriptionsSharing },
-                    onSubscriptionOptionsClick = { route = AppSettingsRoute.SubscriptionOptions },
-                    subscriptionSettings = subscriptionSettings,
-                    onUpdatesClick = { route = AppSettingsRoute.Updates },
-                    onApplicationLogsClick = { route = AppSettingsRoute.ApplicationLogs }
-                )
+                    AppSettingsRoute.Hub -> AppSettingsHubContent(
+                        selectedMode = selectedMode,
+                        updateSettings = updateSettings,
+                        subscriptionsCount = subscriptions.size,
+                        enabled = enabled,
+                        onConnectionSettingsClick = { route = AppSettingsRoute.ConnectionSettings },
+                        onSubscriptionsSharingClick = { route = AppSettingsRoute.SubscriptionsSharing },
+                        onSubscriptionOptionsClick = { route = AppSettingsRoute.SubscriptionOptions },
+                        subscriptionSettings = subscriptionSettings,
+                        onUpdatesClick = { route = AppSettingsRoute.Updates },
+                        onApplicationLogsClick = { route = AppSettingsRoute.ApplicationLogs }
+                    )
 
-                AppSettingsRoute.ConnectionSettings -> ConnectionSettingsContent(
-                    selectedMode = selectedMode,
-                    proxySettings = proxySettings,
-                    splitTunnelSettings = splitTunnelSettings,
-                    enabled = enabled,
-                    onBack = { route = AppSettingsRoute.Hub },
-                    onConnectionModeClick = { route = AppSettingsRoute.ConnectionMode },
-                    onProxySettingsClick = { route = AppSettingsRoute.SocksProxy },
-                    onSplitTunnelingClick = { route = AppSettingsRoute.SplitTunneling }
-                )
+                    AppSettingsRoute.ConnectionSettings -> ConnectionSettingsContent(
+                        selectedMode = selectedMode,
+                        proxySettings = proxySettings,
+                        splitTunnelSettings = splitTunnelSettings,
+                        enabled = enabled,
+                        onBack = { route = AppSettingsRoute.Hub },
+                        onConnectionModeClick = { route = AppSettingsRoute.ConnectionMode },
+                        onProxySettingsClick = { route = AppSettingsRoute.SocksProxy },
+                        onSplitTunnelingClick = { route = AppSettingsRoute.SplitTunneling }
+                    )
 
-                AppSettingsRoute.ConnectionMode -> ConnectionModeSettingsContent(
-                    selectedMode = selectedMode,
-                    enabled = enabled,
-                    onBack = { route = AppSettingsRoute.ConnectionSettings },
-                    onModeSelected = onModeSelected
-                )
+                    AppSettingsRoute.ConnectionMode -> ConnectionModeSettingsContent(
+                        selectedMode = selectedMode,
+                        enabled = enabled,
+                        onBack = { route = AppSettingsRoute.ConnectionSettings },
+                        onModeSelected = onModeSelected
+                    )
 
-                AppSettingsRoute.SocksProxy -> SocksProxySettingsContent(
-                    proxySettings = proxySettings,
-                    enabled = enabled,
-                    isConnectionActive = isConnectionActive,
-                    onBack = { route = AppSettingsRoute.ConnectionSettings },
-                    onProxySettingsSaved = onProxySettingsSaved,
-                    onProxyPasswordRegenerated = onProxyPasswordRegenerated
-                )
+                    AppSettingsRoute.SocksProxy -> SocksProxySettingsContent(
+                        proxySettings = proxySettings,
+                        enabled = enabled,
+                        isConnectionActive = isConnectionActive,
+                        onBack = { route = AppSettingsRoute.ConnectionSettings },
+                        onProxySettingsSaved = onProxySettingsSaved,
+                        onProxyPasswordRegenerated = onProxyPasswordRegenerated
+                    )
 
-                AppSettingsRoute.SplitTunneling -> SplitTunnelingSettingsContent(
-                    settings = splitTunnelSettings,
-                    enabled = enabled,
-                    isConnectionActive = isConnectionActive,
-                    selectedMode = selectedMode,
-                    onBack = { route = AppSettingsRoute.ConnectionSettings },
-                    onModeSelected = onSplitTunnelModeSelected,
-                    onAppListClick = { list -> route = AppSettingsRoute.AppList(list) }
-                )
+                    AppSettingsRoute.SplitTunneling -> SplitTunnelingSettingsContent(
+                        settings = splitTunnelSettings,
+                        enabled = enabled,
+                        isConnectionActive = isConnectionActive,
+                        selectedMode = selectedMode,
+                        onBack = { route = AppSettingsRoute.ConnectionSettings },
+                        onModeSelected = onSplitTunnelModeSelected,
+                        onAppListClick = { list -> route = AppSettingsRoute.AppList(list) }
+                    )
 
-                is AppSettingsRoute.AppList -> SplitTunnelingAppListContent(
-                    list = currentRoute.list,
-                    settings = splitTunnelSettings,
-                    installedApps = installedApps,
-                    enabled = enabled,
-                    onBack = { route = AppSettingsRoute.SplitTunneling },
-                    onAppToggled = onSplitTunnelAppToggled,
-                    onAppsSelected = onSplitTunnelAppsSelected,
-                    autoBypassPackages = autoBypassPackages,
-                    onAutoBypassPackagesChanged = { autoBypassPackages = it },
-                    russianBypassPresetEnabled = russianBypassPresetEnabled,
-                    onRussianBypassPresetEnabledChanged = { russianBypassPresetEnabled = it }
-                )
+                    is AppSettingsRoute.AppList -> SplitTunnelingAppListContent(
+                        list = currentRoute.list,
+                        settings = splitTunnelSettings,
+                        installedApps = installedApps,
+                        enabled = enabled,
+                        onBack = { route = AppSettingsRoute.SplitTunneling },
+                        onAppToggled = onSplitTunnelAppToggled,
+                        onAppsSelected = onSplitTunnelAppsSelected,
+                        autoBypassPackages = autoBypassPackages,
+                        onAutoBypassPackagesChanged = { autoBypassPackages = it },
+                        russianBypassPresetEnabled = russianBypassPresetEnabled,
+                        onRussianBypassPresetEnabledChanged = { russianBypassPresetEnabled = it }
+                    )
 
-                AppSettingsRoute.ApplicationLogs -> ApplicationLogsSettingsContent(
-                    logs = logs,
-                    onBack = { route = AppSettingsRoute.Hub },
-                    onSaveClick = onSaveLogsClick,
-                    onShareClick = onShareLogsClick
-                )
+                    AppSettingsRoute.ApplicationLogs -> ApplicationLogsSettingsContent(
+                        logs = logs,
+                        onBack = { route = AppSettingsRoute.Hub },
+                        onSaveClick = onSaveLogsClick,
+                        onShareClick = onShareLogsClick
+                    )
 
-                AppSettingsRoute.SubscriptionsSharing -> SubscriptionsSharingSettingsContent(
-                    subscriptions = subscriptions,
-                    onBack = { route = AppSettingsRoute.Hub },
-                    onCopyConfigClick = onCopyConfigClick,
-                    onShareClick = onSubscriptionShareClick,
-                    onRefreshClick = onSubscriptionRefreshClick,
-                    onDeleteClick = onSubscriptionDeleteClick
-                )
+                    AppSettingsRoute.SubscriptionsSharing -> SubscriptionsSharingSettingsContent(
+                        subscriptions = subscriptions,
+                        onBack = { route = AppSettingsRoute.Hub },
+                        onCopyConfigClick = onCopyConfigClick,
+                        onShareClick = onSubscriptionShareClick,
+                        onRefreshClick = onSubscriptionRefreshClick,
+                        onDeleteClick = onSubscriptionDeleteClick
+                    )
 
-                AppSettingsRoute.Updates -> UpdatesSettingsContent(
-                    settings = updateSettings,
-                    statusText = updateStatusText,
-                    downloadProgress = updateDownloadProgress,
-                    onBack = { route = AppSettingsRoute.Hub },
-                    onIntervalSelected = onUpdateIntervalSelected,
-                    onCheckUpdatesClick = onCheckUpdatesClick
-                )
+                    AppSettingsRoute.Updates -> UpdatesSettingsContent(
+                        settings = updateSettings,
+                        statusText = updateStatusText,
+                        downloadProgress = updateDownloadProgress,
+                        onBack = { route = AppSettingsRoute.Hub },
+                        onIntervalSelected = onUpdateIntervalSelected,
+                        onCheckUpdatesClick = onCheckUpdatesClick
+                    )
+                }
             }
         }
     }
@@ -338,14 +354,6 @@ private fun AppSettingsHubContent(
             .padding(bottom = 32.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        SettingsSheetHeader(
-            icon = Icons.Outlined.Settings,
-            title = "Application Settings",
-            subtitle = selectedMode.shortLabel()
-        )
-
-        Spacer(Modifier.height(8.dp))
-
         SettingsNavigationRow(
             title = "Connection Settings",
             value = "Mode, SOCKS5 proxy, and app routing",
@@ -1271,59 +1279,59 @@ private fun SettingsNavigationRow(
     showChevron: Boolean = true,
     onClick: () -> Unit
 ) {
+    // No round icon chip, for the reason given on the shared screen: a column of
+    // filled circles is the Material settings signature this redesign is not
+    // wearing. The icon stays, small and plain.
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .height(72.dp)
-            .clip(RoundedCornerShape(18.dp))
+            .clip(RoundedCornerShape(16.dp))
             .clickable(enabled = enabled, onClick = onClick),
-        shape = RoundedCornerShape(18.dp),
+        shape = RoundedCornerShape(16.dp),
         color = MaterialTheme.colorScheme.surfaceContainer,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 16.dp),
+            modifier = Modifier
+                .defaultMinSize(minHeight = 60.dp)
+                .padding(horizontal = 14.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Surface(
-                modifier = Modifier.size(40.dp),
-                shape = CircleShape,
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                contentColor = MaterialTheme.colorScheme.onSurfaceVariant
-            ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    modifier = Modifier.padding(10.dp)
-                )
-            }
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = LocalPkPalette.current.textDim,
+                modifier = Modifier.size(18.dp)
+            )
 
-            Spacer(Modifier.width(14.dp))
+            Spacer(Modifier.width(13.dp))
 
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = title,
                     color = MaterialTheme.colorScheme.onSurface,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
+                Spacer(Modifier.height(3.dp))
                 Text(
                     text = value,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 13.sp,
-                    maxLines = 1,
+                    style = pkMono(10, 0.5),
+                    color = LocalPkPalette.current.textDim,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
             }
 
             if (showChevron) {
+                Spacer(Modifier.width(10.dp))
                 Icon(
                     imageVector = PkIcons.ChevronRight,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(24.dp)
+                    tint = LocalPkPalette.current.textMuted,
+                    modifier = Modifier.size(17.dp)
                 )
             }
         }
@@ -1386,37 +1394,7 @@ private fun SettingsSwitchRow(
                 )
             }
 
-            Switch(
-                checked = checked,
-                enabled = enabled,
-                onCheckedChange = onCheckedChange
-            )
-        }
-    }
-}
-
-@Composable
-private fun SettingsSheetHeader(
-    icon: ImageVector,
-    title: String,
-    subtitle: String
-) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        HeaderIcon(icon = icon)
-
-        Spacer(Modifier.width(14.dp))
-
-        Column {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.headlineSmall,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            PkSwitch(checked = checked, enabled = enabled)
         }
     }
 }
@@ -1428,59 +1406,7 @@ private fun SettingsDetailHeader(
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Row(
-        modifier = modifier,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Surface(
-            modifier = Modifier.size(46.dp),
-            shape = CircleShape,
-            color = MaterialTheme.colorScheme.surfaceContainerHighest,
-            contentColor = MaterialTheme.colorScheme.onSurfaceVariant
-        ) {
-            IconButton(onClick = onBack) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                    contentDescription = "Back"
-                )
-            }
-        }
-
-        Spacer(Modifier.width(14.dp))
-
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.headlineSmall,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-    }
-}
-
-@Composable
-private fun HeaderIcon(icon: ImageVector) {
-    Surface(
-        modifier = Modifier.size(46.dp),
-        shape = CircleShape,
-        color = MaterialTheme.colorScheme.primaryContainer,
-        contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            modifier = Modifier.padding(11.dp)
-        )
-    }
+    PkScreenHeader(title = title, subtitle = subtitle, onBack = onBack, modifier = modifier)
 }
 
 @Composable
