@@ -169,6 +169,22 @@ object PkIcons {
         )
     }
 
+    /** Material outlined, action. Two arrows: the board's sort control. */
+    val SwapVert: ImageVector by lazy {
+        materialIcon(
+            "SwapVert",
+            "M16 17.01V10h-2v7.01h-3L15 21l4-3.99h-3zM9 3L5 6.99h3V14h2V6.99h3L9 3z",
+        )
+    }
+
+    /** Material outlined, image. Shown where the app explains why it wants a camera. */
+    val PhotoCamera: ImageVector by lazy {
+        materialIcon(
+            "PhotoCamera",
+            "M12 12m-3.2 0a3.2 3.2 0 1 0 6.4 0a3.2 3.2 0 1 0 -6.4 0M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z",
+        )
+    }
+
     /** Material outlined, action. */
     val OpenInNew: ImageVector by lazy {
         materialIcon(
