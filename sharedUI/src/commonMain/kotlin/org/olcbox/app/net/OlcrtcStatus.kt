@@ -77,6 +77,22 @@ fun keyIdFor(keyHex: String): String? {
 }
 
 /**
+ * What the coordinator had to say about one key.
+ *
+ * Three answers, not two: a number, a dead key, and "ask again later". The middle
+ * one is the whole reason this is a type — see [OlcrtcStatusClient.statusFor].
+ */
+sealed interface OlcrtcNodeStatus {
+    data class Occupancy(val slots: OlcrtcSlots) : OlcrtcNodeStatus
+
+    /** The coordinator does not recognise this key. It will not pair again. */
+    data object KeyGone : OlcrtcNodeStatus
+
+    /** No answer. Says nothing about the key, and must change nothing on screen. */
+    data object Unavailable : OlcrtcNodeStatus
+}
+
+/**
  * Reads node occupancy from the coordinator.
  *
  * Always ProofKit's coordinator, whoever sold the subscription: the Telemost room the
@@ -99,24 +115,45 @@ class OlcrtcStatusClient(
     /**
      * Occupancy for the node this key belongs to, or null when it cannot be determined.
      *
-     * Null on every failure — unknown key, revoked key, network down, coordinator
-     * unreachable — and deliberately not an error. Occupancy is an enrichment: not
-     * knowing it must leave the list exactly as usable as it was before this existed,
-     * never block a connection the user could otherwise make.
+     * Kept for callers that only want the number. [statusFor] is the one to use where
+     * the difference between "cannot reach the coordinator" and "this key is dead"
+     * matters, which on a screen it does.
      */
-    suspend fun slotsFor(keyHex: String): OlcrtcSlots? {
-        val keyId = keyIdFor(keyHex) ?: return null
+    suspend fun slotsFor(keyHex: String): OlcrtcSlots? =
+        (statusFor(keyHex) as? OlcrtcNodeStatus.Occupancy)?.slots
+
+    /**
+     * What the coordinator says about this key.
+     *
+     * Every failure used to collapse into null, and that cost an evening: when a
+     * partner sweeper revoked a batch of keys, the board lost its seats, the tunnel
+     * refused to pair, and the app said nothing at all — indistinguishable from
+     * being broken. A `404` is not a failure to answer, it is an answer: this key
+     * is no longer one the coordinator knows.
+     *
+     * Everything else is still [Unavailable] and must stay harmless. Occupancy is an
+     * enrichment: not knowing it leaves the list exactly as usable as it was before
+     * this existed, and never blocks a connection the user could otherwise make.
+     */
+    suspend fun statusFor(keyHex: String): OlcrtcNodeStatus {
+        // A malformed key is not a revoked one: it never had a chance to be asked
+        // about, so it says nothing and changes nothing.
+        val keyId = keyIdFor(keyHex) ?: return OlcrtcNodeStatus.Unavailable
         return try {
             val response: HttpResponse = httpClient.get("$baseUrl$PATH") {
                 parameter("key_id", keyId)
             }
-            if (response.status != HttpStatusCode.OK) {
-                null
-            } else {
-                json.decodeFromString<OlcrtcSlots>(response.bodyAsText())
+            when (response.status) {
+                HttpStatusCode.OK ->
+                    OlcrtcNodeStatus.Occupancy(json.decodeFromString(response.bodyAsText()))
+                // The coordinator answers 404 both for a key it does not know and for
+                // a key whose node no longer carries a room. Neither will ever pair
+                // again, and the remedy the user has is the same for both.
+                HttpStatusCode.NotFound -> OlcrtcNodeStatus.KeyGone
+                else -> OlcrtcNodeStatus.Unavailable
             }
         } catch (_: Throwable) {
-            null
+            OlcrtcNodeStatus.Unavailable
         }
     }
 

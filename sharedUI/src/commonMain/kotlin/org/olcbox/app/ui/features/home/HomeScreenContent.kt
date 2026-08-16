@@ -82,6 +82,8 @@ data class HomeBoard(
     val pingsState: PingsState,
     val olcrtcSlots: Map<String, OlcrtcSlots>,
     val occupancyHistory: Map<String, List<Float>>,
+    /** Storage ids whose room key the coordinator no longer recognises. */
+    val revokedKeys: Set<String>,
     val transportFilter: String?,
     val isRefreshingSubscriptions: Boolean,
     val refreshingSubscriptionUrl: String?,
@@ -323,6 +325,7 @@ private fun HomeRoomBoard(board: HomeBoard, callbacks: HomeCallbacks) {
         pingsState = board.pingsState,
         olcrtcSlots = board.olcrtcSlots,
         occupancyHistory = board.occupancyHistory,
+        revokedKeys = board.revokedKeys,
         canPing = callbacks.canPing,
         collapsible = board.collapsible,
         showSettings = board.showSettings,

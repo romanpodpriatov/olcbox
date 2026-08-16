@@ -349,6 +349,7 @@ fun HomeScreen(
             pingsState = pingsState,
             olcrtcSlots = locationViewModel.olcrtcSlots,
             occupancyHistory = locationViewModel.olcrtcHistory,
+            revokedKeys = locationViewModel.olcrtcRevoked,
             transportFilter = transportFilter,
             isRefreshingSubscriptions = isRefreshingSubscriptions,
             refreshingSubscriptionUrl = refreshingSubscriptionUrl,

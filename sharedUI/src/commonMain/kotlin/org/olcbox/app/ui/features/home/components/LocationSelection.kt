@@ -222,6 +222,8 @@ fun RoomBoard(
     olcrtcSlots: Map<String, OlcrtcSlots>,
     /** How full each room has been, by storage id. Empty until a second poll lands. */
     occupancyHistory: Map<String, List<Float>>,
+    /** Storage ids whose room key the coordinator no longer recognises. */
+    revokedKeys: Set<String>,
     canPing: (LocationConfig) -> Boolean,
     collapsible: Boolean,
     showSettings: Boolean,
@@ -343,6 +345,7 @@ fun RoomBoard(
                                 pingsState = pingsState,
                                 slots = olcrtcSlots[location.storageId],
                                 history = occupancyHistory[location.storageId].orEmpty(),
+                                keyGone = location.storageId in revokedKeys,
                                 canPing = canPing,
                                 onClick = { onLocationSelected(location.storageId) },
                                 onLongClick = if (showSettings) {
@@ -386,6 +389,7 @@ fun RoomBoard(
                         pingsState = pingsState,
                         slots = olcrtcSlots[location.storageId],
                         history = occupancyHistory[location.storageId].orEmpty(),
+                        keyGone = location.storageId in revokedKeys,
                         canPing = canPing,
                         onClick = { onLocationSelected(location.storageId) },
                         // Always, unlike the rows above. A server list owns its
@@ -424,6 +428,7 @@ private fun BoardRoomCard(
     pingsState: PingsState,
     slots: OlcrtcSlots?,
     history: List<Float>,
+    keyGone: Boolean,
     canPing: (LocationConfig) -> Boolean,
     onClick: () -> Unit,
     onLongClick: (() -> Unit)?,
@@ -450,6 +455,7 @@ private fun BoardRoomCard(
         pingMs = pingsState.pingFor(location.storageId),
         isMeasuring = pingsState.isChecking(location.storageId),
         isOffline = pingsState.isOffline(location.storageId),
+        keyGone = keyGone,
         wire = wireShape(config),
         onClick = onClick,
         onLongClick = onLongClick,

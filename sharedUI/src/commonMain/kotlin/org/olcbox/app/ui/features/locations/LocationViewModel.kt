@@ -7,6 +7,7 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import org.olcbox.app.net.LocationKind
+import org.olcbox.app.net.OlcrtcNodeStatus
 import org.olcbox.app.net.OlcrtcSlots
 import org.olcbox.app.ui.components.kit.appendOccupancy
 import org.olcbox.app.net.OlcrtcStatusClient
@@ -91,6 +92,17 @@ class LocationViewModel(
      * Fed by [refreshOlcrtcSlots], which already runs on the screen's own tick.
      */
     var olcrtcHistory by mutableStateOf<Map<String, List<Float>>>(emptyMap())
+        private set
+
+    /**
+     * Locations whose room key the coordinator no longer recognises.
+     *
+     * Held apart from [olcrtcSlots] because it is a different kind of fact: absent
+     * occupancy means "not known", this means "known, and the answer is that this
+     * will never connect again". Only a `404` puts an id in here — a coordinator we
+     * cannot reach leaves the set exactly as it was.
+     */
+    var olcrtcRevoked by mutableStateOf<Set<String>>(emptySet())
         private set
 
     private var olcrtcSlotsJob: Job? = null
@@ -562,9 +574,20 @@ class LocationViewModel(
             if (targets.isEmpty()) return@launch
 
             val fetched = mutableMapOf<String, OlcrtcSlots>()
+            val gone = mutableSetOf<String>()
+            val alive = mutableSetOf<String>()
             for ((storageId, key) in targets) {
-                olcrtcStatus.slotsFor(key)?.let { fetched[storageId] = it }
+                when (val status = olcrtcStatus.statusFor(key)) {
+                    is OlcrtcNodeStatus.Occupancy -> {
+                        fetched[storageId] = status.slots
+                        alive += storageId
+                    }
+                    OlcrtcNodeStatus.KeyGone -> gone += storageId
+                    // No answer changes nothing either way.
+                    OlcrtcNodeStatus.Unavailable -> Unit
+                }
             }
+            olcrtcRevoked = olcrtcRevoked - alive + gone
             // Merge rather than replace: a node that failed this pass keeps the number
             // it had, which is older but truer than nothing.
             olcrtcSlots = olcrtcSlots + fetched

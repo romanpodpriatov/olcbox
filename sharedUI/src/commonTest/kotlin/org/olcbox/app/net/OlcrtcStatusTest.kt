@@ -100,4 +100,54 @@ class OlcrtcStatusTest {
         val engine = MockEngine { error("the client must not call out for a key it cannot hash") }
         assertNull(OlcrtcStatusClient(HttpClient(engine)).slotsFor("not-a-key"))
     }
+
+    // ── the three answers ──────────────────────────────────────────────────
+    //
+    // Collapsing all of these into null is what let a batch of revoked keys read
+    // as a broken app: the board lost its seats, the tunnel refused to pair, and
+    // nothing on screen said why.
+
+    @Test fun aRevokedKeyIsAnAnswer() = runTest {
+        val engine = MockEngine {
+            respond(
+                content = """{"error":{"code":"NOT_FOUND","message":"Unknown or revoked key"}}""",
+                status = HttpStatusCode.NotFound,
+                headers = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString())
+            )
+        }
+        assertEquals(
+            OlcrtcNodeStatus.KeyGone,
+            OlcrtcStatusClient(HttpClient(engine)).statusFor("ab".repeat(32))
+        )
+    }
+
+    @Test fun aCoordinatorWeCannotReachSaysNothingAboutTheKey() = runTest {
+        val engine = MockEngine { respond(content = "", status = HttpStatusCode.BadGateway) }
+        assertEquals(
+            OlcrtcNodeStatus.Unavailable,
+            OlcrtcStatusClient(HttpClient(engine)).statusFor("ab".repeat(32))
+        )
+    }
+
+    @Test fun aKeyTooMalformedToAskAboutIsNotARevokedOne() = runTest {
+        val engine = MockEngine { error("the client must not call out for a key it cannot hash") }
+        assertEquals(
+            OlcrtcNodeStatus.Unavailable,
+            OlcrtcStatusClient(HttpClient(engine)).statusFor("not-a-key")
+        )
+    }
+
+    @Test fun occupancyStillComesBackAsANumber() = runTest {
+        val engine = MockEngine {
+            respond(
+                content = """{"slots_total":8,"slots_free":3,"holds_slot":true}""",
+                status = HttpStatusCode.OK,
+                headers = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString())
+            )
+        }
+        assertEquals(
+            OlcrtcNodeStatus.Occupancy(OlcrtcSlots(slots_total = 8, slots_free = 3, holds_slot = true)),
+            OlcrtcStatusClient(HttpClient(engine)).statusFor("ab".repeat(32))
+        )
+    }
 }

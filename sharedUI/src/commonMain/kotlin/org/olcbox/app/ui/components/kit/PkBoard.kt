@@ -198,6 +198,11 @@ fun PkRoomCard(
     pingMs: Int?,
     isMeasuring: Boolean,
     isOffline: Boolean,
+    /**
+     * The coordinator does not recognise this room's key any more, so nothing here
+     * will connect until the list is fetched again.
+     */
+    keyGone: Boolean,
     wire: String,
     onClick: () -> Unit,
     onLongClick: (() -> Unit)? = null,
@@ -296,6 +301,19 @@ fun PkRoomCard(
                 textAlign = TextAlign.End,
                 maxLines = 1,
                 modifier = Modifier.width(52.dp)
+            )
+        }
+
+        // Said where the seats would be, because their absence is the symptom the
+        // user sees first — and said at all, because silence here is what makes a
+        // revoked key look like a broken app.
+        if (keyGone) {
+            Text(
+                text = "KEY NO LONGER VALID · REFRESH THIS LIST",
+                style = pkMono(9, 1.1),
+                color = palette.accent2,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
         }
 
