@@ -78,7 +78,10 @@ fun pingReading(
 ): PkPing = when {
     isMeasuring -> PkPing("···", PkPingState.Measuring)
     pingMs != null -> PkPing("$pingMs ms", PkPingState.Measured)
-    failed && !connectedHere -> PkPing("no answer", PkPingState.NoAnswer)
+    // Short because this column is beside the room's name and every dp it takes is
+    // a dp the name loses on every card — "no answer" cost the title ten of them to
+    // say a thing that appears rarely. It still reads as the probe, not the node.
+    failed && !connectedHere -> PkPing("no ping", PkPingState.NoAnswer)
     else -> PkPing("—", PkPingState.Unmeasured)
 }
 

@@ -34,6 +34,7 @@ import org.olcbox.app.ui.features.home.components.buildBoardModel
 import org.olcbox.app.ui.features.home.components.formatSessionDuration
 import org.olcbox.app.ui.features.home.components.locationDisplayParts
 import org.olcbox.app.ui.features.home.components.pingFor
+import org.olcbox.app.ui.features.home.components.rememberBoardModel
 import org.olcbox.app.ui.features.locations.LocationViewModel
 import org.olcbox.app.ui.features.onboarding.OnboardingScreen
 import org.olcbox.app.util.formatByteSize
@@ -88,7 +89,6 @@ fun HomeScreen(
 
     val state by viewModel.state.collectAsState()
     val connectedSince by viewModel.connectedSince.collectAsState()
-    val traffic by viewModel.traffic.collectAsState()
     val subscriptionSettings by viewModel.subscriptionSettings.collectAsState()
     val subscriptionSettingsLoaded by viewModel.subscriptionSettingsLoaded.collectAsState()
     val scope = rememberCoroutineScope()
@@ -114,21 +114,35 @@ fun HomeScreen(
     // what the trace wants is the difference between two of them — which means
     // remembering the previous reading, and forgetting it when the session ends
     // so the next one does not open with a spike the size of the last one's total.
-    var nowTick by remember { mutableStateOf(nowMillis()) }
-    var trafficSamples by remember { mutableStateOf(emptyList<Long>()) }
+    //
+    // Held in state objects that nothing in this function reads. The strip reads
+    // them, through the lambdas below, so a second passing recomposes a strip
+    // rather than the whole board — which is what it did, once a second, for
+    // every card, every seat pip with its colour animation and every canvas on
+    // the screen. The traffic counters are read off the StateFlow inside the loop
+    // for the same reason: collectAsState here would subscribe this function to
+    // something that changes every second.
+    val nowTick = remember { mutableStateOf(nowMillis()) }
+    val trafficSamples = remember { mutableStateOf(emptyList<Long>()) }
+    val bytesLine = remember { mutableStateOf("") }
     LaunchedEffect(state.isVpnConnected, connectedSince) {
         if (!state.isVpnConnected) {
-            trafficSamples = emptyList()
+            trafficSamples.value = emptyList()
+            bytesLine.value = ""
             return@LaunchedEffect
         }
         var previousTotal: Long? = null
         while (state.isVpnConnected) {
             delay(1_000)
-            nowTick = nowMillis()
-            val counters = traffic
+            nowTick.value = nowMillis()
+            val counters = viewModel.traffic.value
             if (counters != null) {
+                bytesLine.value =
+                    "↓ ${formatByteSize(counters.bytesIn)}   ↑ ${formatByteSize(counters.bytesOut)}"
                 val total = counters.bytesIn + counters.bytesOut
-                previousTotal?.let { trafficSamples = appendThroughput(trafficSamples, total - it) }
+                previousTotal?.let {
+                    trafficSamples.value = appendThroughput(trafficSamples.value, total - it)
+                }
                 previousTotal = total
             }
         }
@@ -287,11 +301,11 @@ fun HomeScreen(
 
     // ── what the board is, computed once for the head and the list ──────────
 
-    val model = buildBoardModel(
+    val model = rememberBoardModel(
         locations = locations,
         activeFilterKey = transportFilter,
         sort = subscriptionSettings.sort,
-        pingFor = { id -> pingsState.pingFor(id) }
+        pingsState = pingsState
     )
 
     val selectedId = locationViewModel.selectedLocationId
@@ -310,23 +324,26 @@ fun HomeScreen(
                 hasSeats = selectedSlots != null,
                 transportLabel = selectedConfig?.transportKind()?.label()
             ),
-            statusMeta = statusMeta(
-                isConnected = state.isVpnConnected,
-                bytesIn = traffic?.bytesIn,
-                bytesOut = traffic?.bytesOut,
-                requiresSetup = requiresSetup,
-                isFull = roomIsBlocked(selectedSlots, mine = state.isVpnConnected),
-                protocolLine = selectedConfig?.protocolLabels()?.joinToString(" · ")
-            ),
-            statusValue = statusValue(
-                isConnected = state.isVpnConnected,
-                connectedSince = connectedSince,
-                nowEpochMs = nowTick,
-                exitName = selectedName
-            ),
+            statusMeta = {
+                statusMeta(
+                    isConnected = state.isVpnConnected,
+                    bytesLine = bytesLine.value,
+                    requiresSetup = requiresSetup,
+                    isFull = roomIsBlocked(selectedSlots, mine = state.isVpnConnected),
+                    protocolLine = selectedConfig?.protocolLabels()?.joinToString(" · ")
+                )
+            },
+            statusValue = {
+                statusValue(
+                    isConnected = state.isVpnConnected,
+                    connectedSince = connectedSince,
+                    nowEpochMs = nowTick.value,
+                    exitName = selectedName
+                )
+            },
             isActive = state.isVpnConnected,
             isBusy = state.isVpnLoading,
-            trafficTrace = throughputTrace(trafficSamples),
+            trafficTrace = { throughputTrace(trafficSamples.value) },
             notice = state.notice(),
             heading = boardHeading(model.hasRooms),
             sortLabel = sortLabel(subscriptionSettings.sort),
@@ -534,14 +551,12 @@ internal fun statusLabel(
 /** The second line: traffic while connected, and what would be joined while not. */
 internal fun statusMeta(
     isConnected: Boolean,
-    bytesIn: Long?,
-    bytesOut: Long?,
+    bytesLine: String,
     requiresSetup: Boolean,
     isFull: Boolean,
     protocolLine: String?
 ): String = when {
-    isConnected && bytesIn != null && bytesOut != null ->
-        "↓ ${formatByteSize(bytesIn)}   ↑ ${formatByteSize(bytesOut)}"
+    isConnected && bytesLine.isNotBlank() -> bytesLine
     isConnected -> protocolLine.orEmpty()
     requiresSetup -> "Add a server list to start"
     isFull -> "this room is full"

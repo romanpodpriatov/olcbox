@@ -302,7 +302,7 @@ fun PkRoomCard(
                 },
                 textAlign = TextAlign.End,
                 maxLines = 1,
-                modifier = Modifier.width(62.dp)
+                modifier = Modifier.width(54.dp)
             )
         }
 

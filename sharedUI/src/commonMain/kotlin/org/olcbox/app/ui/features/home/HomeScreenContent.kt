@@ -24,6 +24,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -56,15 +57,16 @@ import org.olcbox.app.ui.icons.PkIcons
  */
 
 /** The pinned bands: what the header, the status strip and the board head show. */
+@Immutable
 data class HomeChrome(
     val tag: String,
     val statusLabel: String,
-    val statusMeta: String,
-    val statusValue: String,
+    /** Deferred: these move every second — see PkStatusStrip. */
+    val statusMeta: () -> String,
+    val statusValue: () -> String,
     val isActive: Boolean,
     val isBusy: Boolean,
-    /** Per-second throughput, scaled 0f..1f. Empty while nothing is connected. */
-    val trafficTrace: List<Float>,
+    val trafficTrace: () -> List<Float>,
     val notice: String?,
     val heading: String,
     val sortLabel: String,
@@ -75,6 +77,7 @@ data class HomeChrome(
 )
 
 /** Everything the scrolling list needs to draw itself. */
+@Immutable
 data class HomeBoard(
     val model: BoardModel,
     val selectedLocationId: String?,
@@ -94,6 +97,7 @@ data class HomeBoard(
 )
 
 /** One place for every callback, so the signature below stays readable. */
+@Immutable
 data class HomeCallbacks(
     val onBrandTap: () -> Unit,
     val onDiagnosticsClick: () -> Unit,
@@ -274,10 +278,10 @@ private fun HomeTopBands(
         Column(modifier = Modifier.padding(horizontal = 16.dp)) {
             PkStatusStrip(
                 label = chrome.statusLabel,
-                meta = chrome.statusMeta,
-                value = chrome.statusValue,
                 isActive = chrome.isActive,
                 isBusy = chrome.isBusy,
+                meta = chrome.statusMeta,
+                value = chrome.statusValue,
                 trafficTrace = chrome.trafficTrace
             )
             chrome.notice?.let { notice ->

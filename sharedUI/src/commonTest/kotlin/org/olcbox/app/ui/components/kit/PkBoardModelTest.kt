@@ -82,7 +82,7 @@ class PkBoardModelTest {
     fun aProbeThatGotNothingSaysSoWithoutCondemningTheServer() {
         val reading = pingReading(null, isMeasuring = false, failed = true, connectedHere = false)
         assertEquals(PkPingState.NoAnswer, reading.state)
-        assertEquals("no answer", reading.label)
+        assertEquals("no ping", reading.label)
     }
 
     @Test

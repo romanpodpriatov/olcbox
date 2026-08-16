@@ -13,6 +13,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -73,6 +75,7 @@ import org.olcbox.app.util.parseEmojiAndName
  * A chip in the transport filter. [order] keeps chips in protocol order (Reality,
  * Hysteria2, XHTTP, …) rather than whatever order locations happen to arrive in.
  */
+@Immutable
 data class TransportFilterOption(
     val key: String,
     val label: String,
@@ -80,11 +83,13 @@ data class TransportFilterOption(
 )
 
 /** One server list, with the rows it contributed after filtering and sorting. */
+@Immutable
 data class BoardGroup(
     val key: String,
     val locations: List<LocationItem>
 )
 
+@Immutable
 data class BoardModel(
     val filterOptions: List<TransportFilterOption>,
     val filterCounts: Map<String, Int>,
@@ -97,6 +102,26 @@ data class BoardModel(
 ) {
     /** Chips earn their row only from two options up; one chip is noise. */
     val showChips: Boolean get() = filterOptions.size > 1
+}
+
+/**
+ * [buildBoardModel], kept until its inputs actually move.
+ *
+ * It filters, sorts and groups the whole location list, and it ran on every
+ * recomposition of the home screen — which, while a session is up, was every
+ * second. Nothing about the board changes when a clock ticks.
+ */
+@Composable
+fun rememberBoardModel(
+    locations: List<LocationItem>,
+    activeFilterKey: String?,
+    sort: SubscriptionSort,
+    pingsState: PingsState
+): BoardModel = remember(locations, activeFilterKey, sort, pingsState) {
+    // Keyed on the ping state itself, not on a `(String) -> Int?` built at the call
+    // site: that lambda is a fresh object every composition, so remembering on it
+    // would never hit and this would be memoisation in name only.
+    buildBoardModel(locations, activeFilterKey, sort) { id -> pingsState.pingFor(id) }
 }
 
 /**

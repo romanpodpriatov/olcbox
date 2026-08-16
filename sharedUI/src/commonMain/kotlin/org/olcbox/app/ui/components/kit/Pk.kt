@@ -27,7 +27,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
@@ -326,25 +326,30 @@ fun pkScreenBackground(): Modifier {
     val ground = MaterialTheme.colorScheme.background
     val glow = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
     val step = with(LocalDensity.current) { 48.dp.toPx() }
-    return Modifier.drawBehind {
-        if (size.width <= 0f || size.height <= 0f) return@drawBehind
-        drawRect(color = ground)
-        drawRect(
-            brush = Brush.radialGradient(
-                colors = listOf(glow, Color.Transparent),
-                center = Offset(size.width / 2f, -size.height * 0.1f),
-                radius = size.width * 0.9f
-            )
+    // drawWithCache, not drawBehind: this covers the whole screen and re-ran on
+    // every invalidation, building a fresh radial-gradient shader each time. On a
+    // screen with a pulsing dot on it that is a new shader per frame, for a
+    // background that only changes when the window resizes.
+    return Modifier.drawWithCache {
+        val glowBrush = Brush.radialGradient(
+            colors = listOf(glow, Color.Transparent),
+            center = Offset(size.width / 2f, -size.height * 0.1f),
+            radius = size.width * 0.9f
         )
-        var x = 0f
-        while (x <= size.width) {
-            drawLine(grid, Offset(x, 0f), Offset(x, size.height), strokeWidth = 1f)
-            x += step
-        }
-        var y = 0f
-        while (y <= size.height) {
-            drawLine(grid, Offset(0f, y), Offset(size.width, y), strokeWidth = 1f)
-            y += step
+        val verticals = if (step > 0f) generateSequence(0f) { it + step }
+            .takeWhile { it <= size.width }.toList() else emptyList()
+        val horizontals = if (step > 0f) generateSequence(0f) { it + step }
+            .takeWhile { it <= size.height }.toList() else emptyList()
+        onDrawBehind {
+            if (size.width <= 0f || size.height <= 0f) return@onDrawBehind
+            drawRect(color = ground)
+            drawRect(brush = glowBrush)
+            verticals.forEach { x ->
+                drawLine(grid, Offset(x, 0f), Offset(x, size.height), strokeWidth = 1f)
+            }
+            horizontals.forEach { y ->
+                drawLine(grid, Offset(0f, y), Offset(size.width, y), strokeWidth = 1f)
+            }
         }
     }
 }

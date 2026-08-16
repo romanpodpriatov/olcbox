@@ -281,16 +281,21 @@ fun PkScreenHeader(
 @Composable
 fun PkStatusStrip(
     label: String,
-    meta: String,
-    value: String,
     isActive: Boolean,
     isBusy: Boolean,
     modifier: Modifier = Modifier,
     /**
-     * Per-second throughput, newest last, already scaled to 0f..1f by
-     * `throughputTrace`. Empty draws nothing.
+     * Lambdas, not values, and that is the whole point of them.
+     *
+     * These three move once a second while a session is up. Read where the caller
+     * builds this call, they invalidate the caller — which on the home screen is
+     * the screen, so the entire board recomposed every second: every card, every
+     * seat pip with its colour animation, every canvas. Read here, the second that
+     * passes recomposes a strip.
      */
-    trafficTrace: List<Float> = emptyList()
+    meta: () -> String = { "" },
+    value: () -> String = { "" },
+    trafficTrace: () -> List<Float> = { emptyList() }
 ) {
     val palette = LocalPkPalette.current
     val stateColor = when {
@@ -324,17 +329,18 @@ fun PkStatusStrip(
             )
             Spacer(Modifier.height(3.dp))
             Text(
-                text = meta,
+                text = meta(),
                 style = pkMono(10, 0.6),
                 color = palette.textDim,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
         }
-        if (value.isNotBlank()) {
+        val valueText = value()
+        if (valueText.isNotBlank()) {
             Spacer(Modifier.width(10.dp))
             Text(
-                text = value,
+                text = valueText,
                 style = MaterialTheme.typography.labelLarge.copy(
                     fontSize = 17.sp,
                     fontWeight = FontWeight.Medium,
@@ -350,9 +356,10 @@ fun PkStatusStrip(
         // "how full is the room" and barely changes; this answers "is anything
         // actually going through", which is the question a user stares at the
         // screen to have answered.
-        if (isActive && trafficTrace.isNotEmpty()) {
+        val trace = trafficTrace()
+        if (isActive && trace.isNotEmpty()) {
             Spacer(Modifier.height(10.dp))
-            PkTrafficTrace(trace = trafficTrace, modifier = Modifier.fillMaxWidth())
+            PkTrafficTrace(trace = trace, modifier = Modifier.fillMaxWidth())
         }
     }
 }
