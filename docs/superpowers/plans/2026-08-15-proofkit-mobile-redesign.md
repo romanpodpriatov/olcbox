@@ -121,6 +121,31 @@ weight the transport tag ran into the seat count as "SEI7 free".
 **`onCopyConfigRequested` was already dead** — declared on `HomeScreen` and never
 read, on `main`. Removed from all four files rather than left dangling.
 
+## What the device found that nothing here could
+
+Every one of these came from running the build on a phone. None of them was
+visible in a headless render, a unit test or a compile.
+
+- **A card contradicting itself.** The pips read a presence-corrected figure and
+  the count beside them read the raw one, so a lime seat sat next to "0 / 8".
+- **`holds_slot` is not an answer.** The coordinator returned the constant `true`
+  for any live key, so every empty room in the list drew an occupant. The client
+  now paints a seat only from its own connection state; the server was fixed
+  separately (`fix/olcrtc-holds-slot-honest` in the proofkit repo, deployed).
+- **A trace nobody could see** — drawn in the colour of somebody else's seat, on a
+  dark card, with no floor to read its height against, and blank for the first
+  45 seconds because one sample "was not a trend".
+- **"offline" was a verdict we had no right to make.** A probe is timed through a
+  connection, so a bad link failed every probe and marked every server dead —
+  including the room the tunnel was running through.
+- **A refresh that changed servers.** Pre-existing, in `main`: the merge treated
+  "the selection survived" as the case needing repair and reassigned it to the
+  first entry, and the screen's restart-on-change then re-dialled.
+- **A dot that cost a phone.** An infinite transition asks for a frame every
+  vsync and this toolkit redraws the whole scene on each; the connected
+  indicator did that for entire sessions. Background CPU was 0% and foreground
+  79%, which is what pointed at rendering rather than the tunnel.
+
 ## Still open
 
 - The Android settings screen is unverified beyond CI's compile — nobody has
@@ -128,3 +153,7 @@ read, on `main`. Removed from all four files rather than left dangling.
 - The plan bar is not repeated in the two-pane detail pane.
 - The disclosure well scrolls with no fade at its edge, so on a short screen
   there is no cue that there is more below.
+- The reference's About section (Privacy / Terms / Licenses) is not built. Note
+  when it is: the reference's "a client, not a service" wording is the phrasing
+  that built the 4.3(a) case against us — lead with olcRTC instead.
+- Foreground CPU after the rendering work is unmeasured; only a device can say.
