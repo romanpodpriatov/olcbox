@@ -322,9 +322,20 @@ class LocationsRepositoryImpl(
                 ).normalized()
             }
 
+            // Move the selection only when the server it points at is gone.
+            //
+            // This asked the opposite. Reuse hands an entry back its own storageId,
+            // so `activeAfter == activeBefore` is true exactly when the selection
+            // came through the refresh intact — and the branch then threw it away
+            // and took the first entry instead. Every refresh of the list holding
+            // your server moved you to that list's first one, and because the
+            // screen restarts a running tunnel when the active config changes, a
+            // refresh re-dialled you onto a server you had not chosen.
+            //
+            // Refresh updates a list. It is not a command to change servers.
             if (activeBefore != null &&
-                activeAfter == activeBefore &&
-                previousEntries.any { it.storageId == activeBefore }
+                previousEntries.any { it.storageId == activeBefore } &&
+                reassigned.none { it.storageId == activeAfter }
             ) {
                 activeAfter = reassigned.firstOrNull()?.storageId
             }

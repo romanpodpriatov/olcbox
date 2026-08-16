@@ -1082,6 +1082,64 @@ class LocationsRepositoryImplTest {
     }
 
     @Test
+    fun refreshLeavesTheChosenServerChosen() = runTest {
+        // Reported from a phone: refreshing a server list jumped the connection to
+        // whatever was first in it. Refresh must update the list and nothing else —
+        // it is not a command to change servers, still less to re-dial one.
+        val body = "olcrtc://telemost?vp8channel@11111#deadbeefdeadbeef\$DE\n" +
+            "olcrtc://telemost?vp8channel@22222#deadbeefdeadbeef\$NL"
+        val url = "https://example.test/sub/two"
+        val source = FakeLocationsDataSource()
+        val repo = LocationsRepositoryImpl(
+            dataSource = source,
+            httpClient = HttpClient(MockEngine { respond(body) })
+        )
+
+        repo.importText(url)
+        val entries = source.stored!!.locations
+        assertEquals(2, entries.size, "the fixture must offer a choice to keep")
+        val chosen = entries.last().storageId
+        repo.setActiveLocationId(chosen)
+
+        repo.refreshSubscription(url)
+
+        assertEquals(
+            chosen,
+            source.stored!!.activeLocationId,
+            "the selection survived the refresh and must not be reassigned"
+        )
+    }
+
+    @Test
+    fun refreshMovesTheSelectionOnlyWhenItsServerIsGone() = runTest {
+        // The behaviour the broken condition was reaching for: a chosen server that
+        // the provider dropped has to land somewhere, and the first entry is the
+        // least surprising place.
+        val url = "https://example.test/sub/two"
+        val source = FakeLocationsDataSource()
+        val bodies = listOf(
+            "olcrtc://telemost?vp8channel@11111#deadbeefdeadbeef\$DE\n" +
+                "olcrtc://telemost?vp8channel@22222#deadbeefdeadbeef\$NL",
+            "olcrtc://telemost?vp8channel@11111#deadbeefdeadbeef\$DE"
+        )
+        var call = 0
+        val repo = LocationsRepositoryImpl(
+            dataSource = source,
+            httpClient = HttpClient(MockEngine { respond(bodies[minOf(call++, 1)]) })
+        )
+
+        repo.importText(url)
+        val gone = source.stored!!.locations.last().storageId
+        repo.setActiveLocationId(gone)
+
+        repo.refreshSubscription(url)
+
+        val remaining = source.stored!!.locations
+        assertEquals(1, remaining.size)
+        assertEquals(remaining.single().storageId, source.stored!!.activeLocationId)
+    }
+
+    @Test
     fun refreshKeepsTheEncryptedOrigin() = runTest {
         // A refresh re-imports from the stored plaintext URL and never sees the
         // encrypted link, so without an explicit carry-over the first auto-refresh
