@@ -105,6 +105,24 @@ fun HomeScreen(
 
     val requiresSetup = !state.canStartVpn && !state.isVpnConnected && !state.isVpnLoading
 
+    /**
+     * Building a location by hand is plumbing, so it answers to the same gate the
+     * per-location editor does — which is what `AdminState.plumbingVisible` has
+     * documented all along ("the per-location configurator *and* create custom
+     * location"). The button was never wired to it.
+     *
+     * The comment that used to sit here argued the opposite: that adding a location
+     * by hand is the same act as importing a link, and neither should be gated. It
+     * was wrong on its own terms, because the button already went nowhere —
+     * `OlcboxAppContent` bounces `LocationSettings` straight back home unless the
+     * gate is open. On desktop, Windows and Linux this was a control that did
+     * nothing at all, offering to hand-build a location out of a room, a key, a
+     * provider and a transport to somebody who only wants to pick an exit.
+     *
+     * The platform flag still has the last word: iOS says no to it regardless.
+     */
+    val canCreateCustomLocation = showCustomLocation && admin
+
     // Elapsed time is not derived from anything Compose can observe, so it is
     // resampled on a timer rather than recomputed on recomposition. Only while a
     // session is up: a loop ticking over an idle screen is a wakeup a second for
@@ -372,11 +390,7 @@ fun HomeScreen(
             refreshingSubscriptionUrl = refreshingSubscriptionUrl,
             collapsible = subscriptionSettings.collapsible,
             showSettings = admin,
-            // The platform's answer, not the admin gate's. Where the app does build
-            // locations by hand, adding one is the same act as importing a link or
-            // scanning a QR code, and neither of those is gated — gating only this
-            // one made the app refuse in a dialog what it accepted from a clipboard.
-            showCustomLocation = showCustomLocation,
+            showCustomLocation = canCreateCustomLocation,
             showGetSubscription = showGetSubscription
         ),
         callbacks = HomeCallbacks(
@@ -495,10 +509,9 @@ fun HomeScreen(
                 onGetSubscriptionClick()
             },
             showGetSubscription = showGetSubscription,
-            // The same answer as the board above. These two disagreed — `true`
-            // there and the admin gate here — so the button appeared or vanished
-            // depending on which way in you took.
-            showCustomLocation = showCustomLocation
+            // The same answer as the board above: these two disagreed once, so the
+            // button appeared or vanished depending on which way in you took.
+            showCustomLocation = canCreateCustomLocation
         )
     }
 
