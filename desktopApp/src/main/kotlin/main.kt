@@ -493,10 +493,6 @@ fun main(args: Array<String>) = application {
                         onSubscriptionSettingsChanged =
                             dependencies.homeViewModel::updateSubscriptionSettings,
                         onDismiss = { showDesktopSettings = false },
-                        onCopyConfigClick = {
-                            dependencies.homeViewModel.onCopyFullConfigClicked()
-                            desktopNotice = "Copied"
-                        },
                         onSaveLogsClick = {
                             chooseSaveFile(
                                 owner = window,

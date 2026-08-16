@@ -10,6 +10,19 @@ interface LocationsRepository {
     val changes: StateFlow<Long>
     suspend fun getBundle(): LocationBundleV4
     suspend fun saveBundle(bundle: LocationBundleV4)
+    /**
+     * The whole stored bundle as JSON.
+     *
+     * **There is deliberately no way to reach this from the UI, and adding one
+     * needs a better reason than "backup".** It serialises every location's room
+     * id and key, every raw link, and every server-list URL — and a server-list
+     * URL is a bearer credential, which is why the screens go to the trouble of
+     * masking them (`pkSubscriptionSourceLine`). A "Copy Full Config" row used to
+     * put all of that on the clipboard in one tap, which undid the masking and
+     * everything behind it.
+     *
+     * Kept as the counterpart of [importText], and covered by its round-trip test.
+     */
     suspend fun exportBundle(): String
     suspend fun importText(text: String, subscriptionProxy: SubscriptionFetchProxy? = null): Boolean
     suspend fun refreshSubscriptions(

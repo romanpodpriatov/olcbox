@@ -416,10 +416,6 @@ fun AndroidMainScreen(
                 isAppSettingsOpen = false
                 applyPendingSplitTunnelRestart()
             },
-            onCopyConfigClick = {
-                viewModel.onCopyFullConfigClicked()
-                Toast.makeText(context, "Config copied", Toast.LENGTH_SHORT).show()
-            },
             onSaveLogsClick = {
                 val showToast: (String) -> Unit = { message ->
                     Toast.makeText(context, message, Toast.LENGTH_SHORT).show()

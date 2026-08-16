@@ -300,12 +300,6 @@ class HomeScreenViewModel(
     private fun updateLocationConfig(block: (LocationConfig) -> LocationConfig) {
         _state.update { it.copy(configData = block(it.configData)) }
     }
-    fun onCopyFullConfigClicked() {
-        viewModelScope.launch {
-            configImporter.copyToClipboard(locationsRepository.exportBundle())
-        }
-    }
-
     fun suggestedLogsFileName(): String = "proofkit-logs.txt"
 
     fun onSaveLogsToFile(

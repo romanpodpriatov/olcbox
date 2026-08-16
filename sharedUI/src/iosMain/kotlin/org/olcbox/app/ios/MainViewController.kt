@@ -249,9 +249,6 @@ private fun IosApp(
                     connectionModeSummary = "All device traffic through the tunnel",
                     showUpdates = false,
                     onDismiss = { isAppSettingsOpen = false },
-                    onCopyConfigClick = {
-                        dependencies.homeViewModel.onCopyFullConfigClicked()
-                    },
                     onSaveLogsClick = {
                         dependencies.homeViewModel.onSaveLogsToFile(
                             target = dependencies.homeViewModel.suggestedLogsFileName(),

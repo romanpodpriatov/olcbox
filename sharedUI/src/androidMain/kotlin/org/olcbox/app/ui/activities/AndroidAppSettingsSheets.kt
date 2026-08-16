@@ -139,7 +139,6 @@ internal fun AppSettingsSheet(
     enabled: Boolean,
     isConnectionActive: Boolean,
     onDismiss: () -> Unit,
-    onCopyConfigClick: () -> Unit,
     onSaveLogsClick: () -> Unit,
     onShareLogsClick: () -> Unit,
     onUpdateIntervalSelected: (Int) -> Unit,
@@ -315,7 +314,6 @@ internal fun AppSettingsSheet(
                     AppSettingsRoute.SubscriptionsSharing -> SubscriptionsSharingSettingsContent(
                         subscriptions = subscriptions,
                         onBack = { route = AppSettingsRoute.Hub },
-                        onCopyConfigClick = onCopyConfigClick,
                         onShareClick = onSubscriptionShareClick,
                         onRefreshClick = onSubscriptionRefreshClick,
                         onDeleteClick = onSubscriptionDeleteClick
@@ -1123,7 +1121,6 @@ private fun UpdatesSettingsContent(
 private fun SubscriptionsSharingSettingsContent(
     subscriptions: List<SubscriptionShareItem>,
     onBack: () -> Unit,
-    onCopyConfigClick: () -> Unit,
     onShareClick: (String) -> Unit,
     onRefreshClick: (String) -> Unit,
     onDeleteClick: (String) -> Unit
@@ -1150,17 +1147,6 @@ private fun SubscriptionsSharingSettingsContent(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            SettingsSectionLabel("Current Config")
-
-            SettingsNavigationRow(
-                title = "Copy Full Config",
-                value = "Backup all locations to clipboard",
-                icon = PkIcons.ContentPaste,
-                enabled = true,
-                showChevron = false,
-                onClick = onCopyConfigClick
-            )
-
             SettingsSectionLabel("Server lists")
 
             if (subscriptions.isEmpty()) {
