@@ -51,6 +51,37 @@ fun transportTag(config: LocationConfig?): String? {
     return config.protocolLabels().lastOrNull()?.takeIf { it.isNotBlank() }
 }
 
+// ── latency ────────────────────────────────────────────────────────────────
+
+enum class PkPingState { Measuring, Measured, NoAnswer, Unmeasured }
+
+data class PkPing(val label: String, val state: PkPingState)
+
+/**
+ * What the latency column says.
+ *
+ * A failed measurement used to be printed as **offline**, which is a claim about
+ * the server made from a failure that is usually ours: a probe is timed through a
+ * connection, and on the bad link that makes probes fail every server in the list
+ * reads as dead. It said so even about the room the tunnel was running through,
+ * which cannot be offline by definition — the traffic is going through it.
+ *
+ * So: [connectedHere] is proof of reachability and outranks a failed probe, and a
+ * failure elsewhere is reported as what actually happened — no answer — rather
+ * than as a verdict on the node.
+ */
+fun pingReading(
+    pingMs: Int?,
+    isMeasuring: Boolean,
+    failed: Boolean,
+    connectedHere: Boolean
+): PkPing = when {
+    isMeasuring -> PkPing("···", PkPingState.Measuring)
+    pingMs != null -> PkPing("$pingMs ms", PkPingState.Measured)
+    failed && !connectedHere -> PkPing("no answer", PkPingState.NoAnswer)
+    else -> PkPing("—", PkPingState.Unmeasured)
+}
+
 // ── seats ──────────────────────────────────────────────────────────────────
 
 enum class SeatState {

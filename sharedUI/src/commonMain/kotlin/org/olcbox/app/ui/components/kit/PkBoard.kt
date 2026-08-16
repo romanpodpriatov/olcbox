@@ -284,23 +284,25 @@ fun PkRoomCard(
                 )
                 Spacer(Modifier.width(8.dp))
             }
+            val ping = pingReading(
+                pingMs = pingMs,
+                isMeasuring = isMeasuring,
+                failed = isOffline,
+                connectedHere = connectedHere
+            )
             Text(
-                text = when {
-                    isMeasuring -> "···"
-                    pingMs != null -> "$pingMs ms"
-                    isOffline -> "offline"
-                    else -> "—"
-                },
+                text = ping.label,
                 style = pkMono(10, 0.4),
-                color = when {
-                    isMeasuring -> palette.textMuted
-                    pingMs != null -> pkPingColor(pingMs)
-                    isOffline -> palette.danger
-                    else -> palette.textMuted
+                color = when (ping.state) {
+                    PkPingState.Measured -> pkPingColor(pingMs ?: 0)
+                    // Amber, not red: a probe that got nothing is a fact about the
+                    // attempt, and red here read as a verdict on the server.
+                    PkPingState.NoAnswer -> palette.accent2
+                    PkPingState.Measuring, PkPingState.Unmeasured -> palette.textMuted
                 },
                 textAlign = TextAlign.End,
                 maxLines = 1,
-                modifier = Modifier.width(52.dp)
+                modifier = Modifier.width(62.dp)
             )
         }
 

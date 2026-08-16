@@ -60,6 +60,50 @@ class PkBoardModelTest {
         assertEquals("an encrypted tunnel", wireShape(null))
     }
 
+    // ── latency ────────────────────────────────────────────────────────────
+
+    @Test
+    fun theRoomCarryingTheTunnelIsNeverReportedUnreachable() {
+        // Reported from a phone on a bad link: every server read "offline",
+        // including the room the traffic was going through. A probe is timed
+        // through a connection, so a bad connection fails every probe — that is a
+        // fact about the attempt, not about the node.
+        val reading = pingReading(
+            pingMs = null,
+            isMeasuring = false,
+            failed = true,
+            connectedHere = true
+        )
+        assertEquals(PkPingState.Unmeasured, reading.state)
+        assertEquals("—", reading.label)
+    }
+
+    @Test
+    fun aProbeThatGotNothingSaysSoWithoutCondemningTheServer() {
+        val reading = pingReading(null, isMeasuring = false, failed = true, connectedHere = false)
+        assertEquals(PkPingState.NoAnswer, reading.state)
+        assertEquals("no answer", reading.label)
+    }
+
+    @Test
+    fun aMeasurementIsStillJustANumber() {
+        assertEquals(
+            PkPing("38 ms", PkPingState.Measured),
+            pingReading(38, isMeasuring = false, failed = false, connectedHere = false)
+        )
+        assertEquals(
+            PkPingState.Measuring,
+            pingReading(38, isMeasuring = true, failed = false, connectedHere = false).state
+        )
+    }
+
+    @Test
+    fun nothingMeasuredYetIsADashRatherThanAVerdict() {
+        val reading = pingReading(null, isMeasuring = false, failed = false, connectedHere = false)
+        assertEquals(PkPingState.Unmeasured, reading.state)
+        assertEquals("—", reading.label)
+    }
+
     // ── seats ──────────────────────────────────────────────────────────────
 
     @Test
