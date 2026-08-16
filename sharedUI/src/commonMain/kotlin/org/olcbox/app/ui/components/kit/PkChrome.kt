@@ -84,32 +84,27 @@ fun pkMono(size: Int, tracking: Double = 1.4): TextStyle =
 // ── the pulsing dot ────────────────────────────────────────────────────────
 
 /**
- * State as a dot, with a ring that swells and fades while a session is live.
+ * State as a dot, with a soft halo while a session is live.
  *
- * Outward and fading rather than the breathing scale used elsewhere: a live
- * tunnel is something leaving the device, and a pulse that returns to where it
- * started reads as waiting.
+ * It used to swell and fade on an infinite transition. That is one decorative
+ * animation, and it cost the whole screen: an infinite transition asks for a frame
+ * every vsync for as long as it runs, and Compose Multiplatform redraws the scene
+ * — grid background, every card, every canvas — on each of them. Connected for an
+ * hour meant redrawing this screen two hundred thousand times, and a phone that
+ * was cool in the background got hot the moment the app was on screen.
+ *
+ * The halo says connected without asking for a single extra frame. What actually
+ * proves the session is alive is the throughput trace under it, which moves once a
+ * second because bytes moved — a signal rather than a decoration.
  */
 @Composable
 fun PkPulseDot(color: Color, pulse: Boolean, size: Int = 8) {
     Box(contentAlignment = Alignment.Center) {
         if (pulse) {
-            val transition = rememberInfiniteTransition(label = "pkPulse")
-            val progress by transition.animateFloat(
-                initialValue = 0f,
-                targetValue = 1f,
-                animationSpec = infiniteRepeatable(
-                    animation = tween(1700, easing = LinearEasing),
-                    repeatMode = RepeatMode.Restart
-                ),
-                label = "pkPulseProgress"
-            )
             Box(
                 Modifier
-                    .size(size.dp)
-                    .scale(1f + progress * 1.1f)
-                    .alpha((1f - progress) * 0.5f)
-                    .background(color, CircleShape)
+                    .size((size * 2.1f).dp)
+                    .background(color.copy(alpha = 0.18f), CircleShape)
             )
         }
         Box(Modifier.size(size.dp).background(color, CircleShape))

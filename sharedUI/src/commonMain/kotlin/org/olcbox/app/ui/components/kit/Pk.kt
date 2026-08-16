@@ -1,10 +1,5 @@
 package org.olcbox.app.ui.components.kit
 
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -24,11 +19,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithCache
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -149,8 +142,6 @@ fun pkVersionLine(info: AppInfo): String {
     ).joinToString(" · ")
 }
 
-enum class PkStatus { Idle, Active, Warn, Error }
-
 /** Site `.eyebrow`: mono uppercase label with a lime dot (optionally pulsing). */
 @Composable
 fun PkSectionLabel(text: String, pulse: Boolean = false) {
@@ -168,31 +159,15 @@ fun PkSectionLabel(text: String, pulse: Boolean = false) {
 
 @Composable
 private fun PkDot(color: Color, halo: Color, pulse: Boolean) {
-    val scale = if (pulse) {
-        val t = rememberInfiniteTransition(label = "pkDot")
-        val s by t.animateFloat(
-            initialValue = 1f,
-            targetValue = 1.8f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(1200, easing = LinearEasing),
-                repeatMode = RepeatMode.Reverse
-            ),
-            label = "pkDotScale"
-        )
-        s
-    } else 1f
+    // No infinite transition here either. It had no caller asking for one, and an
+    // animation that runs forever asks Compose for a frame every vsync — which on
+    // this toolkit redraws the whole scene. One was enough to heat a phone; see
+    // PkPulseDot.
     Box(contentAlignment = Alignment.Center) {
-        Box(
-            Modifier
-                .size(14.dp)
-                .scale(scale)
-                .background(halo, CircleShape)
-        )
-        Box(
-            Modifier
-                .size(8.dp)
-                .background(color, CircleShape)
-        )
+        if (pulse) {
+            Box(Modifier.size(14.dp).background(halo, CircleShape))
+        }
+        Box(Modifier.size(8.dp).background(color, CircleShape))
     }
 }
 
@@ -224,37 +199,6 @@ fun PkCardSunken(
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         content = content
     )
-}
-
-/** TWA `.status-eyebrow`: dot + mono text pill. */
-@Composable
-fun PkStatusPill(state: PkStatus, text: String, modifier: Modifier = Modifier) {
-    val pk = LocalPkPalette.current
-    val (dot, halo) = when (state) {
-        PkStatus.Active -> pk.accent to pk.accentSoft
-        PkStatus.Warn -> pk.accent2 to pk.accent2Soft
-        PkStatus.Error -> pk.danger to Color(0x1FF43F5E)
-        PkStatus.Idle -> pk.textMuted to Color.Transparent
-    }
-    Surface(
-        modifier = modifier,
-        shape = RoundedCornerShape(999.dp),
-        color = MaterialTheme.colorScheme.surfaceContainer,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            PkDot(color = dot, halo = halo, pulse = state == PkStatus.Active)
-            Text(
-                text = text.uppercase(),
-                style = MaterialTheme.typography.labelMedium,
-                color = if (state == PkStatus.Idle) pk.textMuted else MaterialTheme.colorScheme.onSurface
-            )
-        }
-    }
 }
 
 /**
