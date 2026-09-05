@@ -68,6 +68,8 @@ data class HomeChrome(
     val isBusy: Boolean,
     val trafficTrace: () -> List<Float>,
     val notice: String?,
+    /** Whether [notice] is a failure the user may wave away, rather than a block. */
+    val noticeDismissible: Boolean,
     val heading: String,
     val sortLabel: String,
     val action: PkAction,
@@ -108,6 +110,7 @@ data class HomeCallbacks(
     val onSortClick: () -> Unit,
     val onFilterSelected: (String?) -> Unit,
     val onActionClick: () -> Unit,
+    val onDismissNotice: () -> Unit,
     val onPullToRefresh: () -> Unit,
     val onLocationSelected: (String) -> Unit,
     val onLocationSettingsClick: (String) -> Unit,
@@ -286,7 +289,10 @@ private fun HomeTopBands(
             )
             chrome.notice?.let { notice ->
                 Spacer(Modifier.height(11.dp))
-                RelayNotice(text = notice)
+                RelayNotice(
+                    text = notice,
+                    onDismiss = callbacks.onDismissNotice.takeIf { chrome.noticeDismissible }
+                )
             }
             Spacer(Modifier.height(12.dp))
         }

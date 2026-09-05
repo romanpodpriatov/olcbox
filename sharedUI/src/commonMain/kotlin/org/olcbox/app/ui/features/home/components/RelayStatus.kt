@@ -12,6 +12,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import org.olcbox.app.ui.icons.PkIcons
@@ -23,30 +24,66 @@ import org.olcbox.app.ui.theme.LocalPkPalette
  * Kept as its own element rather than folded into the status strip's meta line:
  * it has to survive being three lines long — an extension's own account of its
  * death is not a phrase — and that line is a single line by design.
+ *
+ * With [onDismiss] the whole card is the control and a close mark at the
+ * trailing edge says so. A failure used to be something the user could only
+ * outlive: nothing but a successful connect or a relaunch took it off the
+ * screen, so a message about a room that no longer mattered sat there for the
+ * rest of the session. The card rather than the mark is what takes the tap
+ * because an 18dp mark is a poor target and a 48dp button would make a one-line
+ * notice twice as tall as its text.
  */
 @Composable
-fun RelayNotice(text: String, modifier: Modifier = Modifier) {
+fun RelayNotice(text: String, modifier: Modifier = Modifier, onDismiss: (() -> Unit)? = null) {
     val pk = LocalPkPalette.current
-    Surface(
-        modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(14.dp),
-        color = MaterialTheme.colorScheme.errorContainer,
-        border = BorderStroke(1.dp, pk.danger)
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
+    val shape = RoundedCornerShape(14.dp)
+    val color = MaterialTheme.colorScheme.errorContainer
+    val border = BorderStroke(1.dp, pk.danger)
+    if (onDismiss != null) {
+        Surface(
+            onClick = onDismiss,
+            modifier = modifier.fillMaxWidth(),
+            shape = shape,
+            color = color,
+            border = border
         ) {
+            NoticeBody(text, dismissible = true)
+        }
+    } else {
+        Surface(modifier = modifier.fillMaxWidth(), shape = shape, color = color, border = border) {
+            NoticeBody(text, dismissible = false)
+        }
+    }
+}
+
+@Composable
+private fun NoticeBody(text: String, dismissible: Boolean) {
+    val pk = LocalPkPalette.current
+    Row(
+        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.Top
+    ) {
+        Icon(
+            imageVector = PkIcons.PriorityHigh,
+            contentDescription = null,
+            tint = pk.danger,
+            modifier = Modifier.size(18.dp)
+        )
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onErrorContainer,
+            modifier = Modifier.weight(1f)
+        )
+        if (dismissible) {
+            // Same box as the mark on the left, so the two sit on the first line
+            // together and a one-line notice is no taller for being dismissible.
             Icon(
-                imageVector = PkIcons.PriorityHigh,
-                contentDescription = null,
-                tint = pk.danger,
+                imageVector = PkIcons.Close,
+                contentDescription = "Dismiss",
+                tint = MaterialTheme.colorScheme.onErrorContainer,
                 modifier = Modifier.size(18.dp)
-            )
-            Text(
-                text = text,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onErrorContainer
             )
         }
     }

@@ -143,39 +143,7 @@ class HomeScreenViewModel(
 
         viewModelScope.launch {
             vpnManager.status.collect { status ->
-                _state.update {
-                    when (status) {
-                        VpnStatus.Connected ->
-                            it.copy(isVpnConnected = true, isVpnLoading = false, failure = null)
-
-                        VpnStatus.Connecting ->
-                            it.copy(isVpnConnected = false, isVpnLoading = true, failure = null)
-
-                        VpnStatus.Reconnecting ->
-                            it.copy(isVpnConnected = true, isVpnLoading = true)
-
-                        VpnStatus.Stopping ->
-                            it.copy(isVpnConnected = false, isVpnLoading = false)
-
-                        VpnStatus.Disconnected ->
-                            it.copy(isVpnConnected = false, isVpnLoading = false)
-
-                        // The reason used to stop here. The extension goes to
-                        // real trouble to explain itself — it writes a stage
-                        // breadcrumb the app reads back precisely because the
-                        // system will only ever say "disconnected" — and this
-                        // dropped the message on the floor, leaving a button
-                        // that spins, returns to START and says nothing. The
-                        // commonest case of all is a user who declined the VPN
-                        // permission prompt.
-                        is VpnStatus.Error ->
-                            it.copy(
-                                isVpnConnected = false,
-                                isVpnLoading = false,
-                                failure = status.message
-                            )
-                    }
-                }
+                _state.update { it.applying(status) }
             }
         }
     }
@@ -238,6 +206,11 @@ class HomeScreenViewModel(
 
     fun startVpnContinuation() {
         _state.update { it.copy(isVpnLoading = true, failure = null) }
+    }
+
+    /** The user has read the last failure and waved it away. */
+    fun dismissFailure() {
+        _state.update { it.copy(failure = null) }
     }
 
     fun ToggleVpn() {
@@ -516,6 +489,38 @@ data class HomeScreenState(
      */
     fun notice(): String? = failure
         ?: startBlockedReason?.takeIf { selectedLocation != null && !canStartVpn }
+
+    /** The state after the platform reports [status]. Pure, so it can be tested. */
+    fun applying(status: VpnStatus): HomeScreenState = when (status) {
+        VpnStatus.Connected ->
+            copy(isVpnConnected = true, isVpnLoading = false, failure = null)
+
+        VpnStatus.Connecting ->
+            copy(isVpnConnected = false, isVpnLoading = true, failure = null)
+
+        VpnStatus.Reconnecting ->
+            copy(isVpnConnected = true, isVpnLoading = true)
+
+        // A stop is the user acting on the message — or on nothing, but either
+        // way past it. These two used to leave `failure` alone, which meant the
+        // banner outlived everything short of a relaunch: read it, press stop,
+        // and a red box about a room you had given up on stayed for the rest
+        // of the session.
+        VpnStatus.Stopping ->
+            copy(isVpnConnected = false, isVpnLoading = false, failure = null)
+
+        VpnStatus.Disconnected ->
+            copy(isVpnConnected = false, isVpnLoading = false, failure = null)
+
+        // The reason used to stop here. The extension goes to real trouble to
+        // explain itself — it writes a stage breadcrumb the app reads back
+        // precisely because the system will only ever say "disconnected" — and
+        // this dropped the message on the floor, leaving a button that spins,
+        // returns to START and says nothing. The commonest case of all is a
+        // user who declined the VPN permission prompt.
+        is VpnStatus.Error ->
+            copy(isVpnConnected = false, isVpnLoading = false, failure = status.message)
+    }
 }
 
 /**

@@ -363,6 +363,7 @@ fun HomeScreen(
             isBusy = state.isVpnLoading,
             trafficTrace = { throughputTrace(trafficSamples.value) },
             notice = state.notice(),
+            noticeDismissible = state.failure != null,
             heading = boardHeading(model.hasRooms),
             sortLabel = sortLabel(subscriptionSettings.sort),
             action = boardAction(
@@ -418,6 +419,7 @@ fun HomeScreen(
                     else -> onToggleClick()
                 }
             },
+            onDismissNotice = { viewModel.dismissFailure() },
             onPullToRefresh = { refreshSubscriptions() },
             onLocationSelected = { id ->
                 // Read before the switch: picking a card while connected tears the
