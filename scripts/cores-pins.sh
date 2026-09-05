@@ -30,7 +30,14 @@ LIBXRAY_VERSION="${LIBXRAY_VERSION:-v1.260711.0}"
 # that, so on a network without IPv4 it failed before any media was negotiated.
 # App Review runs on IPv6-only NAT64, which is why this one blocks a submission
 # rather than merely one carrier.
-OLCRTC_VERSION="${OLCRTC_VERSION:-v0.0.0-20260806125211-240487450763}"
+#
+# 240487450763 → 4d9a1b3554c1: a dial that found no route is retried (olcrtc
+# fix/retry-unreachable). EHOSTUNREACH and ENETUNREACH were the one dial error
+# the carrier-auth request gave up on after a single try, and on a mobile
+# carrier mid-handover — or on a socket pinned to an interface with nothing
+# behind it — that single try was the whole attempt. Seen live on one carrier
+# as "no route to host" on both families.
+OLCRTC_VERSION="${OLCRTC_VERSION:-v0.0.0-20260905230147-4d9a1b3554c1}"
 
 # Bumped when the framework's *shape* changes while its pins do not — adding the
 # macOS slice being the first case. The versions alone cannot express that: they
@@ -48,7 +55,9 @@ OLCRTC_VERSION="${OLCRTC_VERSION:-v0.0.0-20260806125211-240487450763}"
 # 3 → 4: olcRTC moved, so the tag moves with it either way. Bumped anyway, so
 # the tag says out loud that this framework is a different build and not a
 # re-publish of the same shape under a longer name.
-CORES_BUILD="${CORES_BUILD:-4}"
+#
+# 4 → 5: olcRTC moved again (the no-route retry), for the same reason.
+CORES_BUILD="${CORES_BUILD:-5}"
 
 # The revision rather than the whole pseudo-version: the tag stays readable and
 # still changes whenever olcRTC does.
