@@ -245,6 +245,9 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     private func startWatchingNetworkChanges() {
         var lastInterface: String?
         pathMonitor.pathUpdateHandler = { [weak self] path in
+            // Before anything else: whatever moved, the next socket should look
+            // at the interfaces afresh rather than trust a pin from before it.
+            LibboxPlatform.invalidatePinCache()
             let current = path.availableInterfaces.first?.name
             guard current != lastInterface else { return }
             lastInterface = current
