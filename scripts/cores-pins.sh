@@ -18,6 +18,16 @@
 # The workflow keeps its own copy in `env:` because a job-level cache key cannot
 # be computed from a sourced shell file; it checks itself against this one.
 
+# The toolchain is a pin too, and the one that was missing. The workflow said
+# `stable`, which was 1.26.5 in August and 1.27.1 by September; the September
+# build linked every slice with `golang.org/x/net/http2.(*Transport).connPool`
+# left *undefined* — a reference the Go linker handed to the external linker,
+# which Xcode then could not satisfy — while the August build defines it, and
+# nothing else about the two differed: same three pins, byte-identical headers.
+# Exact rather than a floor, for the same reason the modules are: the bind is a
+# 20-minute step on a 10x runner and a "works on 1.26.x" claim is only as good
+# as the x it was checked on.
+GO_VERSION="${GO_VERSION:-1.26.5}"
 SINGBOX_VERSION="${SINGBOX_VERSION:-1.13.14}"
 LIBXRAY_VERSION="${LIBXRAY_VERSION:-v1.260711.0}"
 # Branch `proofkit-udp-spike` — the only lineage carrying a UDP relay. The pin
@@ -57,7 +67,12 @@ OLCRTC_VERSION="${OLCRTC_VERSION:-v0.0.0-20260905230147-4d9a1b3554c1}"
 # re-publish of the same shape under a longer name.
 #
 # 4 → 5: olcRTC moved again (the no-route retry), for the same reason.
-CORES_BUILD="${CORES_BUILD:-5}"
+#
+# 5 → 6: same three pins, different toolchain. Build 5 was made by Go 1.27.1
+# and does not link (see GO_VERSION above); every consumer keyed on the tag —
+# a laptop's destination stamp, its cache, the published release — would keep
+# handing that one back if the rebuild wore the same name.
+CORES_BUILD="${CORES_BUILD:-6}"
 
 # The revision rather than the whole pseudo-version: the tag stays readable and
 # still changes whenever olcRTC does.

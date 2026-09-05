@@ -25,6 +25,9 @@ concurrency:
   cancel-in-progress: false
 
 env:
+  # Exact, and checked against cores-pins.sh below like the other three. This
+  # used to be `stable`; see cores-pins.sh for the build that taught otherwise.
+  GO_VERSION: 1.26.5
   # 1.13 is not a preference, it is the only line that fits. libXray pulls
   # apernet/quic-go, which needs quic-go/qpack v0.6.0; sing-box only reaches
   # qpack v0.6.0 in 1.13 (1.11 wants v0.4.0, 1.12 v0.5.1, and v0.6.0 renamed
@@ -53,9 +56,9 @@ jobs:
       - name: Pins match scripts/cores-pins.sh
         run: |
           set -euo pipefail
-          expected="$(env -u SINGBOX_VERSION -u LIBXRAY_VERSION -u OLCRTC_VERSION \
-            bash -c '. scripts/cores-pins.sh; echo "$SINGBOX_VERSION $LIBXRAY_VERSION $OLCRTC_VERSION"')"
-          actual="${SINGBOX_VERSION} ${LIBXRAY_VERSION} ${OLCRTC_VERSION}"
+          expected="$(env -u GO_VERSION -u SINGBOX_VERSION -u LIBXRAY_VERSION -u OLCRTC_VERSION \
+            bash -c '. scripts/cores-pins.sh; echo "$GO_VERSION $SINGBOX_VERSION $LIBXRAY_VERSION $OLCRTC_VERSION"')"
+          actual="${GO_VERSION} ${SINGBOX_VERSION} ${LIBXRAY_VERSION} ${OLCRTC_VERSION}"
           [ "$expected" = "$actual" ] || {
             echo "workflow env and scripts/cores-pins.sh disagree:"
             echo "  cores-pins.sh: $expected"
@@ -65,9 +68,10 @@ jobs:
 
       - uses: actions/setup-go@v7
         with:
-          # libXray requires a modern toolchain, and the sagernet gomobile fork
-          # builds on one now — so unlike before, both fit in a single job.
-          go-version: stable
+          # Not `stable`: that moved from 1.26.5 to 1.27.1 between two runs and
+          # the second one shipped a framework Xcode could not link. The pin
+          # lives in cores-pins.sh; this is the checked copy of it.
+          go-version: ${{ env.GO_VERSION }}
 
       - name: Cache built framework
         id: cache

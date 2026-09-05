@@ -63,7 +63,21 @@ trap 'rm -rf "$work"' EXIT
 cd "$work"
 mkdir cores && cd cores
 
-echo "== wrapper module: sing-box v${SINGBOX_VERSION} + libXray ${LIBXRAY_VERSION} + olcrtc ${OLCRTC_VERSION} =="
+# The toolchain first, checked the way the olcrtc revision is checked below and
+# for the same reason: a framework built by the wrong Go is indistinguishable
+# from the right one until Xcode fails to link it. Major.minor rather than the
+# exact patch on a laptop; the workflow pins the exact one.
+go_have="$(go env GOVERSION)"
+case "${go_have}" in
+  "go${GO_VERSION%.*}."*) ;;
+  *)
+    echo "Go ${go_have} on PATH, but scripts/cores-pins.sh pins ${GO_VERSION}."
+    echo "Refusing to build: 1.27 emits an archive with an undefined http2 symbol that Xcode cannot link."
+    exit 1
+    ;;
+esac
+
+echo "== wrapper module: Go ${go_have}, sing-box v${SINGBOX_VERSION} + libXray ${LIBXRAY_VERSION} + olcrtc ${OLCRTC_VERSION} =="
 # 1.26.3 is libXray's own floor, stated here rather than left to `go get` to
 # raise, so the toolchain requirement is visible before anything downloads.
 cat > go.mod <<EOF
