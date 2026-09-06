@@ -53,7 +53,11 @@ LIBXRAY_VERSION="${LIBXRAY_VERSION:-v1.260711.0}"
 # which inside our own tunnel is the tunnel's DNS, unserved until the cores
 # are up - a self-hosted Jitsi host, never in the phone's cache, could not be
 # resolved at all (olcbox#13).
-OLCRTC_VERSION="${OLCRTC_VERSION:-v0.0.0-20260906012617-8264c6cc098d}"
+#
+# 8264c6cc098d → eb730c6e5cfa: a resolver that stays silent is demoted and the next
+# public operator is asked (olcrtc fix/mobile-resolver, second commit) - for
+# the carriers that blackhole 1.1.1.1 rather than merely refuse it.
+OLCRTC_VERSION="${OLCRTC_VERSION:-v0.0.0-20260906013634-eb730c6e5cfa}"
 
 # Bumped when the framework's *shape* changes while its pins do not — adding the
 # macOS slice being the first case. The versions alone cannot express that: they
@@ -80,7 +84,10 @@ OLCRTC_VERSION="${OLCRTC_VERSION:-v0.0.0-20260906012617-8264c6cc098d}"
 # handing that one back if the rebuild wore the same name.
 #
 # 6 → 7: olcRTC moved again (the resolver fix), for the same reason as 4 → 5.
-CORES_BUILD="${CORES_BUILD:-7}"
+#
+# 7 → 8: olcRTC moved again (the resolver fallback); build 7 was cancelled
+# before it published, so nothing wears that tag.
+CORES_BUILD="${CORES_BUILD:-8}"
 
 # The revision rather than the whole pseudo-version: the tag stays readable and
 # still changes whenever olcRTC does.
