@@ -5,48 +5,48 @@ Kept under TestFlight's 4000-character limit. English, to match the app.
 
 ---
 
-The whole interface is new. The round power button is gone.
+This build is about one failure: "no route to host" when joining a room on a
+mobile carrier, and the red message that could not be closed afterwards.
 
 WHAT CHANGED
 
-• The home screen is a board of rooms. Tap a card to pick one; the bar at the
-  bottom names what it will join — "TAKE A SEAT IN GERMANY", "LEAVE GERMANY".
-• Each olcRTC room shows its seats: how many there are, how many are taken, and
-  which one is yours. A room that is full says so and cannot be tapped.
-• While connected, the strip at the top draws live throughput. If bytes are
-  moving, that line moves.
-• The selected card says what the connection looks like from outside — "A
-  TELEMOST MEDIA SESSION", "A TLS HANDSHAKE TO A REAL WEBSITE".
-• Settings is a full screen behind the gear, not a sheet you flick away.
-• On iPad the board and the selected room sit side by side.
-• First run now explains rooms and seats in three steps. Settings → REPLAY
-  FIRST RUN shows it again.
-• Before the camera is used for a QR code, the app explains why it wants it.
-• "Copy Full Config" is gone. It put every server address and every server-list
-  URL on the clipboard in one tap.
+• Joining a room on cellular. Before dialing out, the app now checks that the
+  network interface it is about to use can actually reach the internet. On
+  some carriers it used to pick a cellular interface that has an address but
+  no route — the one the phone keeps for VoLTE — and every connection died at
+  once with "no route to host".
+• A dial that finds no route is retried instead of ending the whole attempt on
+  the first try. A phone moving between towers, or between Wi-Fi and cellular,
+  sees exactly that error for a moment.
+• The red box under the status strip can be closed: tap it. Pressing stop
+  clears it too. Before, only relaunching the app removed it.
+• Every attempt now writes one line naming the interface it used into the log
+  you can share from the app. When a connect fails, that line is the first
+  thing we read.
 
 WHAT TO TEST
 
-1. Connect and disconnect a few times. The bottom bar should always name the
-   room you actually picked.
-2. Refresh a server list WHILE CONNECTED (the circling arrows on a list's
-   header). You should stay on your server. It used to jump you to the first
-   one in the list and re-dial.
-3. Measure latency (the bolt) on a weak connection. It should read "no ping",
-   never "offline" — and never anything bad for the room you are connected to.
-4. Leave it connected for a while and watch the phone's temperature and
-   battery. This build does far less drawing than the last one.
-5. iPad, both orientations.
-6. Scroll the board with two server lists imported; fold one away.
+1. Cellular only. Turn Wi-Fi OFF and join a room. Try a few times. If it
+   fails, open Diagnostics (the icon on the home screen) and share the log
+   right away — before relaunching the app.
+2. If you have a Megafon SIM, especially in St. Petersburg, test on it. This
+   build exists because of that case.
+3. Handover. Connect on Wi-Fi, then turn Wi-Fi off while connected, then back
+   on. It should come back on its own within a minute each time.
+4. The red message. Make it appear (Airplane Mode on, then try to join), then
+   tap it — it should go away. Do it again and press stop instead of tapping.
+5. Everything from the previous build still applies: the bar names the room
+   you actually picked, and refreshing a list while connected leaves you where
+   you were.
 
 KNOWN AND EXPECTED
 
+• The text inside the red box is still technical — a long line of addresses.
+  Closing it is fixed; making it readable is next.
 • Battery use in the background stays "High" in Xcode's energy report. That is
-  the tunnel keeping a connection alive, not a bug — it is what any VPN costs.
-• A card may say "KEY NO LONGER VALID · REFRESH THIS LIST". That means the
-  provider retired that room's key; the refresh button on the list header fixes
-  it. Before this build the card just went blank and nothing would connect.
-• Latency is only measurable for olcRTC rooms. Other transports show "—".
+  the tunnel keeping a connection alive, not a bug.
+• A card may say "KEY NO LONGER VALID · REFRESH THIS LIST". The refresh button
+  on the list header fixes it.
 
-Please report anything that looks wrong with a screenshot — the interface
-changed everywhere, so nothing is too small to mention.
+Please report anything that looks wrong with a screenshot — and, for a
+connection that did not come up, the shared log file.
