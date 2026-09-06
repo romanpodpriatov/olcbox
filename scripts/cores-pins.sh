@@ -47,7 +47,13 @@ LIBXRAY_VERSION="${LIBXRAY_VERSION:-v1.260711.0}"
 # carrier mid-handover — or on a socket pinned to an interface with nothing
 # behind it — that single try was the whole attempt. Seen live on one carrier
 # as "no route to host" on both families.
-OLCRTC_VERSION="${OLCRTC_VERSION:-v0.0.0-20260905230147-4d9a1b3554c1}"
+#
+# 4d9a1b3554c1 → 8264c6cc098d: carrier names resolve over the protected sockets
+# (olcrtc fix/mobile-resolver). On a phone the resolver was the system one,
+# which inside our own tunnel is the tunnel's DNS, unserved until the cores
+# are up - a self-hosted Jitsi host, never in the phone's cache, could not be
+# resolved at all (olcbox#13).
+OLCRTC_VERSION="${OLCRTC_VERSION:-v0.0.0-20260906012617-8264c6cc098d}"
 
 # Bumped when the framework's *shape* changes while its pins do not — adding the
 # macOS slice being the first case. The versions alone cannot express that: they
@@ -72,7 +78,9 @@ OLCRTC_VERSION="${OLCRTC_VERSION:-v0.0.0-20260905230147-4d9a1b3554c1}"
 # and does not link (see GO_VERSION above); every consumer keyed on the tag —
 # a laptop's destination stamp, its cache, the published release — would keep
 # handing that one back if the rebuild wore the same name.
-CORES_BUILD="${CORES_BUILD:-6}"
+#
+# 6 → 7: olcRTC moved again (the resolver fix), for the same reason as 4 → 5.
+CORES_BUILD="${CORES_BUILD:-7}"
 
 # The revision rather than the whole pseudo-version: the tag stays readable and
 # still changes whenever olcRTC does.
