@@ -1330,58 +1330,13 @@ jobs:
         with:
           subject-path: dist/**
 
-      - name: Publish public GitHub Release assets
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-        run: |
-          mapfile -t assets < <(find dist -type f | sort)
-          if [ "${#assets[@]}" -eq 0 ]; then
-            echo "No release assets found"
-            exit 1
-          fi
-
-          if gh release view "$OLCBOX_NIGHTLY_TAG" >/dev/null 2>&1; then
-            gh release delete "$OLCBOX_NIGHTLY_TAG" --yes --cleanup-tag
-          fi
-
-          # ProofKit fork: let `gh release create --target` create the tag via the
-          # Releases API. A plain `git push` of a tag whose commit contains
-          # .github/workflows/* is rejected for the default GITHUB_TOKEN
-          # ("without workflows permission"); the API path is not subject to that
-          # git ref restriction and only needs contents:write.
-          gh release create "$OLCBOX_NIGHTLY_TAG" \
-            --target "$GITHUB_SHA" \
-            --title "$OLCBOX_NIGHTLY_TITLE" \
-            --notes-file release-notes.md \
-            --prerelease \
-            --draft
-
-          # Give GitHub a moment to make the draft release available for asset uploads.
-          sleep 5
-
-          for asset in "${assets[@]}"; do
-            echo "Uploading ${asset}"
-            for attempt in 1 2 3; do
-              if gh release upload "$OLCBOX_NIGHTLY_TAG" "$asset" --clobber; then
-                break
-              fi
-
-              if [ "$attempt" -eq 3 ]; then
-                echo "Failed to upload ${asset} after ${attempt} attempts" >&2
-                exit 1
-              fi
-
-              echo "Upload failed for ${asset}; retrying in 10 seconds" >&2
-              sleep 10
-            done
-          done
-
-          gh release edit "$OLCBOX_NIGHTLY_TAG" --draft=false --prerelease
-
       - name: Publish permanent versioned release
         env:
-          GH_TOKEN: ${{ github.token }}
+          # A fine-grained PAT (contents + workflows: write on this repository)
+          # when the repository has one, because the default token cannot create
+          # a tag on a commit that changes a workflow file; the default token
+          # otherwise, which still works for every commit that does not.
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
@@ -1445,3 +1400,56 @@ jobs:
           done
 
           gh release edit "$version_tag" --draft=false --prerelease
+      - name: Publish public GitHub Release assets
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          mapfile -t assets < <(find dist -type f | sort)
+          if [ "${#assets[@]}" -eq 0 ]; then
+            echo "No release assets found"
+            exit 1
+          fi
+
+          if gh release view "$OLCBOX_NIGHTLY_TAG" >/dev/null 2>&1; then
+            gh release delete "$OLCBOX_NIGHTLY_TAG" --yes --cleanup-tag
+          fi
+
+          # The tag is created through the Releases API, and that path is NOT
+          # exempt from the rule that the default GITHUB_TOKEN may not create a
+          # ref whose commit touches .github/workflows/*. The first release cut
+          # from a commit that changed a workflow file learned this the hard way:
+          # it deleted the previous nightly above, then got "Resource not
+          # accessible by integration" here, and the nightly channel was gone.
+          # Hence RELEASE_TOKEN, and hence the versioned release running first -
+          # it creates its tag before anything is deleted, so a token that cannot
+          # create tags fails the job with the old nightly still in place.
+          gh release create "$OLCBOX_NIGHTLY_TAG" \
+            --target "$GITHUB_SHA" \
+            --title "$OLCBOX_NIGHTLY_TITLE" \
+            --notes-file release-notes.md \
+            --prerelease \
+            --draft
+
+          # Give GitHub a moment to make the draft release available for asset uploads.
+          sleep 5
+
+          for asset in "${assets[@]}"; do
+            echo "Uploading ${asset}"
+            for attempt in 1 2 3; do
+              if gh release upload "$OLCBOX_NIGHTLY_TAG" "$asset" --clobber; then
+                break
+              fi
+
+              if [ "$attempt" -eq 3 ]; then
+                echo "Failed to upload ${asset} after ${attempt} attempts" >&2
+                exit 1
+              fi
+
+              echo "Upload failed for ${asset}; retrying in 10 seconds" >&2
+              sleep 10
+            done
+          done
+
+          gh release edit "$OLCBOX_NIGHTLY_TAG" --draft=false --prerelease
+
