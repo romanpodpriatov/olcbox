@@ -29,6 +29,14 @@ env:
   # Keep release builds on the matching olcrtc ref until the universal carrier
   # changes land in olcrtc master.
   OLCBOX_OLCRTC_REF: "proofkit-udp-spike"
+  # Every Go step below reads this. It used to be `stable`, and `stable` moved
+  # from 1.26.5 to 1.27.1 between two runs of the cores bind: the 1.27.1 build
+  # left golang.org/x/net/http2.(*Transport).connPool undefined in every slice
+  # and Xcode could not link it (see scripts/cores-pins.sh). The Android job
+  # builds sing-box and Xray — .so-named executables — from that same dependency
+  # graph with the same external linker step, so the same toolchain is pinned
+  # here for the same reason.
+  GO_VERSION: "1.26.5"
   # ProofKit fork versionCode = PATCH_BASE + github.run_number (RUN_NUMBER_BASE 0,
   # since run numbers reset to 1 on this fork). PATCH_BASE is set ABOVE upstream's
   # current nightly (1.0.112) so our builds always read as the NEWEST version — the
@@ -232,7 +240,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v7
         with:
-          go-version: 'stable'
+          go-version: ${{ env.GO_VERSION }}
           cache-dependency-path: olcrtc/go.sum
 
       # Same omission the Android and Linux jobs had. Named with `.exe` here, and
@@ -398,7 +406,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v7
         with:
-          go-version: 'stable'
+          go-version: ${{ env.GO_VERSION }}
           cache-dependency-path: olcrtc/go.sum
 
       - name: Import Developer ID certificate
@@ -606,7 +614,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v7
         with:
-          go-version: 'stable'
+          go-version: ${{ env.GO_VERSION }}
           cache-dependency-path: olcrtc/go.sum
 
       - name: Setup appimagetool
@@ -738,7 +746,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v7
         with:
-          go-version: 'stable'
+          go-version: ${{ env.GO_VERSION }}
           cache-dependency-path: olcrtc/go.sum
 
       - name: Setup Android SDK
@@ -1079,7 +1087,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v7
         with:
-          go-version: 'stable'
+          go-version: ${{ env.GO_VERSION }}
           cache-dependency-path: olcrtc/go.sum
 
       - name: Setup Gradle
