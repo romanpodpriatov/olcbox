@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		F10000000000000000000001 /* Settings.bundle in Resources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000002 /* Settings.bundle */; };
 		9A0000010000000000000001 /* OlcboxIosApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A0000010000000000000011 /* OlcboxIosApp.swift */; };
 		9A0000010000000000000002 /* SwiftPlatformBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A0000010000000000000012 /* SwiftPlatformBridge.swift */; };
 		9A0000010000000000000003 /* SwiftOlcRtcManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A0000010000000000000013 /* SwiftOlcRtcManager.swift */; };
@@ -40,6 +41,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		F10000000000000000000002 /* Settings.bundle */ = {isa = PBXFileReference; lastKnownFileType = wrapper.plug-in; path = Settings.bundle; sourceTree = "<group>"; };
 		9A0000010000000000000010 /* iosApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = iosApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		9A0000010000000000000011 /* OlcboxIosApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OlcboxIosApp.swift; sourceTree = "<group>"; };
 		9A0000010000000000000012 /* SwiftPlatformBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwiftPlatformBridge.swift; sourceTree = "<group>"; };
@@ -103,6 +105,7 @@
 				9A0000010000000000000013 /* SwiftOlcRtcManager.swift */,
 				9A0000010000000000000014 /* Info.plist */,
 				9A0000010000000000000015 /* Assets.xcassets */,
+				F10000000000000000000002 /* Settings.bundle */,
 			);
 			path = iosApp;
 			sourceTree = "<group>";
@@ -213,6 +216,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				9A0000010000000000000004 /* Assets.xcassets in Resources */,
+				F10000000000000000000001 /* Settings.bundle in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

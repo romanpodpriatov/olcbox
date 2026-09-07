@@ -129,11 +129,8 @@ final class LibboxPlatform: NSObject, LibboxPlatformInterfaceProtocol {
     /// Only meaningful with a multipath configuration we do not use.
     func includeAllNetworks() -> Bool { false }
 
-    // sing-box no longer pushes its log lines here — 1.13 keeps them in the
-    // daemon and serves them over the command channel instead, and the platform
-    // lost `WriteLog` with that change. The lines still reach the shared
-    // container: the provider redirects the engine's stderr into `engine.log`
-    // before starting it, which also catches the Go panics `WriteLog` never saw.
+    // The command server owns sing-box logs in 1.13. Interface diagnostics
+    // also go to a dedicated shared-container file, independent of Go startup.
 
     func clearDNSCache() {
         // The system resolver is bypassed entirely — the engine does its own DNS.
@@ -142,7 +139,11 @@ final class LibboxPlatform: NSObject, LibboxPlatformInterfaceProtocol {
     // MARK: - Android-only, and unsupported capabilities
 
     func autoDetectControl(_ fd: Int32) throws {
-        _ = Self.pinToPhysicalInterface(fd)
+        let code = Self.bindToPhysicalInterface(fd)
+        guard code == 0 else {
+            throw NSError(domain: NSPOSIXErrorDomain, code: Int(code),
+                          userInfo: [NSLocalizedDescriptionKey: "physical interface binding failed (errno=\(code))"])
+        }
     }
 
     /// Binds one socket to the interface that actually reaches the internet.
@@ -152,18 +153,56 @@ final class LibboxPlatform: NSObject, LibboxPlatformInterfaceProtocol {
     /// extension, where the default route now points at our own tun. A second
     /// copy of this would be a second thing to get wrong.
     ///
-    /// Returns false only when there is no physical interface to bind to — in
-    /// which case there is nothing to dial out of either, so callers that must
-    /// answer a boolean can report it and callers that cannot simply proceed.
-    static func pinToPhysicalInterface(_ fd: Int32) -> Bool {
-        guard let pin = currentPhysicalInterface() else { return false }
+    /// Returns false if the socket cannot be inspected or bound to an interface
+    /// with a route for its address family.
+    static func pinToPhysicalInterface(_ fd: Int32, allowIPv6: Bool = true) -> Bool {
+        bindToPhysicalInterface(fd, allowIPv6: allowIPv6) == 0
+    }
+
+    /// Return the actual bind error to both engines instead of reporting success
+    /// after two unchecked setsockopt calls. Only configure the socket's family.
+    private static func bindToPhysicalInterface(_ fd: Int32, allowIPv6: Bool = true) -> Int32 {
+        var address = sockaddr_storage()
+        var length = socklen_t(MemoryLayout<sockaddr_storage>.size)
+        let inspected = withUnsafeMutablePointer(to: &address) { pointer in
+            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                getsockname(fd, $0, &length)
+            }
+        }
+        guard inspected == 0 else {
+            let code = errno
+            NetworkDiagnostics.record("bind getsockname failed errno=\(code)")
+            return code
+        }
+        let family = Int32(address.ss_family)
+        if family == AF_INET6 && !allowIPv6 {
+            NetworkDiagnostics.record("bind IPv6 disabled by olcrtc policy")
+            return EAFNOSUPPORT
+        }
+        guard family == AF_INET || family == AF_INET6 else {
+            NetworkDiagnostics.record("bind unsupported family=\(family)")
+            return EAFNOSUPPORT
+        }
+        guard let pin = currentPhysicalInterface(family: family) else {
+            NetworkDiagnostics.record("bind no physical interface family=\(family)")
+            return ENETUNREACH
+        }
         var scope = pin.index
         let size = socklen_t(MemoryLayout<UInt32>.size)
-        // IP_BOUND_IF / IPV6_BOUND_IF. Both are set because the socket family is
-        // not known here and the wrong one simply fails harmlessly.
-        setsockopt(fd, IPPROTO_IP, 25, &scope, size)
-        setsockopt(fd, IPPROTO_IPV6, 125, &scope, size)
-        return true
+        let result = family == AF_INET
+            ? setsockopt(fd, IPPROTO_IP, 25, &scope, size)
+            : setsockopt(fd, IPPROTO_IPV6, 125, &scope, size)
+        let code: Int32 = result == 0 ? 0 : errno
+        NetworkDiagnostics.record("bind interface=\(pin.summary) family=\(family) errno=\(code)")
+        if code != 0 { invalidatePinCache() }
+        return code
+    }
+
+    static func tracePhysicalInterfaces(_ stage: String) {
+        let candidates = probePhysicalInterfaces()
+        let v4 = PhysicalInterface.choose(from: candidates, family: AF_INET)
+        let v6 = PhysicalInterface.choose(from: candidates, family: AF_INET6)
+        NetworkDiagnostics.record("\(stage) ipv4=\(v4?.summary ?? "none") ipv6=\(v6?.summary ?? "none") candidates=\(candidates.map(\.summary).joined(separator: ","))")
     }
 
     /// Forgets the interface last pinned to, so the next socket looks again.
@@ -172,34 +211,15 @@ final class LibboxPlatform: NSObject, LibboxPlatformInterfaceProtocol {
     /// cache is short-lived regardless; this makes a handover count on the very
     /// next dial rather than the next few.
     static func invalidatePinCache() {
-        pinCache.invalidate()
+        ipv4PinCache.invalidate()
+        ipv6PinCache.invalidate()
     }
 
     // MARK: - choosing the interface
 
-    /// One interface the extension could dial out of, and whether it can.
-    ///
-    /// The two `routes` flags answer "can a socket bound to this interface pick
-    /// a source address for a public destination" — the probe the engine uses
-    /// to order address families, and one that sends nothing. Both false is an
-    /// interface with an address and no way out: the VoLTE bearer, a Wi-Fi
-    /// whose uplink is gone.
-    struct PhysicalInterface: Equatable {
-        let name: String
-        let index: UInt32
-        let routesIPv4: Bool
-        let routesIPv6: Bool
-
-        var reachesInternet: Bool { routesIPv4 || routesIPv6 }
-
-        /// `pdp_ip0[46]`, `en0[4-]`: what it is and which families leave by it.
-        var summary: String {
-            "\(name)[\(routesIPv4 ? "4" : "-")\(routesIPv6 ? "6" : "-")]"
-        }
-    }
-
     private static let pinLog = Logger(subsystem: "org.proofkit.app", category: "pin")
-    private static let pinCache = PinCache()
+    private static let ipv4PinCache = PinCache()
+    private static let ipv6PinCache = PinCache()
     /// Every outbound socket asks. `getifaddrs` plus a route probe per family
     /// per candidate on each dial would be a cost of its own, so the answer is
     /// kept briefly — short enough that a handover is noticed within a dial or
@@ -238,44 +258,37 @@ final class LibboxPlatform: NSObject, LibboxPlatformInterfaceProtocol {
         }
     }
 
-    private static func currentPhysicalInterface() -> PhysicalInterface? {
-        pinCache.current(lifetime: pinCacheLifetime) { previous in
+    private static func currentPhysicalInterface(family: Int32) -> PhysicalInterface? {
+        let cache: PinCache
+        switch family {
+        case AF_INET: cache = ipv4PinCache
+        case AF_INET6: cache = ipv6PinCache
+        default: return nil
+        }
+        return cache.current(lifetime: pinCacheLifetime) { previous in
             let probed = probePhysicalInterfaces()
-            let chosen = choose(from: probed)
+            let chosen = PhysicalInterface.choose(from: probed, family: family)
             // Once per change, and every refresh while nothing reaches out —
             // the second case is rare and is the one worth a line each time.
-            if chosen != previous || chosen?.reachesInternet != true {
-                report(chosen, among: probed)
+            if chosen != previous || chosen == nil {
+                report(chosen, among: probed, family: family)
             }
             return chosen
         }
     }
 
-    /// The first candidate that can leave the device, in the order the old
-    /// heuristic used — Wi-Fi ahead of cellular, each in `getifaddrs` order.
-    ///
-    /// Failing that, the old answer: the first candidate regardless. Pinning to
-    /// a dead interface fails fast with "no route to host"; leaving the socket
-    /// unpinned would send it down the default route into our own tun, where
-    /// nothing is reading yet, and it would hang instead. The log line says
-    /// which of the two happened.
-    private static func choose(from probed: [PhysicalInterface]) -> PhysicalInterface? {
-        probed.first(where: \.reachesInternet) ?? probed.first
-    }
-
-    private static func report(_ chosen: PhysicalInterface?, among probed: [PhysicalInterface]) {
+    private static func report(_ chosen: PhysicalInterface?, among probed: [PhysicalInterface], family: Int32) {
         let seen = probed.isEmpty ? "no candidates" : probed.map(\.summary).joined(separator: " ")
         let line: String
-        if let chosen, chosen.reachesInternet {
-            line = "pin: \(chosen.name) (\(seen))"
+        if let chosen {
+            line = "pin family=\(family): \(chosen.name) (\(seen))"
         } else {
-            line = "pin: NO ROUTE on any interface, pinning \(chosen?.name ?? "nothing") (\(seen))"
+            line = "pin family=\(family): NO ROUTE (\(seen))"
         }
         pinLog.info("\(line, privacy: .public)")
-        // Onto stderr as well, which the provider has pointed into engine.log:
-        // that file is what the app reads back and puts in the shareable log,
-        // and the unified log is not. This is the line that turns "no route to
-        // host" from a guess about the carrier into a fact about the phone.
+        NetworkDiagnostics.record(line)
+        // Also retain stderr output for attached debugging sessions. The file
+        // exported by the app is written independently by NetworkDiagnostics.
         try? FileHandle.standardError.write(contentsOf: Data((line + "\n").utf8))
     }
 
