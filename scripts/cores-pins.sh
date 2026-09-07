@@ -57,7 +57,12 @@ LIBXRAY_VERSION="${LIBXRAY_VERSION:-v1.260711.0}"
 # 8264c6cc098d → eb730c6e5cfa: a resolver that stays silent is demoted and the next
 # public operator is asked (olcrtc fix/mobile-resolver, second commit) - for
 # the carriers that blackhole 1.1.1.1 rather than merely refuse it.
-OLCRTC_VERSION="${OLCRTC_VERSION:-v0.0.0-20260906013634-eb730c6e5cfa}"
+#
+# eb730c6e5cfa → aad0adc9a6ab: the Jitsi carrier's signalling library dials with
+# http.DefaultClient, so its sockets were neither protected nor resolved
+# through the configured server; the default transport now goes through the
+# protected dialer (olcbox#13, #15). Also srv.sh installs the fork (#14).
+OLCRTC_VERSION="${OLCRTC_VERSION:-v0.0.0-20260907005109-aad0adc9a6ab}"
 
 # Bumped when the framework's *shape* changes while its pins do not — adding the
 # macOS slice being the first case. The versions alone cannot express that: they
@@ -87,7 +92,9 @@ OLCRTC_VERSION="${OLCRTC_VERSION:-v0.0.0-20260906013634-eb730c6e5cfa}"
 #
 # 7 → 8: olcRTC moved again (the resolver fallback); build 7 was cancelled
 # before it published, so nothing wears that tag.
-CORES_BUILD="${CORES_BUILD:-8}"
+#
+# 8 → 9: olcRTC moved again (the Jitsi signalling dial), for the same reason.
+CORES_BUILD="${CORES_BUILD:-9}"
 
 # The revision rather than the whole pseudo-version: the tag stays readable and
 # still changes whenever olcRTC does.
