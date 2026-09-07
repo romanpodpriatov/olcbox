@@ -71,6 +71,10 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         completionHandler: @escaping (Error?) -> Void
     ) {
         log.info("startTunnel")
+        NetworkDiagnostics.reset()
+        NetworkDiagnostics.record("start os=\(ProcessInfo.processInfo.operatingSystemVersionString)")
+        LibboxPlatform.invalidatePinCache()
+        LibboxPlatform.tracePhysicalInterfaces("before-tun")
         // First thing, so the sentinel the app leaves in stage.txt is replaced
         // the moment this process runs a line of its own. Anything the app reads
         // back after this belongs to this attempt; the sentinel surviving means
@@ -120,6 +124,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         // synchronously and complains if answering takes long.
         setTunnelNetworkSettings(LibboxPlatform.tunnelSettings()) { [weak self] error in
             if let error {
+                NetworkDiagnostics.record("tunnel settings failed domain=\((error as NSError).domain) code=\((error as NSError).code)")
                 self?.log.error("tunnel settings rejected: \(error.localizedDescription, privacy: .public)")
                 completionHandler(error)
                 return
@@ -129,6 +134,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
                 completionHandler(nil)
                 return
             }
+            LibboxPlatform.tracePhysicalInterfaces("after-tun")
             self?.startEngine(
                 config: config,
                 xrayConfig: xrayConfig?.isEmpty == false ? xrayConfig : nil,
@@ -147,37 +153,6 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         completionHandler: @escaping (Error?) -> Void
     ) {
         do {
-            // Before any core runs, which is the whole point of moving it here.
-            //
-            // This used to sit below, after the cores had been started, so the
-            // one engine whose startup can fail on its own — olcRTC, which has
-            // to reach an SFU across the internet before it reports ready — was
-            // precisely the one whose output went to an stderr nobody was
-            // capturing. Its failures arrived as a bare "olcRTC start timed out"
-            // with no account of what it had tried, and the explanation was
-            // written to a file descriptor pointed at nothing.
-            //
-            // Go panics land here too, from any of the three.
-            var logError: NSError?
-            LibboxRedirectStderr(container.appendingPathComponent("engine.log").path, &logError)
-            if let logError {
-                // Not fatal: losing the log is worse for the next bug than for
-                // this connection.
-                log.error("engine log unavailable: \(logError.localizedDescription, privacy: .public)")
-            }
-
-            // The borrowed core first, whichever it is: sing-box's outbound
-            // points at its SOCKS port, and a sing-box that starts against a
-            // port nobody is listening on fails every connection rather than
-            // waiting. Never both — a location is one transport.
-            if let xrayConfig {
-                mark("xray")
-                try XrayEngine.start(configJSON: xrayConfig)
-            }
-            if let olcrtc {
-                mark("olcrtc")
-                try OlcrtcEngine.start(olcrtc)
-            }
             mark("setup")
             // libbox keeps its state on disk; inside the group so the app can
             // read logs and caches too.
@@ -212,6 +187,31 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
             // that one runtime, and WebRTC is not the cheap one.
             LibboxSetMemoryLimit(true)
 
+            // Setup initializes libbox's UID/GID. Redirecting before it attempts
+            // chown with zero-valued IDs and fails with EPERM on iOS. In this
+            // libbox version RedirectStderr configures Go crash output; regular
+            // interface diagnostics use their own shared-container file.
+            var logError: NSError?
+            LibboxRedirectStderr(container.appendingPathComponent("engine.log").path, &logError)
+            if let logError {
+                // Not fatal: losing the log is worse for the next bug than for
+                // this connection.
+                log.error("engine log unavailable: \(logError.localizedDescription, privacy: .public)")
+                NetworkDiagnostics.record("crash log failed domain=\(logError.domain) code=\(logError.code)")
+            }
+
+            // The borrowed core first, whichever it is: sing-box's outbound
+            // points at its SOCKS port, and a sing-box that starts against a
+            // port nobody is listening on fails every connection rather than
+            // waiting. Never both — a location is one transport.
+            if let xrayConfig {
+                mark("xray")
+                try XrayEngine.start(configJSON: xrayConfig)
+            }
+            if let olcrtc {
+                mark("olcrtc")
+                try OlcrtcEngine.start(olcrtc)
+            }
             mark("service")
 
             // The platform object is what libbox calls back into; openTun is where
@@ -245,6 +245,10 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     private func startWatchingNetworkChanges() {
         var lastInterface: String?
         pathMonitor.pathUpdateHandler = { [weak self] path in
+            // Record before the existing early return: availableInterfaces.first
+            // can stay unchanged even when the usable path or family changes.
+            let interfaces = path.availableInterfaces.map { "\($0.name):\($0.type)" }.joined(separator: ",")
+            NetworkDiagnostics.record("path status=\(path.status) wifi=\(path.usesInterfaceType(.wifi)) cellular=\(path.usesInterfaceType(.cellular)) ipv4=\(path.supportsIPv4) ipv6=\(path.supportsIPv6) interfaces=\(interfaces)")
             // Before anything else: whatever moved, the next socket should look
             // at the interfaces afresh rather than trust a pin from before it.
             LibboxPlatform.invalidatePinCache()
@@ -254,6 +258,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
             guard let self, let server = self.commandServer else { return }
             self.log.info("network changed to \(current ?? "none", privacy: .public), resetting")
             server.resetNetwork()
+            NetworkDiagnostics.record("sing-box resetNetwork; olcrtc not explicitly restarted")
         }
         pathMonitor.start(queue: DispatchQueue(label: "org.proofkit.path"))
     }
@@ -263,6 +268,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         completionHandler: @escaping () -> Void
     ) {
         log.info("stopTunnel reason=\(reason.rawValue, privacy: .public)")
+        NetworkDiagnostics.record("stop reason=\(reason.rawValue)")
         // Closing the service is what releases the tun descriptor; skipping it
         // leaves the next start fighting the previous one for it. Two calls now:
         // one stops the engine, the other tears down the server that owns it.

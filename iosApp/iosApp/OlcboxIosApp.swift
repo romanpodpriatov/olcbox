@@ -488,7 +488,10 @@ final class SwiftPacketTunnelBridge: NSObject, @unchecked Sendable, IosPacketTun
             "socksUser": request.socksUser,
             "socksPass": request.socksPass,
             "vp8Fps": Int(request.vp8Fps),
-            "vp8BatchSize": Int(request.vp8BatchSize)
+            "vp8BatchSize": Int(request.vp8BatchSize),
+            // Preserve dual-stack behavior unless the user explicitly opts out.
+            // Read on each new connection; an active session keeps its policy.
+            "allowIPv6": (UserDefaults.standard.object(forKey: "olcrtcAllowIPv6") as? Bool) ?? true
         ]
         guard let data = try? JSONSerialization.data(withJSONObject: fields) else { return nil }
         return String(data: data, encoding: .utf8)
@@ -519,7 +522,7 @@ final class SwiftPacketTunnelBridge: NSObject, @unchecked Sendable, IosPacketTun
         ) else { return "" }
         // olcRTC's first, since it is the engine that fails on its own; the
         // other two write to stderr, which lands in engine.log.
-        let both = ["olcrtc.log", "engine.log"].compactMap { name -> String? in
+        let both = ["network-diagnostics.log", "olcrtc.log", "engine.log"].compactMap { name -> String? in
             try? String(
                 contentsOf: container.appendingPathComponent(name), encoding: .utf8
             )
@@ -824,4 +827,3 @@ enum IcmpProbe {
 private struct SendableCallback: @unchecked Sendable {
     let callback: IosBridgeCallback
 }
-
