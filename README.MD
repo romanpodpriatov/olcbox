@@ -50,9 +50,10 @@ filters by protocol, and remembers the exit last used.
 
 ## Status
 
-Shipping on Android, macOS, Windows and Linux — built by the release workflow
-and published on the Releases page. **iOS is in TestFlight and not yet approved
-for the App Store**; that review is in progress.
+Shipping on every platform. iOS is on the App Store as
+[ProofKit VPN](https://apps.apple.com/us/app/proofkit-vpn/id6795355210).
+Android, macOS, Windows and Linux are built by the release workflow and
+published on the Releases page.
 
 ## Credits
 
