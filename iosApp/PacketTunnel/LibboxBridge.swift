@@ -153,15 +153,17 @@ final class LibboxPlatform: NSObject, LibboxPlatformInterfaceProtocol {
     /// extension, where the default route now points at our own tun. A second
     /// copy of this would be a second thing to get wrong.
     ///
-    /// Returns false if the socket cannot be inspected or bound to an interface
-    /// with a route for its address family.
-    static func pinToPhysicalInterface(_ fd: Int32, allowIPv6: Bool = true) -> Bool {
-        bindToPhysicalInterface(fd, allowIPv6: allowIPv6) == 0
+    /// Returns false only when the socket cannot be inspected, there is no
+    /// physical interface at all, or the kernel refused the bind — in which
+    /// case there is nothing to dial out of either, so callers that must answer
+    /// a boolean can report it and callers that cannot simply proceed.
+    static func pinToPhysicalInterface(_ fd: Int32) -> Bool {
+        bindToPhysicalInterface(fd) == 0
     }
 
     /// Return the actual bind error to both engines instead of reporting success
     /// after two unchecked setsockopt calls. Only configure the socket's family.
-    private static func bindToPhysicalInterface(_ fd: Int32, allowIPv6: Bool = true) -> Int32 {
+    private static func bindToPhysicalInterface(_ fd: Int32) -> Int32 {
         var address = sockaddr_storage()
         var length = socklen_t(MemoryLayout<sockaddr_storage>.size)
         let inspected = withUnsafeMutablePointer(to: &address) { pointer in
@@ -175,16 +177,12 @@ final class LibboxPlatform: NSObject, LibboxPlatformInterfaceProtocol {
             return code
         }
         let family = Int32(address.ss_family)
-        if family == AF_INET6 && !allowIPv6 {
-            NetworkDiagnostics.record("bind IPv6 disabled by olcrtc policy")
-            return EAFNOSUPPORT
-        }
         guard family == AF_INET || family == AF_INET6 else {
             NetworkDiagnostics.record("bind unsupported family=\(family)")
             return EAFNOSUPPORT
         }
         guard let pin = currentPhysicalInterface(family: family) else {
-            NetworkDiagnostics.record("bind no physical interface family=\(family)")
+            NetworkDiagnostics.record("bind \(familyLabel(family)): no physical interface")
             return ENETUNREACH
         }
         var scope = pin.index
@@ -193,9 +191,18 @@ final class LibboxPlatform: NSObject, LibboxPlatformInterfaceProtocol {
             ? setsockopt(fd, IPPROTO_IP, 25, &scope, size)
             : setsockopt(fd, IPPROTO_IPV6, 125, &scope, size)
         let code: Int32 = result == 0 ? 0 : errno
-        NetworkDiagnostics.record("bind interface=\(pin.summary) family=\(family) errno=\(code)")
-        if code != 0 { invalidatePinCache() }
+        // Every socket passes through here and the trace is bounded, so the
+        // ordinary case stays quiet: the interface it would name is already on
+        // record from `report`. A bind the kernel refused is the news.
+        if code != 0 {
+            NetworkDiagnostics.record("bind \(familyLabel(family)) \(pin.summary) errno=\(code)")
+            invalidatePinCache()
+        }
         return code
+    }
+
+    private static func familyLabel(_ family: Int32) -> String {
+        family == AF_INET6 ? "v6" : "v4"
     }
 
     static func tracePhysicalInterfaces(_ stage: String) {
@@ -268,9 +275,9 @@ final class LibboxPlatform: NSObject, LibboxPlatformInterfaceProtocol {
         return cache.current(lifetime: pinCacheLifetime) { previous in
             let probed = probePhysicalInterfaces()
             let chosen = PhysicalInterface.choose(from: probed, family: family)
-            // Once per change, and every refresh while nothing reaches out —
-            // the second case is rare and is the one worth a line each time.
-            if chosen != previous || chosen == nil {
+            // Once per change, and every refresh while this family has no way
+            // out — the second case is rare and is the one worth a line each time.
+            if chosen != previous || chosen?.routes(family) != true {
                 report(chosen, among: probed, family: family)
             }
             return chosen
@@ -280,10 +287,12 @@ final class LibboxPlatform: NSObject, LibboxPlatformInterfaceProtocol {
     private static func report(_ chosen: PhysicalInterface?, among probed: [PhysicalInterface], family: Int32) {
         let seen = probed.isEmpty ? "no candidates" : probed.map(\.summary).joined(separator: " ")
         let line: String
-        if let chosen {
-            line = "pin family=\(family): \(chosen.name) (\(seen))"
+        if let chosen, chosen.routes(family) {
+            line = "pin \(familyLabel(family)): \(chosen.name) (\(seen))"
+        } else if let chosen {
+            line = "pin \(familyLabel(family)): NO ROUTE for this family, pinning \(chosen.name) (\(seen))"
         } else {
-            line = "pin family=\(family): NO ROUTE (\(seen))"
+            line = "pin \(familyLabel(family)): NO ROUTE (\(seen))"
         }
         pinLog.info("\(line, privacy: .public)")
         NetworkDiagnostics.record(line)

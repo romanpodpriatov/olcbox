@@ -488,10 +488,7 @@ final class SwiftPacketTunnelBridge: NSObject, @unchecked Sendable, IosPacketTun
             "socksUser": request.socksUser,
             "socksPass": request.socksPass,
             "vp8Fps": Int(request.vp8Fps),
-            "vp8BatchSize": Int(request.vp8BatchSize),
-            // Preserve dual-stack behavior unless the user explicitly opts out.
-            // Read on each new connection; an active session keeps its policy.
-            "allowIPv6": (UserDefaults.standard.object(forKey: "olcrtcAllowIPv6") as? Bool) ?? true
+            "vp8BatchSize": Int(request.vp8BatchSize)
         ]
         guard let data = try? JSONSerialization.data(withJSONObject: fields) else { return nil }
         return String(data: data, encoding: .utf8)

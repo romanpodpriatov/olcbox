@@ -21,12 +21,17 @@ enum PhysicalInterfaceSelectionTests {
         precondition(PhysicalInterface.choose(from: [wifi] + observed, family: AF_INET6) == wifi)
         precondition(PhysicalInterface.choose(from: [offline] + observed, family: AF_INET) == cellular4)
 
-        // Fail if this family has no route; another family's route cannot help.
-        precondition(PhysicalInterface.choose(from: [cellular6], family: AF_INET) == nil)
-        precondition(PhysicalInterface.choose(from: [cellular4], family: AF_INET6) == nil)
-        precondition(PhysicalInterface.choose(from: [offline], family: AF_INET) == nil)
+        // A family nobody routes still gets an interface: a socket to 127.0.0.1
+        // is AF_INET on an IPv6-only network too, and refusing it would refuse
+        // the dial to our own SOCKS port. Prefer whatever reaches out at all,
+        // else the first candidate, so a dial to the internet fails fast with
+        // "no route" instead of hanging in our own tun unpinned.
+        precondition(PhysicalInterface.choose(from: [cellular6], family: AF_INET) == cellular6)
+        precondition(PhysicalInterface.choose(from: [cellular4], family: AF_INET6) == cellular4)
+        precondition(PhysicalInterface.choose(from: [offline, cellular6], family: AF_INET) == cellular6)
+        precondition(PhysicalInterface.choose(from: [offline], family: AF_INET) == offline)
         precondition(PhysicalInterface.choose(from: [], family: AF_INET6) == nil)
         precondition(PhysicalInterface.choose(from: [wifi], family: AF_UNIX) == nil)
-        print("PhysicalInterface selection: 10 checks passed")
+        print("PhysicalInterface selection: 11 checks passed")
     }
 }

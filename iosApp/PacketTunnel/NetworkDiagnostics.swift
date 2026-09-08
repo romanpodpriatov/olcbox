@@ -6,7 +6,9 @@ import os
 enum NetworkDiagnostics {
     private static let lock = NSLock()
     private static let logger = Logger(subsystem: "org.proofkit.app", category: "network-diagnostics")
-    private static var entries = 0
+    // Guarded by `lock`; the annotation is for the day this target moves to
+    // Swift 6, whose checker cannot see the lock.
+    nonisolated(unsafe) private static var entries = 0
     private static let limit = 400
     private static var file: URL? {
         FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: "group.org.proofkit.app")?

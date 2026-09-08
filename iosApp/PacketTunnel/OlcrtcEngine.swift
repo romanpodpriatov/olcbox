@@ -27,8 +27,6 @@ enum OlcrtcEngine {
         let socksPass: String
         let vp8Fps: Int
         let vp8BatchSize: Int
-        // Missing in older handoff files: retain their dual-stack behavior.
-        let allowIPv6: Bool?
     }
 
     private static let log = Logger(subsystem: "org.proofkit.app", category: "olcrtc")
@@ -54,7 +52,7 @@ enum OlcrtcEngine {
     /// Held for the lifetime of the process: olcRTC keeps whatever is handed to
     /// `SetProtector`/`SetLogWriter`, and Go's reference does not keep a Swift
     /// object alive on its own.
-    private static var protector: InterfaceProtector?
+    private static let protector = InterfaceProtector()
     private static let logWriter = EngineLog(
         file: FileManager.default
             .containerURL(forSecurityApplicationGroupIdentifier: appGroup)?
@@ -78,11 +76,6 @@ enum OlcrtcEngine {
     private static let readyTimeoutMillis = 20_000
 
     static func start(_ parameters: Parameters) throws {
-        // Stop the old engine before replacing its immutable socket policy.
-        if MobileIsRunning() { MobileStop() }
-        let protector = InterfaceProtector(allowIPv6: parameters.allowIPv6 ?? true)
-        self.protector = protector
-        NetworkDiagnostics.record("olcrtc allowIPv6=\(parameters.allowIPv6 ?? true)")
         // Fresh per attempt, so whatever the app reads back afterwards belongs
         // to the attempt it is reporting on.
         logWriter.reset()
@@ -98,6 +91,12 @@ enum OlcrtcEngine {
         // Loopback only. The port is fixed rather than user-set now: nothing
         // outside this process is meant to reach it.
         MobileSetSocksListenHost("127.0.0.1")
+
+        // A previous tunnel that died without tearing down would otherwise hold
+        // the port and make this look like a bind failure.
+        if MobileIsRunning() {
+            MobileStop()
+        }
 
         var error: NSError?
         let started = MobileStartWithTransport(
@@ -145,15 +144,8 @@ enum OlcrtcEngine {
 /// straight back to us. This is the same pin sing-box needs for its outbounds,
 /// and deliberately the same implementation.
 private final class InterfaceProtector: NSObject, MobileSocketProtectorProtocol {
-    private let allowIPv6: Bool
-
-    init(allowIPv6: Bool) {
-        self.allowIPv6 = allowIPv6
-        super.init()
-    }
-
     func protect(_ fd: Int) -> Bool {
-        LibboxPlatform.pinToPhysicalInterface(Int32(fd), allowIPv6: allowIPv6)
+        LibboxPlatform.pinToPhysicalInterface(Int32(fd))
     }
 }
 
