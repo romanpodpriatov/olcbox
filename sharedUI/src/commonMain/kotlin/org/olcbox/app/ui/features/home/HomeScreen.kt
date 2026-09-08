@@ -2,6 +2,11 @@ package org.olcbox.app.ui.features.home
 
 import androidx.compose.foundation.ScrollState
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import org.olcbox.app.ui.features.home.components.subscriptionTitle
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -179,6 +184,47 @@ fun HomeScreen(
 
     val vpnDisclosureAccepted by viewModel.vpnDisclosureAccepted.collectAsState()
     var showVpnDisclosure by remember { mutableStateOf(false) }
+
+    // Removing something is one tap away on the board now, so it asks first. Both
+    // are irreversible and one of them takes a dozen rows with it.
+    var confirmRemove by remember { mutableStateOf<PendingRemoval?>(null) }
+    confirmRemove?.let { pending ->
+        val isList = pending is PendingRemoval.ServerList
+        AlertDialog(
+            onDismissRequest = { confirmRemove = null },
+            title = { Text(if (isList) "Remove server list?" else "Remove location?") },
+            text = {
+                Text(
+                    when (pending) {
+                        is PendingRemoval.ServerList ->
+                            "${pending.title} and the ${pending.count} location(s) it brought in " +
+                                "will be removed from this device. You can add the list again later."
+                        is PendingRemoval.Location ->
+                            "${pending.title} will be removed from this device."
+                    }
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    when (pending) {
+                        is PendingRemoval.ServerList -> viewModel.deleteSubscription(pending.url) { removed ->
+                            scope.launch {
+                                snackbarHostState.showSnackbar("Removed ${'$'}removed location(s)")
+                            }
+                            locationViewModel.loadLocations()
+                        }
+                        is PendingRemoval.Location -> locationViewModel.deleteLocation(pending.id) {
+                            viewModel.loadCurrentConfig()
+                        }
+                    }
+                    confirmRemove = null
+                }) {
+                    Text("Remove", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = { TextButton(onClick = { confirmRemove = null }) { Text("Cancel") } }
+        )
+    }
 
     if (showVpnDisclosure) {
         VpnDisclosureScreen(
@@ -445,6 +491,20 @@ fun HomeScreen(
             onLocationSettingsClick = { id -> onOpenLocationSettings(id) },
             onMeasure = { ids -> refreshHttpPings(ids) },
             onRefreshSubscriptionClick = { url -> refreshSubscription(url) },
+            onDeleteLocationClick = { id ->
+                locations.firstOrNull { it.storageId == id }?.let { item ->
+                    confirmRemove = PendingRemoval.Location(id = id, title = item.fullName)
+                }
+            },
+            onDeleteSubscriptionClick = { url ->
+                val members = locations.filter { it.subscriptionUrl?.trim() == url.trim() }
+                confirmRemove = PendingRemoval.ServerList(
+                    url = url,
+                    title = members.firstOrNull()?.subscriptionTitle()?.takeIf { it.isNotBlank() }
+                        ?: "This server list",
+                    count = members.size
+                )
+            },
             onOpenUrl = onOpenExternalUrl,
             onAddLocationClick = onAddLocation,
             onGetSubscriptionClick = onGetSubscriptionClick,

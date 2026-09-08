@@ -1,32 +1,38 @@
 package org.olcbox.app.ui.features.home.components
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.toMutableStateList
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.olcbox.app.data.model.LocationConfig
@@ -41,10 +47,10 @@ import org.olcbox.app.ui.components.kit.PkIconButton
 import org.olcbox.app.ui.components.kit.PkPlanBar
 import org.olcbox.app.ui.components.kit.PkRoomCard
 import org.olcbox.app.ui.components.kit.PkSectionEyebrow
-import org.olcbox.app.ui.components.kit.planFraction
-import org.olcbox.app.ui.components.kit.roomIsBlocked
 import org.olcbox.app.ui.components.kit.pkSubscriptionHost
 import org.olcbox.app.ui.components.kit.pkSubscriptionIsSecret
+import org.olcbox.app.ui.components.kit.planFraction
+import org.olcbox.app.ui.components.kit.roomIsBlocked
 import org.olcbox.app.ui.components.kit.seatCountText
 import org.olcbox.app.ui.components.kit.seatDisplay
 import org.olcbox.app.ui.components.kit.seatFreeText
@@ -259,6 +265,8 @@ fun RoomBoard(
     onLocationSettingsClick: (String) -> Unit,
     onMeasure: (List<String>) -> Unit,
     onRefreshSubscriptionClick: (String) -> Unit,
+    onDeleteLocationClick: (String) -> Unit,
+    onDeleteSubscriptionClick: (String) -> Unit,
     onOpenUrl: (String) -> Unit,
     onAddSubscriptionClick: () -> Unit,
     onAddLocationClick: () -> Unit,
@@ -349,6 +357,14 @@ fun RoomBoard(
                             isRefreshing = groupUrl == refreshingSubscriptionUrl,
                             onClick = { onRefreshSubscriptionClick(groupUrl) }
                         )
+                        // Beside the arrows that fetch the list, the one that
+                        // drops it. Removing a list used to live in application
+                        // settings, two screens from the list it removes.
+                        PkIconButton(
+                            icon = PkIcons.Delete,
+                            contentDescription = "Remove this server list",
+                            onClick = { onDeleteSubscriptionClick(groupUrl) }
+                        )
                     }
                 }
 
@@ -423,7 +439,12 @@ fun RoomBoard(
                         // by the person looking at it, and anyone who can add one
                         // must be able to delete it.
                         onLongClick = { onLocationSettingsClick(location.storageId) },
-                        onMeasure = { onMeasure(listOf(location.storageId)) }
+                        onMeasure = { onMeasure(listOf(location.storageId)) },
+                        // Shown, not hidden behind a long press: this row exists
+                        // because the user typed it in, and until now the only way
+                        // to take it back out was a gesture nothing announces and
+                        // a settings screen the admin gate can hide entirely.
+                        onDelete = { onDeleteLocationClick(location.storageId) }
                     )
                 }
             }
@@ -445,6 +466,26 @@ fun RoomBoard(
     }
 }
 
+/** The trash on a custom card: the row's own affordance, not a button on it. */
+@Composable
+private fun RemoveAffordance(label: String, onClick: () -> Unit) {
+    val palette = LocalPkPalette.current
+    Box(
+        modifier = Modifier
+            .size(28.dp)
+            .clip(CircleShape)
+            .clickable(onClick = onClick, onClickLabel = label, role = Role.Button),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = PkIcons.Delete,
+            contentDescription = label,
+            tint = palette.textMuted,
+            modifier = Modifier.size(15.dp)
+        )
+    }
+}
+
 @Composable
 private fun BoardRoomCard(
     location: LocationItem,
@@ -457,7 +498,8 @@ private fun BoardRoomCard(
     canPing: (LocationConfig) -> Boolean,
     onClick: () -> Unit,
     onLongClick: (() -> Unit)?,
-    onMeasure: () -> Unit
+    onMeasure: () -> Unit,
+    onDelete: (() -> Unit)? = null
 ) {
     val (emoji, name) = locationDisplayParts(location)
     // The one thing the app is certain of: it is connected, and to this location.
@@ -487,7 +529,16 @@ private fun BoardRoomCard(
         // No MEASURE where the platform says nothing can be measured — a button
         // whose only outcome is a snackbar explaining that it cannot work is
         // worse than no button.
-        onMeasure = if (config?.let(canPing) == true) onMeasure else null
+        onMeasure = if (config?.let(canPing) == true) onMeasure else null,
+        trailing = onDelete?.let { remove ->
+            {
+                // Flat, not a PkIconButton: the boxed variant belongs on the group
+                // header, where it sits with three others on a line of its own. On
+                // a card it read as a widget dropped into the name, between the
+                // protocol tag and the latency column.
+                RemoveAffordance(label = "Remove ${'$'}name", onClick = remove)
+            }
+        }
     )
 }
 
@@ -614,7 +665,7 @@ private fun LocationItem.subscriptionGroupKey(): String = listOfNotNull(
     subscriptionUrl?.trim()?.takeIf { it.isNotBlank() }
 ).joinToString("|").ifBlank { storageId }
 
-private fun LocationItem.subscriptionTitle(): String {
+internal fun LocationItem.subscriptionTitle(): String {
     val subscription = metadata?.subscription
     // Falling back to a literal labelled every unnamed server list identically, so
     // two of them read as the same heading twice. Identify by host instead —

@@ -207,7 +207,14 @@ fun PkRoomCard(
     onClick: () -> Unit,
     onLongClick: (() -> Unit)? = null,
     onMeasure: (() -> Unit)? = null,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /**
+     * Drawn at the end of the name row. A card whose location the user added
+     * themselves puts its remove control here: a long-press is not something an
+     * interface can tell you about, and the only other way out was a settings
+     * screen the admin gate hides.
+     */
+    trailing: (@Composable () -> Unit)? = null
 ) {
     val palette = LocalPkPalette.current
     val background by animateColorAsState(
@@ -259,6 +266,10 @@ fun PkRoomCard(
             if (!tag.isNullOrBlank()) {
                 Spacer(Modifier.width(8.dp))
                 Text(text = tag, style = pkMono(9, 0.6), color = palette.textMuted, maxLines = 1)
+            }
+            if (trailing != null) {
+                Spacer(Modifier.width(4.dp))
+                trailing()
             }
             // No "SELECTED" badge: the lime border and the lime name already say
             // that, three times over. "YOUR SEAT" stays because it says something
