@@ -29,12 +29,10 @@ servers you can connect to. It is free, there is no account, nothing to sign
 up for, and nothing to buy here.
 
 <p align="center">
-  <img src="docs/screenshots/00-intro.PNG" alt="Intro" width="160">
-  <img src="docs/screenshots/01-empty.PNG" alt="The board before any server list is added" width="160">
-  <img src="docs/screenshots/02-vpnpopup.PNG" alt="The system asks once before the tunnel can be installed" width="160">
-  <img src="docs/screenshots/03-connected.PNG" alt="Connected, with session timer and traffic" width="160">
-  <img src="docs/screenshots/04-settings.PNG" alt="Settings" width="160">
-  <img src="docs/screenshots/05-serverlistnotconnected.PNG" alt="A server list on the board, not connected" width="160">
+  <img src="docs/screenshots/00-intro.PNG" alt="Intro" width="200">
+  <img src="docs/screenshots/03-connected.PNG" alt="Connected, with session timer and traffic" width="200">
+  <img src="docs/screenshots/05-serverlistnotconnected.PNG" alt="A server list on the board, not connected" width="200">
+  <img src="docs/screenshots/04-settings.PNG" alt="Settings" width="200">
 </p>
 
 ## Protocols
