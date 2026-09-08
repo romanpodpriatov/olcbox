@@ -17,6 +17,7 @@ import kotlinx.coroutines.withContext
 import org.olcbox.app.data.exporter.LogExporter
 import org.olcbox.app.data.importer.ConfigImporter
 import org.olcbox.app.data.model.LocationConfig
+import org.olcbox.app.data.model.RoutingSettings
 import org.olcbox.app.data.model.SubscriptionSettings
 import org.olcbox.app.util.nowMillis
 import org.olcbox.app.data.repository.LocationsRepository
@@ -85,6 +86,23 @@ class HomeScreenViewModel(
         viewModelScope.launch { locationsRepository.saveSubscriptionSettings(normalized) }
     }
 
+    private val _routingSettings = MutableStateFlow(RoutingSettings())
+    val routingSettings = _routingSettings.asStateFlow()
+
+    /**
+     * Saves and, if a tunnel is up, restarts it: a routing choice that takes
+     * effect at some unannounced later connect is the kind of setting people
+     * toggle twice and stop trusting. Same gesture as a connection-mode change.
+     */
+    fun updateRoutingSettings(settings: RoutingSettings) {
+        if (_routingSettings.value == settings) return
+        _routingSettings.value = settings
+        viewModelScope.launch {
+            locationsRepository.saveRoutingSettings(settings)
+            restartVpnIfRunning()
+        }
+    }
+
     /**
      * Whether the VPN disclosure has been accepted. Starts false and is only
      * raised by the stored value, so the worst a slow load can do is ask again —
@@ -124,6 +142,9 @@ class HomeScreenViewModel(
         viewModelScope.launch {
             _subscriptionSettings.value = locationsRepository.getSubscriptionSettings()
             _subscriptionSettingsLoaded.value = true
+        }
+        viewModelScope.launch {
+            _routingSettings.value = locationsRepository.getRoutingSettings()
         }
         viewModelScope.launch {
             _vpnDisclosureAccepted.value = locationsRepository.isVpnDisclosureAccepted()

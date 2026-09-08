@@ -76,6 +76,8 @@ import androidx.compose.ui.unit.sp
 import org.olcbox.app.ui.icons.PkIcons
 import org.olcbox.app.CurrentAppInfo
 import org.olcbox.app.admin.AdminState
+import org.olcbox.app.data.model.RoutingMode
+import org.olcbox.app.data.model.RoutingSettings
 import org.olcbox.app.data.model.SubscriptionSettings
 import org.olcbox.app.data.share.SubscriptionShareItem
 import org.olcbox.app.ui.components.kit.pkSubscriptionSourceLine
@@ -168,6 +170,14 @@ fun ApplicationSettingsSheet(
     /** How subscriptions behave. See [SubscriptionSettings]. */
     subscriptionSettings: SubscriptionSettings = SubscriptionSettings(),
     onSubscriptionSettingsChanged: (SubscriptionSettings) -> Unit = {},
+    /** What leaves through the tunnel. See [RoutingSettings]. */
+    routingSettings: RoutingSettings = RoutingSettings(),
+    onRoutingSettingsChanged: (RoutingSettings) -> Unit = {},
+    /**
+     * Why the choice cannot be made on this platform, when it cannot. Shown
+     * under the cards, which are then not selectable. Null where it applies.
+     */
+    routingUnavailableReason: String? = null,
     /**
      * False where the store owns updates.
      *
@@ -264,8 +274,10 @@ fun ApplicationSettingsSheet(
                     onSubscriptionOptionsClick = { route = SharedSettingsRoute.SubscriptionOptions },
                     showUpdates = showUpdates,
                     connectionSummary = connectionModeSummary,
+                    routingSummary = routingSettings.mode.hubSummary(),
                     subscriptionsCount = subscriptions.size,
                     onConnectionClick = { route = SharedSettingsRoute.Connection },
+                    onRoutingClick = { route = SharedSettingsRoute.Routing },
                     onSubscriptionsClick = { route = SharedSettingsRoute.Subscriptions },
                     onUpdatesClick = { route = SharedSettingsRoute.Updates },
                     onLogsClick = { route = SharedSettingsRoute.Logs }
@@ -290,6 +302,13 @@ fun ApplicationSettingsSheet(
                     selectedId = selectedConnectionModeId,
                     onSelected = onConnectionModeSelected,
                     onBack = { route = SharedSettingsRoute.Connection }
+                )
+
+                SharedSettingsRoute.Routing -> SharedRoutingSettingsContent(
+                    settings = routingSettings,
+                    unavailableReason = routingUnavailableReason,
+                    onChanged = onRoutingSettingsChanged,
+                    onBack = { route = SharedSettingsRoute.Hub }
                 )
 
                 SharedSettingsRoute.SocksProxy -> if (socksProxySettings != null) {
@@ -345,8 +364,10 @@ private fun SharedSettingsHubContent(
     onSubscriptionOptionsClick: () -> Unit,
     showUpdates: Boolean,
     connectionSummary: String,
+    routingSummary: String,
     subscriptionsCount: Int,
     onConnectionClick: () -> Unit,
+    onRoutingClick: () -> Unit,
     onSubscriptionsClick: () -> Unit,
     onUpdatesClick: () -> Unit,
     onLogsClick: () -> Unit
@@ -369,6 +390,13 @@ private fun SharedSettingsHubContent(
             value = connectionSummary,
             icon = PkIcons.Public,
             onClick = onConnectionClick
+        )
+
+        SharedNavigationRow(
+            title = "Routing",
+            value = routingSummary,
+            icon = PkIcons.SwapVert,
+            onClick = onRoutingClick
         )
 
         Spacer(Modifier.height(8.dp))
@@ -555,6 +583,56 @@ private fun SharedConnectionModeSettingsContent(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun SharedRoutingSettingsContent(
+    settings: RoutingSettings,
+    unavailableReason: String?,
+    onChanged: (RoutingSettings) -> Unit,
+    onBack: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp)
+            .padding(bottom = 32.dp)
+    ) {
+        SharedDetailHeader(
+            title = "Routing",
+            subtitle = settings.mode.hubSummary(),
+            onBack = onBack
+        )
+
+        Spacer(Modifier.height(20.dp))
+
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            RoutingMode.entries.forEach { mode ->
+                SharedSelectableSettingsCard(
+                    selected = settings.mode == mode,
+                    icon = if (mode == RoutingMode.Global) PkIcons.Public else PkIcons.SwapVert,
+                    title = mode.title(),
+                    subtitle = mode.summary(),
+                    enabled = unavailableReason == null,
+                    onClick = { onChanged(settings.copy(mode = mode)) }
+                )
+            }
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        // What "Russia" means here, because a list has edges and the person
+        // choosing this deserves to know where they are.
+        Text(
+            text = unavailableReason
+                ?: "Russian destinations are matched by lists bundled with the app: " +
+                    "v2fly's category-ru, the Russian top-level domains and the Russian IP ranges. " +
+                    "Names on those lists are resolved by the network you are on; every other name " +
+                    "is resolved through the tunnel. Changing this restarts the connection.",
+            style = MaterialTheme.typography.bodySmall,
+            color = LocalPkPalette.current.textDim
+        )
     }
 }
 
@@ -1169,7 +1247,7 @@ private fun SharedSelectableSettingsCard(
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .height(82.dp)
+            .defaultMinSize(minHeight = 82.dp)
             .then(
                 if (onClick != null && enabled) {
                     Modifier.clickable(onClick = onClick)
@@ -1189,7 +1267,7 @@ private fun SharedSelectableSettingsCard(
         )
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 16.dp),
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Surface(
@@ -1228,7 +1306,9 @@ private fun SharedSelectableSettingsCard(
                     text = subtitle,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 13.sp,
-                    maxLines = 1,
+                    // Two, not one: the routing cards say what a list contains,
+                    // and a subtitle that ends in "…" says nothing.
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
             }
@@ -1306,6 +1386,7 @@ private enum class SharedSettingsRoute {
     Hub,
     Connection,
     ConnectionMode,
+    Routing,
     Subscriptions,
     SubscriptionOptions,
     Updates,

@@ -118,6 +118,7 @@ private fun IosApp(
         val logs by dependencies.homeViewModel.logs.collectAsState()
         val homeState by dependencies.homeViewModel.state.collectAsState()
         val subscriptionSettings by dependencies.homeViewModel.subscriptionSettings.collectAsState()
+        val routingSettings by dependencies.homeViewModel.routingSettings.collectAsState()
         // What the connection actually is, not what it was two rewrites ago.
         // olcRTC ran as an in-app SOCKS endpoint on 127.0.0.1 once; it runs in
         // the packet tunnel extension now, like every other transport, and the
@@ -245,6 +246,8 @@ private fun IosApp(
                     isConnectionActive = homeState.isVpnConnected,
                     subscriptionSettings = subscriptionSettings,
                     onSubscriptionSettingsChanged = dependencies.homeViewModel::updateSubscriptionSettings,
+                    routingSettings = routingSettings,
+                    onRoutingSettingsChanged = dependencies.homeViewModel::updateRoutingSettings,
                     connectionModeTitle = "System VPN",
                     connectionModeSummary = "All device traffic through the tunnel",
                     showUpdates = false,

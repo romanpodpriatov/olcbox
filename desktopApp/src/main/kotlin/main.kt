@@ -345,6 +345,7 @@ fun main(args: Array<String>) = application {
             val logs by dependencies.homeViewModel.logs.collectAsState()
             val homeState by dependencies.homeViewModel.state.collectAsState()
             val subscriptionSettings by dependencies.homeViewModel.subscriptionSettings.collectAsState()
+            val routingSettings by dependencies.homeViewModel.routingSettings.collectAsState()
             val socksProxySettings by dependencies.vpnManager.socksProxySettings.collectAsState()
 
             fun reloadLocationsAfterImport(onComplete: () -> Unit = {}) {
@@ -490,6 +491,12 @@ fun main(args: Array<String>) = application {
                         },
                         isConnectionActive = homeState.isVpnConnected,
                         subscriptionSettings = subscriptionSettings,
+                        routingSettings = routingSettings,
+                        onRoutingSettingsChanged = dependencies.homeViewModel::updateRoutingSettings,
+                        // The desktop cores would dial "direct" straight into the
+                        // daemon's own utun. Until the bypass lives in the daemon,
+                        // the choice is shown here and not offered.
+                        routingUnavailableReason = "Applies on iOS and Android. Desktop follows in a later build.",
                         onSubscriptionSettingsChanged =
                             dependencies.homeViewModel::updateSubscriptionSettings,
                         onDismiss = { showDesktopSettings = false },
