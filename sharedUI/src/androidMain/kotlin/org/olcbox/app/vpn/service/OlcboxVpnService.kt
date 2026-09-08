@@ -41,6 +41,7 @@ import org.olcbox.app.data.datasource.LocationsDataSourceImpl
 import org.olcbox.app.data.datasource.LocationsRepositoryImpl
 import org.olcbox.app.data.identity.PersistentDeviceIdentityProvider
 import org.olcbox.app.data.model.LocationConfig
+import org.olcbox.app.net.UpstreamDns
 import org.olcbox.app.data.repository.LocationsRepository
 import org.olcbox.app.net.AndroidSingBoxController
 import org.olcbox.app.net.AndroidXrayController
@@ -783,7 +784,7 @@ class OlcboxVpnService : VpnService() {
             }
             waitForJitsiRoomCleanup(config.bypassProvider)
             bindProcessToNetwork(upstream, "Bound to ${getNetName(upstream)}")
-            configureMobileTransport(config)
+            configureMobileTransport(config, upstream)
             addLog(
                 "Starting olcRTC provider=${config.bypassProvider}, " +
                     "transport=${config.transport}, room=${config.id}"
@@ -851,11 +852,13 @@ class OlcboxVpnService : VpnService() {
         delay(waitMs)
     }
 
-    private fun configureMobileTransport(location: LocationConfig) {
+    private fun configureMobileTransport(location: LocationConfig, upstream: Network?) {
         val config = location.normalized()
         Mobile.setProviders()
         Mobile.setTransport(config.transport)
-        Mobile.setDNS("1.1.1.1:53")
+        // The upstream network's own resolvers first, the public operator
+        // behind them: some mobile networks answer only their own (olcbox#16).
+        Mobile.setDNS(upstreamDnsList(upstream))
         Mobile.setSocksListenHost(socksListenHost)
         Mobile.setVP8Options(config.vp8Fps.toLong(), config.vp8Batch.toLong())
     }
@@ -1604,6 +1607,24 @@ class OlcboxVpnService : VpnService() {
         if (connectionMode == AndroidConnectionMode.Tun || vpnInterface != null) {
             setUnderlyingNetworks(if (network != null) arrayOf(network) else null)
         }
+        // A running olcRTC re-points its lookups at the new network's resolvers
+        // at once; the engine applies SetDNS live.
+        if (network != null && Mobile.isRunning()) {
+            Mobile.setDNS(upstreamDnsList(network))
+        }
+    }
+
+    /**
+     * The engine's resolver list for [network]: its DNS servers as the system
+     * lists them, then the public operator. See [UpstreamDns].
+     */
+    private fun upstreamDnsList(network: Network?): String {
+        val servers = network
+            ?.let { connectivityManager.getLinkProperties(it)?.dnsServers }
+            ?.map { it.hostAddress ?: "" }
+            .orEmpty()
+        addLog("Resolvers from ${network?.let { getNetName(it) } ?: "no network"}: ${servers.size}")
+        return UpstreamDns.list(servers)
     }
 
     private fun Network.transportOrNull(): UpstreamTransport? {
