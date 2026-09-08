@@ -17,19 +17,27 @@ enum DirectResolver {
     static let placeholder = "198.51.100.53"
     static let fallback = "77.88.8.8"
 
-    /// The first IPv4, else the first IPv6 that is not link-local, else the
-    /// fallback. `ResolverSnapshot` renders servers as `host:port` and
-    /// `[v6%zone]:port`; sing-box wants a bare address, and a zone is
-    /// something it cannot carry.
+    /// The first IPv4, else the first global IPv6, else a link-local IPv6 that
+    /// still carries its zone — an IPv6-only Wi-Fi advertises its router that
+    /// way, and sing-box dials a zoned address as Go does — else the fallback.
+    /// `ResolverSnapshot` renders servers as `host:port` and `[v6%zone]:port`.
     static func pick(_ servers: [String]) -> String {
         let hosts = servers.map(host(of:)).filter { !$0.isEmpty }
-        if let v4 = hosts.first(where: { $0.contains(".") && !$0.contains(":") && !$0.hasPrefix("127.") }) {
+        let unzoned = hosts.map { $0.split(separator: "%", maxSplits: 1).first.map(String.init) ?? $0 }
+        if let v4 = unzoned.first(where: { $0.contains(".") && !$0.contains(":") && !$0.hasPrefix("127.") }) {
             return v4
         }
-        if let v6 = hosts.first(where: { $0.contains(":") && !$0.lowercased().hasPrefix("fe80:") && $0 != "::1" }) {
+        if let v6 = unzoned.first(where: { $0.contains(":") && !isLinkLocal($0) && $0 != "::1" }) {
             return v6
         }
+        if let zoned = hosts.first(where: { isLinkLocal($0) && $0.contains("%") }) {
+            return zoned
+        }
         return fallback
+    }
+
+    private static func isLinkLocal(_ host: String) -> Bool {
+        host.lowercased().hasPrefix("fe80:")
     }
 
     static func substitute(in config: String, resolvers: [String]) -> String {
@@ -47,9 +55,6 @@ enum DirectResolver {
         } else if let colon = value.lastIndex(of: ":"), value.filter({ $0 == ":" }).count == 1 {
             // v4:port — a bare IPv6 has more than one colon and no port here.
             value = String(value[..<colon])
-        }
-        if let percent = value.firstIndex(of: "%") {
-            value = String(value[..<percent])
         }
         return value
     }

@@ -39,22 +39,27 @@ sealed interface DirectDns {
     data object System : DirectDns
 
     /**
-     * Explicit resolver addresses as the platform lists them — IP literals, a
-     * `%zone` suffix tolerated. One is used: sing-box has no failover between
-     * servers, so [pick] chooses the first IPv4, else the first routable IPv6,
-     * else the public fallback.
+     * Explicit resolver addresses as the platform lists them — IP literals,
+     * with or without a `%zone`. One is used: sing-box has no failover
+     * between servers, so [pick] chooses the first IPv4, else the first
+     * global IPv6, else a link-local IPv6 that still carries its zone — the
+     * router on an IPv6-only Wi-Fi advertises exactly that, and sing-box
+     * dials a zoned address as Go does — else the public fallback.
      */
     data class Servers(val addresses: List<String>) : DirectDns {
         fun pick(): String {
-            val hosts = addresses.map { it.trim().substringBefore('%') }
-                .filter { it.isNotEmpty() && !isLoopback(it) }
-            return hosts.firstOrNull { isIPv4(it) }
-                ?: hosts.firstOrNull { ':' in it && !it.startsWith("fe80:", ignoreCase = true) }
+            val hosts = addresses.map { it.trim() }
+                .filter { it.isNotEmpty() && !isLoopback(it.substringBefore('%')) }
+            return hosts.map { it.substringBefore('%') }.firstOrNull { isIPv4(it) }
+                ?: hosts.map { it.substringBefore('%') }.firstOrNull { ':' in it && !isLinkLocal(it) }
+                ?: hosts.firstOrNull { isLinkLocal(it.substringBefore('%')) && '%' in it }
                 ?: SingBoxConfig.DIRECT_DNS_FALLBACK
         }
 
         private fun isIPv4(host: String): Boolean =
             host.split('.').let { parts -> parts.size == 4 && parts.all { it.toIntOrNull() in 0..255 } }
+
+        private fun isLinkLocal(host: String): Boolean = host.startsWith("fe80:", ignoreCase = true)
 
         private fun isLoopback(host: String): Boolean = host.startsWith("127.") || host == "::1"
     }

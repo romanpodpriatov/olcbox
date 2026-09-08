@@ -713,7 +713,14 @@ class OlcboxVpnService : VpnService() {
             addLog("Routing: proxy mode keeps olcRTC global")
             return true
         }
-        val port = SingBoxConfig.SINGBOX_SOCKS_PORT
+        // The front cannot share olcRTC's port. The core port is the default,
+        // but the SOCKS port is user-set and may be exactly that; then the
+        // front takes the alternate, and hev follows activeCorePort as always.
+        val port = if (socksListenPort == SingBoxConfig.SINGBOX_SOCKS_PORT) {
+            FRONT_ALTERNATE_PORT
+        } else {
+            SingBoxConfig.SINGBOX_SOCKS_PORT
+        }
         return try {
             stopCoreProcesses()
             waitForSocksPortReleased(port, SOCKS_RELEASE_QUICK_TIMEOUT_MS)
@@ -728,9 +735,12 @@ class OlcboxVpnService : VpnService() {
             )
             activeCorePort = port
             frontsOlcrtc = true
-            if (!waitForSocksPortOpen(port, MOBILE_READY_TIMEOUT_MS)) {
+            // A port that answers proves nothing about who answers: had the
+            // front failed to bind, whatever already listened there would
+            // satisfy the probe. So the process is asked as well.
+            if (!waitForSocksPortOpen(port, MOBILE_READY_TIMEOUT_MS) || !singBoxCore.isRunning()) {
                 addLog(singBoxCore.diagnostics())
-                error("sing-box front SOCKS not ready on $port")
+                error("sing-box front not running on $port")
             }
             coroutineContext.ensureActive()
             addLog("sing-box front ready on $socksListenHost:$port")
@@ -778,6 +788,9 @@ class OlcboxVpnService : VpnService() {
             // from the label — the failure path should not have to parse a string
             // we build for humans.
             val diagnose: () -> String
+            // Which processes must be alive once the port answers. A port that
+            // answers proves nothing about who answers.
+            val alive: () -> Boolean
             val fronted = routing is Routing.BypassRussia && connectionMode == AndroidConnectionMode.Tun
             if (spec is OutboundSpec.Vless && spec.transport is TransportSpec.Xhttp) {
                 if (fronted) {
@@ -788,19 +801,22 @@ class OlcboxVpnService : VpnService() {
                     )
                     label = "sing-box front + Xray/xhttp"
                     diagnose = { singBoxCore.diagnostics() + "\n" + xrayCore.diagnostics() }
+                    alive = { singBoxCore.isRunning() && xrayCore.isRunning() }
                 } else {
                     if (routing is Routing.BypassRussia) addLog("Routing: proxy mode keeps xhttp global")
                     xrayCore.start(XrayConfig.buildXhttp(spec, socksPort = port))
                     label = "Xray/xhttp"
                     diagnose = xrayCore::diagnostics
+                    alive = xrayCore::isRunning
                 }
             } else {
                 singBoxCore.start(SingBoxConfig.build(spec, socksPort = port, routing = routing))
                 label = "sing-box/${location.kind}"
                 diagnose = singBoxCore::diagnostics
+                alive = singBoxCore::isRunning
             }
             activeCorePort = port
-            if (!waitForSocksPortOpen(port, MOBILE_READY_TIMEOUT_MS)) {
+            if (!waitForSocksPortOpen(port, MOBILE_READY_TIMEOUT_MS) || !alive()) {
                 // The core's own account of what went wrong, which otherwise sits
                 // in a cache file only root can read. Without it this branch says
                 // a port did not open and nothing about why, and that is all a
@@ -2068,6 +2084,9 @@ class OlcboxVpnService : VpnService() {
 
         /** Where Xray listens when sing-box fronts it, so the front can keep the core port. */
         private const val XRAY_BEHIND_FRONT_PORT = 10811
+
+        /** Where the olcRTC front listens when the user-set SOCKS port is the core port itself. */
+        private const val FRONT_ALTERNATE_PORT = 10812
         private const val TUN_IPV4_ADDRESS = "10.0.88.88"
         private const val IPV4_PREFIX_LENGTH = 24
         private const val MAPDNS_ADDRESS = "1.1.1.1"
