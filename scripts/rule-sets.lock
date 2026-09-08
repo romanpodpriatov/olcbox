@@ -1,0 +1,6 @@
+# Written by scripts/update-rule-sets.sh. Do not edit by hand.
+sing-geosite 5a5a9abc760d2653948c9549c4cb56cc3279e1aa
+sing-geoip b9c5e675b4d5359d4b47f4434fa7ae77e9991306
+c36e157adf86edf7b722b51f3acb93bbb2a7f8083932dae29b4b5ef2c1ced870  geosite-category-ru.srs
+ba979268102429754bdbbf306890f91ac4ee0cf1d2f30eb1fff5eba65e0f9e66  geosite-tld-ru.srs
+1a8115af741918ff24b37b87d3c6da21eccabc58f1eec059e461dca8bac16ff7  geoip-ru.srs
