@@ -122,12 +122,12 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
 
         // Before the tunnel's settings go on: from then on the system resolver
         // is our own tun, and the servers of the network underneath can no
-        // longer be read. Counted rather than listed in the trace — they are
-        // the network's addresses, and the trace keeps to interface names.
-        let resolvers = olcrtc == nil ? [] : ResolverSnapshot.servers()
-        if olcrtc != nil {
-            NetworkDiagnostics.record("resolvers from the network: \(resolvers.count)")
-        }
+        // longer be read. For every transport now, not only olcRTC — under
+        // Bypass Russia the config wants one of them too. Counted rather than
+        // listed in the trace — they are the network's addresses, and the
+        // trace keeps to interface names.
+        let resolvers = ResolverSnapshot.servers()
+        NetworkDiagnostics.record("resolvers from the network: \(resolvers.count)")
 
         // Applied before the engine starts: libbox asks for the descriptor
         // synchronously and complains if answering takes long.
@@ -234,6 +234,10 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
                 throw serverError ?? Self.failure("libbox would not build a command server")
             }
             mark("starting")
+            // Bypass Russia: the config names a placeholder where the direct
+            // resolver goes, because only this process could read it. A Global
+            // config carries no placeholder and passes through untouched.
+            let config = DirectResolver.substitute(in: config, resolvers: resolvers)
             // Deliberately not `server.start()`: that binds the gRPC command
             // socket for an app that talks to us through handleAppMessage
             // instead. Starting the engine is a separate call, and this is it.

@@ -420,6 +420,15 @@ final class SwiftPacketTunnelBridge: NSObject, @unchecked Sendable, IosPacketTun
                 Self.olcrtcParameters(request.olcrtc),
                 to: container.appendingPathComponent("olcrtc.json")
             )
+            // Written or removed, like the two above: a `rules/` left behind
+            // by a Bypass Russia connection is harmless to a Global config,
+            // which never names it, but a config that names a file the app
+            // failed to write stops libbox with "no such file" — so the write
+            // happens here, before the extension is asked for anything.
+            try Self.handOverRuleSets(
+                request.ruleSets,
+                into: container.appendingPathComponent("libbox/work/rules", isDirectory: true)
+            )
             // Claim the breadcrumb before the extension is asked to run.
             //
             // `stage.txt` outlives the process that wrote it, and the app now
@@ -470,6 +479,29 @@ final class SwiftPacketTunnelBridge: NSObject, @unchecked Sendable, IosPacketTun
             try Data(contents.utf8).write(to: url)
         } else if FileManager.default.fileExists(atPath: url.path) {
             try FileManager.default.removeItem(at: url)
+        }
+    }
+
+    /// Writes each file, or removes the directory when there is nothing to write.
+    /// The directory is libbox's working path plus the relative directory the
+    /// Kotlin config uses (`RuleSets.IOS_RELATIVE_DIR`); the two must agree.
+    private static func handOverRuleSets(_ files: [String: String], into directory: URL) throws {
+        let fileManager = FileManager.default
+        if files.isEmpty {
+            if fileManager.fileExists(atPath: directory.path) {
+                try fileManager.removeItem(at: directory)
+            }
+            return
+        }
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        for (name, base64) in files {
+            guard let data = Data(base64Encoded: base64) else {
+                throw NSError(
+                    domain: "org.proofkit.app", code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: "rule-set \(name) is not base64"]
+                )
+            }
+            try data.write(to: directory.appendingPathComponent(name))
         }
     }
 

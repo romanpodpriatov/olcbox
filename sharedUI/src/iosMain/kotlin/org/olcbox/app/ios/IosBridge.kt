@@ -74,11 +74,22 @@ interface IosBridgeCallback {
  * [xrayConfig] is an Xray config for xhttp, and [olcrtc] the parameters for our
  * own engine. In both cases the borrowed core listens on a loopback SOCKS port
  * and sing-box, which owns the tun, reaches it there.
+ *
+ * [ruleSets] are the rule-set files [config] refers to under Bypass Russia,
+ * file name to base64 of the bytes, and empty when it refers to none.
  */
 data class IosPacketTunnelStartRequest(
     val config: String,
     val xrayConfig: String?,
-    val olcrtc: IosOlcRtcStartRequest?
+    val olcrtc: IosOlcRtcStartRequest?,
+    /**
+     * The bridge writes these where libbox resolves `rules/<name>` — its
+     * working directory in the App Group — and removes the directory when
+     * there is nothing to write, so a stale list cannot outlive the routing
+     * choice that put it there. Base64 because a Kotlin ByteArray crosses to
+     * Swift as an object with a getter per byte.
+     */
+    val ruleSets: Map<String, String> = emptyMap()
 )
 
 /**

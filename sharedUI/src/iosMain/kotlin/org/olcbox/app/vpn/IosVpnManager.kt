@@ -1,6 +1,8 @@
 package org.olcbox.app.vpn
 
 import kotlin.coroutines.resume
+import kotlin.io.encoding.Base64
+import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.random.Random
@@ -33,6 +35,10 @@ import org.olcbox.app.net.LinkParser
 import org.olcbox.app.net.LocationKind
 import org.olcbox.app.net.OutboundSpec
 import org.olcbox.app.net.SingBoxConfig
+import org.olcbox.app.data.model.RoutingMode
+import org.olcbox.app.net.DirectDns
+import org.olcbox.app.net.Routing
+import org.olcbox.app.net.RuleSets
 import org.olcbox.app.net.TransportSpec
 import org.olcbox.app.net.XrayConfig
 import org.olcbox.app.ios.IosOlcRtcBridge
@@ -371,6 +377,9 @@ class IosVpnManager(
     private suspend fun packetTunnelRequest(
         location: LocationConfig
     ): IosPacketTunnelStartRequest? {
+        val routing = routing()
+        val ruleSets = ruleSetsFor(routing)
+
         // olcRTC has no link to parse — a room and a key address it — so it is
         // read off the location rather than through LinkParser.
         if (location.kind == LocationKind.Olcrtc) {
@@ -395,10 +404,12 @@ class IosVpnManager(
                     // Calls and games want that path; name resolution does
                     // not, so sing-box answers DNS itself and asks upstream
                     // over TCP.
-                    upstreamUdpIsLossy = true
+                    upstreamUdpIsLossy = true,
+                    routing = routing
                 ),
                 xrayConfig = null,
-                olcrtc = location.startRequest(locationsRepository.getDeviceIdentity(), settings)
+                olcrtc = location.startRequest(locationsRepository.getDeviceIdentity(), settings),
+                ruleSets = ruleSets
             )
         }
 
@@ -423,14 +434,38 @@ class IosVpnManager(
         }
         return IosPacketTunnelStartRequest(
             config = if (xrayConfig != null) {
-                SingBoxConfig.buildTunSocks(XrayConfig.XRAY_SOCKS_PORT)
+                SingBoxConfig.buildTunSocks(XrayConfig.XRAY_SOCKS_PORT, routing = routing)
             } else {
-                SingBoxConfig.buildTun(spec)
+                SingBoxConfig.buildTun(spec, routing = routing)
             },
             xrayConfig = xrayConfig,
-            olcrtc = null
+            olcrtc = null,
+            ruleSets = ruleSets
         )
     }
+
+    /**
+     * The persisted routing choice, resolved for the extension: rule files by
+     * the relative path libbox resolves against its working directory, and a
+     * placeholder where the direct resolver goes, because only the extension
+     * can read the network's own before the tunnel replaces it.
+     */
+    private suspend fun routing(): Routing =
+        when (val mode = locationsRepository.getRoutingSettings().mode) {
+            RoutingMode.Global -> Routing.Global
+            RoutingMode.BypassRussia -> {
+                addLog("Routing: ${mode.hubSummary()}")
+                Routing.BypassRussia(RuleSets.IOS_RELATIVE_DIR, DirectDns.Placeholder)
+            }
+        }
+
+    @OptIn(ExperimentalEncodingApi::class)
+    private suspend fun ruleSetsFor(routing: Routing): Map<String, String> =
+        if (routing is Routing.BypassRussia) {
+            RuleSets.all.associate { it.name to Base64.encode(RuleSets.bytes(it)) }
+        } else {
+            emptyMap()
+        }
 
     /**
      * Turns the extension's callback back into a suspending call.
