@@ -1,6 +1,7 @@
 package org.olcbox.app.net
 
 import kotlinx.serialization.json.JsonArrayBuilder
+import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
@@ -23,9 +24,12 @@ import kotlinx.serialization.json.putJsonObject
  * passes `sing-box check` on the 1.13.14 binary. Most of it survives version
  * bumps by staying minimal, emitting none of the inbound fields 1.13 removed.
  *
- * The one shape that does reach for newer schema is the resolve-over-TCP case:
- * it emits a `dns` server in the typed 1.12+ format and a `route` rule using
- * the `action` form. Those two are the parts to re-check first on the next bump.
+ * The shapes that reach for newer schema are the resolve-over-TCP case and
+ * everything [Routing.BypassRussia] adds: a `dns` section in the typed 1.12+
+ * format with `rule_set` rules, `route.rule_set` entries of the local binary
+ * kind, and `route` rules in the `action` form (`sniff`, `hijack-dns`). Those
+ * are the parts to re-check first on the next bump; `SingBoxConfigDumpTest`
+ * writes one of each for `sing-box check`.
  */
 object SingBoxConfig {
     /** Pinned sing-box release whose config schema this builder targets. */
@@ -34,8 +38,11 @@ object SingBoxConfig {
     // core binding it first made every desktop connect fail with "Address already in use".
     const val SINGBOX_SOCKS_PORT = 10810
 
-    fun build(outbound: OutboundSpec, socksPort: Int = SINGBOX_SOCKS_PORT): String =
-        render(socksPort) { addOutbound(outbound) }
+    fun build(
+        outbound: OutboundSpec,
+        socksPort: Int = SINGBOX_SOCKS_PORT,
+        routing: Routing = Routing.Global,
+    ): String = render(socksPort, routing) { addOutbound(outbound) }
 
     /// iOS addressing. Fixed rather than negotiated: the extension applies these
     /// same values to the system when it hands the core its descriptor, so the two
@@ -83,7 +90,8 @@ object SingBoxConfig {
         outbound: OutboundSpec,
         address: String = TUN_ADDRESS,
         mtu: Int = TUN_MTU,
-    ): String = renderTun(address, mtu, resolveOverTcp = false) { addOutbound(outbound) }
+        routing: Routing = Routing.Global,
+    ): String = renderTun(address, mtu, resolveOverTcp = false, routing) { addOutbound(outbound) }
 
     /**
      * Config for a core that owns the tun and hands the traffic to another core
@@ -101,10 +109,30 @@ object SingBoxConfig {
         upstreamUdpIsLossy: Boolean = false,
         address: String = TUN_ADDRESS,
         mtu: Int = TUN_MTU,
-    ): String = renderTun(address, mtu, resolveOverTcp = upstreamUdpIsLossy) {
+        routing: Routing = Routing.Global,
+    ): String = renderTun(address, mtu, resolveOverTcp = upstreamUdpIsLossy, routing) {
+        addSocksOutbound(socksPort, username, password)
+    }
+
+    /**
+     * A SOCKS inbound in front of another core's SOCKS port — the Android shape
+     * for olcRTC and xhttp under Bypass Russia, where sing-box has to sit between
+     * hev-socks5-tunnel and a transport it does not implement so its rules can
+     * decide what goes direct. Credentials only when the upstream demands them,
+     * which is olcRTC and only olcRTC.
+     */
+    fun buildSocksChain(
+        upstreamPort: Int,
+        socksPort: Int = SINGBOX_SOCKS_PORT,
+        username: String = "",
+        password: String = "",
+        routing: Routing = Routing.Global,
+    ): String = render(socksPort, routing) { addSocksOutbound(upstreamPort, username, password) }
+
+    private fun JsonArrayBuilder.addSocksOutbound(port: Int, username: String, password: String) {
         addJsonObject {
             put("type", "socks"); put("tag", "out")
-            put("server", "127.0.0.1"); put("server_port", socksPort)
+            put("server", "127.0.0.1"); put("server_port", port)
             put("version", "5")
             // Sent only when the core on the other end asked for them, which is
             // olcRTC and only olcRTC: it refuses the connection outright when
@@ -167,7 +195,7 @@ object SingBoxConfig {
                     if (upstreamUdpIsLossy) {
                         addJsonObject {
                             put("type", "tcp"); put("tag", "dns-remote")
-                            put("server", TCP_DNS_SERVER); put("detour", "out")
+                            put("server", REMOTE_DNS_SERVER); put("detour", "out")
                         }
                     }
                     addJsonObject { put("type", "local"); put("tag", "dns-direct") }
@@ -252,15 +280,32 @@ object SingBoxConfig {
         return obj.toString()
     }
 
-    /** Resolver reached over the tunnel when the upstream's UDP is unreliable. */
-    private const val TCP_DNS_SERVER = "1.1.1.1"
+    /** The tunnel-side resolver, reached through `out`; over TCP when the upstream's UDP is lossy. */
+    private const val REMOTE_DNS_SERVER = "1.1.1.1"
+
+    /**
+     * What the iOS builder writes where the direct resolver goes; the extension
+     * replaces it with the network's own before starting the core. TEST-NET-2,
+     * so an unreplaced placeholder can only fail loudly, never resolve.
+     */
+    const val DIRECT_DNS_PLACEHOLDER = "198.51.100.53"
+
+    /**
+     * Yandex DNS. What "direct" resolution uses when the platform offered no
+     * resolver at all. Russian because the mode is: it is the resolver most
+     * likely to answer on a Russian mobile network that meets 1.1.1.1 with
+     * silence, and it answers everywhere else too.
+     */
+    const val DIRECT_DNS_FALLBACK = "77.88.8.8"
 
     private fun renderTun(
         address: String,
         mtu: Int,
         resolveOverTcp: Boolean,
+        routing: Routing,
         outbounds: JsonArrayBuilder.() -> Unit,
     ): String {
+        val bypass = routing as? Routing.BypassRussia
         val obj = buildJsonObject {
             putJsonObject("log") { put("level", "warn") }
             // Name resolution is the one thing that must not ride an unreliable
@@ -276,12 +321,16 @@ object SingBoxConfig {
             // upstream over TCP. Everything else, calls and games included,
             // goes as plain UDP. Transports whose UDP is as good as their TCP
             // need none of this and get none of it.
-            if (resolveOverTcp) {
+            //
+            // Bypass Russia has its own dns section, which covers this case too.
+            if (bypass != null) {
+                putBypassDns(bypass, remoteOverTcp = resolveOverTcp)
+            } else if (resolveOverTcp) {
                 putJsonObject("dns") {
                     putJsonArray("servers") {
                         addJsonObject {
                             put("type", "tcp"); put("tag", "dns-remote")
-                            put("server", TCP_DNS_SERVER); put("detour", "out")
+                            put("server", REMOTE_DNS_SERVER); put("detour", "out")
                         }
                     }
                 }
@@ -295,8 +344,13 @@ object SingBoxConfig {
                     put("stack", "gvisor")
                 }
             }
-            putJsonArray("outbounds", outbounds)
-            if (resolveOverTcp) {
+            putJsonArray("outbounds") {
+                outbounds()
+                if (bypass != null) addDirectOutbound()
+            }
+            if (bypass != null) {
+                putBypassRoute(bypass)
+            } else if (resolveOverTcp) {
                 putJsonObject("route") {
                     putJsonArray("rules") {
                         // Without this the `dns` block above is dead weight:
@@ -311,30 +365,120 @@ object SingBoxConfig {
     }
 
     fun buildOlcrtcSocks(olcrtcPort: Int, socksPort: Int = SINGBOX_SOCKS_PORT): String =
-        render(socksPort) {
-            addJsonObject {
-                put("type", "socks"); put("tag", "olcrtc")
-                put("server", "127.0.0.1"); put("server_port", olcrtcPort)
-                put("version", "5")
-            }
-        }
+        buildSocksChain(olcrtcPort, socksPort)
 
-    private fun render(socksPort: Int, outbounds: JsonArrayBuilder.() -> Unit): String {
+    private fun render(socksPort: Int, routing: Routing, outbounds: JsonArrayBuilder.() -> Unit): String {
+        val bypass = routing as? Routing.BypassRussia
         val obj = buildJsonObject {
             // Without this sing-box applies its own default, which is "info" — and
             // that names every connection the user makes, in a log we invite them to
             // export. This renderer is behind the plain socks path, so it is the one
             // most users are actually on.
             putJsonObject("log") { put("level", "warn") }
+            if (bypass != null) putBypassDns(bypass, remoteOverTcp = false)
             putJsonArray("inbounds") {
                 addJsonObject {
                     put("type", "socks"); put("tag", "in")
                     put("listen", "127.0.0.1"); put("listen_port", socksPort)
                 }
             }
-            putJsonArray("outbounds", outbounds)
+            putJsonArray("outbounds") {
+                outbounds()
+                if (bypass != null) addDirectOutbound()
+            }
+            if (bypass != null) putBypassRoute(bypass)
         }
         return obj.toString()
+    }
+
+    private fun JsonArrayBuilder.addDirectOutbound() {
+        addJsonObject { put("type", "direct"); put("tag", "direct") }
+    }
+
+    /**
+     * The split: names on the Russian lists are resolved on the network
+     * underneath, everything else through the tunnel.
+     *
+     * `dns-remote` first because the first server is what answers when no rule
+     * claims a query, and `final` says so explicitly as well. `reverse_mapping`
+     * keeps the name of every address sing-box handed out, so a connection to
+     * that address is matched by the domain lists even when nothing in it can be
+     * sniffed.
+     */
+    private fun JsonObjectBuilder.putBypassDns(bypass: Routing.BypassRussia, remoteOverTcp: Boolean) {
+        putJsonObject("dns") {
+            putJsonArray("servers") {
+                addJsonObject {
+                    put("type", if (remoteOverTcp) "tcp" else "udp"); put("tag", "dns-remote")
+                    put("server", REMOTE_DNS_SERVER); put("detour", "out")
+                }
+                addJsonObject {
+                    put("tag", "dns-direct")
+                    when (val dns = bypass.directDns) {
+                        DirectDns.System -> put("type", "local")
+                        is DirectDns.Servers -> {
+                            put("type", "udp"); put("server", dns.pick()); put("detour", "direct")
+                        }
+                        DirectDns.Placeholder -> {
+                            put("type", "udp"); put("server", DIRECT_DNS_PLACEHOLDER); put("detour", "direct")
+                        }
+                    }
+                }
+            }
+            putJsonArray("rules") {
+                addJsonObject {
+                    putJsonArray("rule_set") { RuleSets.domains.forEach { add(it.tag) } }
+                    put("server", "dns-direct")
+                }
+            }
+            put("final", "dns-remote")
+            put("reverse_mapping", true)
+        }
+    }
+
+    /**
+     * The rules, in an order that matters:
+     *
+     * 1. `sniff`, so a TLS or HTTP connection carries its domain and the lists
+     *    can match it. Without it every connection arriving by IP — which on
+     *    iOS is all of them — could only match the IP list.
+     * 2. `hijack-dns`, so the system's queries are answered here and split by
+     *    the rules above rather than forwarded as datagrams to a public
+     *    resolver through the tunnel.
+     * 3. The local network direct: printers, routers, a NAS. Before the lists
+     *    only because it is cheaper to match.
+     * 4. The Russian lists direct. Domain matches come from the sniff or the
+     *    reverse mapping; the IP list matches raw-address dials and, on iOS,
+     *    every connection. sing-box skips IP rules for an unresolved name, so
+     *    nothing here resolves a foreign name on the network underneath.
+     *
+     * `default_domain_resolver` is what an outbound uses to dial a *name*: the
+     * server's own hostname in `out`, and any Russian name `direct` is handed.
+     * Both belong on the network underneath. The tunnel-bound names never reach
+     * it — sing-box sends those to the server unresolved.
+     */
+    private fun JsonObjectBuilder.putBypassRoute(bypass: Routing.BypassRussia) {
+        putJsonObject("route") {
+            putJsonArray("rule_set") {
+                RuleSets.all.forEach { file ->
+                    addJsonObject {
+                        put("type", "local"); put("tag", file.tag)
+                        put("format", "binary"); put("path", "${bypass.ruleSetDir}/${file.name}")
+                    }
+                }
+            }
+            putJsonArray("rules") {
+                addJsonObject { put("action", "sniff") }
+                addJsonObject { put("action", "hijack-dns"); put("port", 53) }
+                addJsonObject { put("ip_is_private", true); put("outbound", "direct") }
+                addJsonObject {
+                    putJsonArray("rule_set") { RuleSets.all.forEach { add(it.tag) } }
+                    put("outbound", "direct")
+                }
+            }
+            put("final", "out")
+            put("default_domain_resolver", "dns-direct")
+        }
     }
 
     private fun JsonArrayBuilder.addOutbound(spec: OutboundSpec) {

@@ -1,6 +1,7 @@
 package org.olcbox.app.net
 
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -70,6 +71,7 @@ class SingBoxConfigTest {
     @Test fun olcrtcSocksOutbound() {
         val o = outbound(SingBoxConfig.buildOlcrtcSocks(olcrtcPort = 10808))
         assertEquals("socks", o["type"]!!.jsonPrimitive.content)
+        assertEquals("out", o["tag"]!!.jsonPrimitive.content)
         assertEquals("127.0.0.1", o["server"]!!.jsonPrimitive.content)
         assertEquals(10808, o["server_port"]!!.jsonPrimitive.content.toInt())
     }
@@ -371,5 +373,143 @@ class SingBoxConfigTest {
             SingBoxConfig.buildDesktopTun(corePort = 10810, verifyPort = 10811),
             "\"mtu\":1500"
         )
+    }
+    // --- Bypass Russia -----------------------------------------------------
+
+    private fun bypass(dns: DirectDns = DirectDns.Servers(listOf("10.20.30.40"))) =
+        Routing.BypassRussia(ruleSetDir = "/data/rules", directDns = dns)
+    private fun obj(json: String) = Json.parseToJsonElement(json).jsonObject
+    private fun routeRules(json: String) = obj(json)["route"]!!.jsonObject["rules"]!!.jsonArray.map { it.jsonObject }
+    private fun dnsServers(json: String) = obj(json)["dns"]!!.jsonObject["servers"]!!.jsonArray.map { it.jsonObject }
+    private fun str(o: JsonObject, key: String) = o[key]!!.jsonPrimitive.content
+    private fun strings(o: JsonObject, key: String) = o[key]!!.jsonArray.map { it.jsonPrimitive.content }
+
+    /** Every shape a platform builds, with the same routing, so a rule is checked once and holds everywhere. */
+    private fun shapes(routing: Routing) = mapOf(
+        "socks" to SingBoxConfig.build(vless(), routing = routing),
+        "socks-chain" to SingBoxConfig.buildSocksChain(10808, username = "u", password = "p", routing = routing),
+        "tun" to SingBoxConfig.buildTun(vless(), routing = routing),
+        "tun-socks" to SingBoxConfig.buildTunSocks(10810, routing = routing),
+        "tun-socks-lossy" to SingBoxConfig.buildTunSocks(
+            10810, username = "u", password = "p", upstreamUdpIsLossy = true, routing = routing
+        ),
+    )
+
+    @Test fun globalRoutingIsExactlyWhatWasBuiltBeforeRoutingExisted() {
+        assertEquals(SingBoxConfig.build(vless()), SingBoxConfig.build(vless(), routing = Routing.Global))
+        assertEquals(SingBoxConfig.buildTun(vless()), SingBoxConfig.buildTun(vless(), routing = Routing.Global))
+        assertEquals(
+            SingBoxConfig.buildTunSocks(10810, upstreamUdpIsLossy = true),
+            SingBoxConfig.buildTunSocks(10810, upstreamUdpIsLossy = true, routing = Routing.Global)
+        )
+        assertEquals(SingBoxConfig.buildOlcrtcSocks(10808), SingBoxConfig.buildSocksChain(10808))
+        // Global still means: no dns, no route, one outbound, for the shapes that had none.
+        for (json in listOf(SingBoxConfig.build(vless()), SingBoxConfig.buildSocksChain(10808))) {
+            assertNull(obj(json)["dns"])
+            assertNull(obj(json)["route"])
+            assertEquals(1, obj(json)["outbounds"]!!.jsonArray.size)
+        }
+    }
+
+    @Test fun bypassDeclaresTheThreeRuleSetsAsLocalBinaryFiles() {
+        for ((name, json) in shapes(bypass())) {
+            val sets = obj(json)["route"]!!.jsonObject["rule_set"]!!.jsonArray.map { it.jsonObject }
+            assertEquals(RuleSets.all.map { it.tag }, sets.map { str(it, "tag") }, name)
+            for ((set, file) in sets.zip(RuleSets.all)) {
+                assertEquals("local", str(set, "type"), name)
+                assertEquals("binary", str(set, "format"), name)
+                assertEquals("/data/rules/${file.name}", str(set, "path"), name)
+            }
+        }
+    }
+
+    @Test fun bypassRoutesRussiaAndTheLocalNetworkDirectAndTheRestThroughTheTunnel() {
+        for ((name, json) in shapes(bypass())) {
+            val rules = routeRules(json)
+            assertEquals(4, rules.size, name)
+            assertEquals("sniff", str(rules[0], "action"), name)
+            assertEquals("hijack-dns", str(rules[1], "action"), name)
+            assertEquals(53, rules[1]["port"]!!.jsonPrimitive.content.toInt(), name)
+            assertEquals(true, rules[2]["ip_is_private"]!!.jsonPrimitive.content.toBoolean(), name)
+            assertEquals("direct", str(rules[2], "outbound"), name)
+            assertEquals(RuleSets.all.map { it.tag }, strings(rules[3], "rule_set"), name)
+            assertEquals("direct", str(rules[3], "outbound"), name)
+            assertEquals("out", str(obj(json)["route"]!!.jsonObject, "final"), name)
+            assertEquals("dns-direct", str(obj(json)["route"]!!.jsonObject, "default_domain_resolver"), name)
+        }
+    }
+
+    @Test fun bypassAddsADirectOutboundAfterTheTunnelOne() {
+        for ((name, json) in shapes(bypass())) {
+            val outbounds = obj(json)["outbounds"]!!.jsonArray.map { it.jsonObject }
+            assertEquals(2, outbounds.size, name)
+            assertEquals("out", str(outbounds[0], "tag"), name)
+            assertEquals("direct", str(outbounds[1], "type"), name)
+            assertEquals("direct", str(outbounds[1], "tag"), name)
+        }
+    }
+
+    @Test fun bypassResolvesRussianNamesOnTheNetworkUnderneathAndTheRestThroughTheTunnel() {
+        for ((name, json) in shapes(bypass())) {
+            val dns = obj(json)["dns"]!!.jsonObject
+            val servers = dnsServers(json)
+            assertEquals(listOf("dns-remote", "dns-direct"), servers.map { str(it, "tag") }, name)
+            assertEquals("out", str(servers[0], "detour"), name)
+            assertEquals("udp", str(servers[1], "type"), name)
+            assertEquals("10.20.30.40", str(servers[1], "server"), name)
+            assertEquals("direct", str(servers[1], "detour"), name)
+            val rules = dns["rules"]!!.jsonArray.map { it.jsonObject }
+            assertEquals(1, rules.size, name)
+            assertEquals(RuleSets.domains.map { it.tag }, strings(rules[0], "rule_set"), name)
+            assertEquals("dns-direct", str(rules[0], "server"), name)
+            assertEquals("dns-remote", str(dns, "final"), name)
+            assertEquals(true, dns["reverse_mapping"]!!.jsonPrimitive.content.toBoolean(), name)
+        }
+    }
+
+    @Test fun remoteResolverRidesTcpOnlyWhenTheUpstreamIsLossy() {
+        val byShape = shapes(bypass()).mapValues { str(dnsServers(it.value)[0], "type") }
+        assertEquals("tcp", byShape["tun-socks-lossy"])
+        for (name in listOf("socks", "socks-chain", "tun", "tun-socks")) assertEquals("udp", byShape[name], name)
+    }
+
+    @Test fun desktopDirectResolverIsTheSystemOne() {
+        val server = dnsServers(SingBoxConfig.build(vless(), routing = bypass(DirectDns.System)))[1]
+        assertEquals("local", str(server, "type"))
+        assertNull(server["server"])
+        assertNull(server["detour"])
+    }
+
+    @Test fun iosDirectResolverIsAPlaceholderTheExtensionFillsIn() {
+        val json = SingBoxConfig.buildTun(vless(), routing = bypass(DirectDns.Placeholder))
+        val server = dnsServers(json)[1]
+        assertEquals(SingBoxConfig.DIRECT_DNS_PLACEHOLDER, str(server, "server"))
+        assertEquals("direct", str(server, "detour"))
+        // Exactly once, quoted: the extension substitutes by string and must not
+        // be able to hit anything else.
+        val quoted = Regex("\"" + Regex.escape(SingBoxConfig.DIRECT_DNS_PLACEHOLDER) + "\"")
+        assertEquals(1, quoted.findAll(json).count())
+    }
+
+    @Test fun bypassKeepsUdpFlowing() {
+        for ((name, json) in shapes(bypass())) {
+            assertTrue(routeRules(json).none { it["action"]?.jsonPrimitive?.content == "reject" }, name)
+        }
+    }
+
+    @Test fun socksChainCarriesCredentialsOnlyWhenTheUpstreamAskedForThem() {
+        val with = outbound(SingBoxConfig.buildSocksChain(10808, username = "u", password = "p"))
+        assertEquals("u", with["username"]!!.jsonPrimitive.content)
+        assertEquals("p", with["password"]!!.jsonPrimitive.content)
+        assertEquals(10808, with["server_port"]!!.jsonPrimitive.content.toInt())
+        val without = outbound(SingBoxConfig.buildSocksChain(10808))
+        assertNull(without["username"])
+        assertNull(without["password"])
+    }
+
+    @Test fun bypassShapesKeepTheLogQuietToo() {
+        for ((name, json) in shapes(bypass())) {
+            assertEquals("warn", str(obj(json)["log"]!!.jsonObject, "level"), name)
+        }
     }
 }
