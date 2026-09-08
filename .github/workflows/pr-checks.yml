@@ -33,6 +33,9 @@ jobs:
 
     env:
       ANDROID_NDK_VERSION: "28.2.13676358"
+      # The release the app pins (SingBoxConfig.SINGBOX_VERSION); every config
+      # the builders emit is checked against this exact binary below.
+      SINGBOX_VERSION: "1.13.14"
       # crypt1/admin secrets (baked into GeneratedAppInfo). Absent on fork PRs ⇒
       # features compile but stay disabled; jvmTest uses its own explicit key.
       OLCBOX_CRYPT_KEY_V1: ${{ secrets.OLCBOX_CRYPT_KEY_V1 }}
@@ -94,3 +97,17 @@ jobs:
           export ANDROID_NDK_HOME="${ANDROID_HOME}/ndk/${ANDROID_NDK_VERSION}"
           export ANDROID_NDK_ROOT="${ANDROID_NDK_HOME}"
           ./gradlew :sharedUI:jvmTest :desktopApp:compileKotlin :androidApp:assembleDebug --stacktrace
+
+      - name: Download pinned sing-box
+        run: |
+          url="https://github.com/SagerNet/sing-box/releases/download/v${SINGBOX_VERSION}/sing-box-${SINGBOX_VERSION}-linux-amd64.tar.gz"
+          curl -fsSL "$url" -o sb.tar.gz
+          tar xzf sb.tar.gz
+          sudo mv "sing-box-${SINGBOX_VERSION}-linux-amd64/sing-box" /usr/local/bin/sing-box
+          sing-box version
+
+      # Every shape the builders emit, against the release the app pins. The
+      # jvm tests above wrote them; this is what `sing-box check` says about them.
+      - name: sing-box check the emitted configs
+        working-directory: olcbox
+        run: scripts/check-singbox-configs.sh

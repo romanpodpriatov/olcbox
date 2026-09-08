@@ -1,5 +1,6 @@
 package org.olcbox.app.net
 
+import kotlinx.coroutines.test.runTest
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertNotNull
@@ -79,5 +80,38 @@ class SingBoxConfigDumpTest {
             )
         )
         assertTrue(File(outDir, "desktop-tun-native.json").exists())
+    }
+    /**
+     * Bypass Russia. Every rule-set is a real file here, because `sing-box check`
+     * opens local rule-sets while building the router — a missing file fails the
+     * check exactly as it would fail a connect.
+     */
+    @Test fun dumpBypassShapes() = runTest {
+        val rules = File(outDir, "rules").apply { mkdirs() }
+        for (file in RuleSets.all) File(rules, file.name).writeBytes(RuleSets.bytes(file))
+        val android = Routing.BypassRussia(rules.absolutePath, DirectDns.Servers(listOf("10.20.30.40")))
+        val ios = Routing.BypassRussia(rules.absolutePath, DirectDns.Placeholder)
+
+        val reality = LinkParser.parse(
+            "vless://11111111-1111-1111-1111-111111111111@127.0.0.1:443" +
+                "?security=reality&encryption=none&pbk=jNXHt1yRo0vDuchQlIP6Z0ZvjT3KtzVI-T4E7RoLJS0" +
+                "&sid=ab12cd34&fp=chrome&sni=www.microsoft.com&flow=xtls-rprx-vision&type=tcp#DE-reality"
+        )
+        assertNotNull(reality)
+        val hy2 = LinkParser.parse(
+            "hysteria2://PASSWORD123@127.0.0.1:443?sni=www.microsoft.com&obfs=salamander&obfs-password=OBFSPW&insecure=1#RU-hy2"
+        )
+        assertNotNull(hy2)
+
+        dump("bypass-socks-reality", SingBoxConfig.build(reality, routing = android))
+        dump("bypass-socks-chain", SingBoxConfig.buildSocksChain(10808, username = "u", password = "p", routing = android))
+        dump("bypass-tun-reality", SingBoxConfig.buildTun(reality, routing = ios))
+        dump("bypass-tun-hysteria2", SingBoxConfig.buildTun(hy2, routing = ios))
+        dump("bypass-tun-socks", SingBoxConfig.buildTunSocks(10810, routing = ios))
+        dump(
+            "bypass-tun-socks-lossy",
+            SingBoxConfig.buildTunSocks(10810, username = "u", password = "p", upstreamUdpIsLossy = true, routing = ios)
+        )
+        assertTrue(File(outDir, "bypass-tun-socks-lossy.json").exists())
     }
 }
