@@ -113,6 +113,8 @@ import org.olcbox.app.vpn.AndroidConnectionMode
 import org.olcbox.app.vpn.AndroidInstalledApp
 import org.olcbox.app.vpn.AndroidSocksProxySettings
 import org.olcbox.app.vpn.AndroidSplitTunnelList
+import org.olcbox.app.data.model.RoutingMode
+import org.olcbox.app.data.model.RoutingSettings
 import org.olcbox.app.data.model.SubscriptionSettings
 import org.olcbox.app.ui.components.SubscriptionSettingsScreen
 import org.olcbox.app.ui.components.hubSummary
@@ -136,6 +138,8 @@ internal fun AppSettingsSheet(
     subscriptions: List<SubscriptionShareItem>,
     subscriptionSettings: SubscriptionSettings = SubscriptionSettings(),
     onSubscriptionSettingsChanged: (SubscriptionSettings) -> Unit = {},
+    routingSettings: RoutingSettings = RoutingSettings(),
+    onRoutingSettingsChanged: (RoutingSettings) -> Unit = {},
     enabled: Boolean,
     isConnectionActive: Boolean,
     onDismiss: () -> Unit,
@@ -285,8 +289,12 @@ internal fun AppSettingsSheet(
                         enabled = enabled,
                         isConnectionActive = isConnectionActive,
                         selectedMode = selectedMode,
+                        routingSettings = routingSettings,
                         onBack = { route = AppSettingsRoute.ConnectionSettings },
                         onModeSelected = onSplitTunnelModeSelected,
+                        onRoutingModeSelected = { mode ->
+                            onRoutingSettingsChanged(routingSettings.copy(mode = mode))
+                        },
                         onAppListClick = { list -> route = AppSettingsRoute.AppList(list) }
                     )
 
@@ -589,8 +597,10 @@ private fun SplitTunnelingSettingsContent(
     enabled: Boolean,
     isConnectionActive: Boolean,
     selectedMode: AndroidConnectionMode,
+    routingSettings: RoutingSettings,
     onBack: () -> Unit,
     onModeSelected: (AndroidSplitTunnelMode) -> Unit,
+    onRoutingModeSelected: (RoutingMode) -> Unit,
     onAppListClick: (AndroidSplitTunnelList) -> Unit
 ) {
     Column(
@@ -651,6 +661,39 @@ private fun SplitTunnelingSettingsContent(
                 onClick = { onAppListClick(AndroidSplitTunnelList.Bypass) }
             )
         }
+
+        Spacer(Modifier.height(24.dp))
+
+        // Apps decide *who* uses the tunnel; this decides *where to*. Kept on
+        // the same screen because a person looking for "let Sber through" does
+        // not know which of the two they want until both are in front of them.
+        SettingsSectionLabel("Destinations")
+
+        Spacer(Modifier.height(8.dp))
+
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            RoutingMode.entries.forEach { mode ->
+                SplitTunnelRoutingOption(
+                    selected = routingSettings.mode == mode,
+                    enabled = enabled,
+                    icon = if (mode == RoutingMode.Global) PkIcons.Public else PkIcons.SwapVert,
+                    title = mode.title(),
+                    subtitle = mode.hubSummary(),
+                    onClick = { onRoutingModeSelected(mode) }
+                )
+            }
+        }
+
+        Spacer(Modifier.height(10.dp))
+
+        Text(
+            text = "Russian destinations are matched by lists bundled with the app: " +
+                "v2fly's category-ru, the Russian top-level domains and the Russian IP ranges. " +
+                "Names on those lists are resolved by the network you are on; every other name " +
+                "is resolved through the tunnel. Changing this restarts the connection.",
+            style = MaterialTheme.typography.bodySmall,
+            color = LocalPkPalette.current.textDim
+        )
     }
 }
 
