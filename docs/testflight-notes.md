@@ -5,54 +5,59 @@ Kept under TestFlight's 4000-character limit. English, to match the app.
 
 ---
 
-This build is about connecting on mobile networks: "no route to host", "no
-such host", rooms on your own Jitsi, and the red message that could not be
-closed. Nothing about the interface changed since the last build.
+This build is about DNS on mobile networks, the two cellular interfaces some
+phones have, and one honest message on the board. The interface itself is
+unchanged.
 
 WHAT CHANGED
 
-• Before dialing out on cellular, the app now checks that the network
-  interface it is about to use can actually reach the internet. On some
-  carriers it used to pick the interface the phone keeps for VoLTE, which has
-  an address and no route, and every connection died with "no route to host".
-• The app resolves the carrier's host names itself, over the same interface it
-  dials from, instead of asking the phone. If the first resolver stays silent
-  for two seconds it moves on to the next one. This is for networks that block
-  a public DNS outright, and for carriers whose own DNS will not name a host —
-  the "no such host" that hit rooms on a self-hosted Jitsi.
-• Jitsi signalling goes the same protected way now. On iOS a reconnect from
-  inside a running tunnel used to have nowhere to go but the tunnel itself, so
-  a short hiccup became a full drop and a fresh session.
-• A dial that finds no route is retried instead of ending the attempt.
-• The red box under the status strip can be closed: tap it. Stop clears it too.
-• Every attempt writes one line naming the interface it used into the log you
-  can share. When a connect fails, that line is the first thing we read.
+• Name lookups now start with the resolvers of the network you are on — the
+  carrier's own on cellular, the router's on Wi-Fi — with a public resolver
+  behind them. Several mobile networks answer only their own servers and meet
+  1.1.1.1 and 8.8.8.8 with silence; on those, every room timed out on cellular
+  and worked on Wi-Fi. If the public resolvers go silent, the app remembers it
+  and stops waiting on them for a while instead of paying the wait on every
+  name a connection needs.
+• When nobody can resolve a name, the message says which resolvers were asked
+  and what each one said, rather than a timeout from one of them.
+• Phones with two cellular interfaces — one carrying IPv6, the other IPv4 —
+  had IPv4 pinned to the IPv6 one, and the connection died with "no route to
+  host" and "network is unreachable". Each socket now takes the interface that
+  carries its own family. (Thanks to the contributor who caught this on an
+  iPhone 16 Pro Max.)
+• A link that asks for a transport its provider cannot carry — vp8channel on a
+  Jitsi room — used to import silently as DataChannel and then wait twenty
+  seconds for a peer. The card now says LINK ASKS FOR VP8 · JITSI RUNS
+  DATACHANNEL, and pressing connect explains what to change on the server.
+• The log you can share gained a network-diagnostics section: which interface
+  each family was pinned to, path changes, and how many resolvers the network
+  offered. Interface names and counts only; no addresses.
 
 WHAT TO TEST
 
-1. Cellular only. Wi-Fi OFF, join a room, a few times. If it fails: Diagnostics
-   (the icon on the home screen), share the log — before relaunching the app.
-2. A Megafon SIM in St. Petersburg if you have one. This build exists for it.
-3. If you run your own olcRTC on a Jitsi: join it with Wi-Fi off. It used to
-   fail with "no such host" unless the phone happened to have the name cached.
-4. Stay connected for ten minutes with something streaming. Note any pause and
-   whether the app reconnected on its own; it should not drop the session for a
-   pause of a few seconds any more.
-5. Handover: connect on Wi-Fi, turn Wi-Fi off while connected, then back on. It
-   should come back on its own within a minute each time.
-6. The red message: Airplane Mode on, try to join, then tap the message. It
-   should go away. Again, and press stop instead.
+1. Cellular only, Wi-Fi OFF: join a Telemost room, then a Jitsi room. This is
+   the case that failed with "i/o timeout" before. If it still fails, share the
+   log from Diagnostics before relaunching, and tell us the carrier.
+2. Whitelisted mobile networks (MTS "white lists"): Telemost should connect.
+   A self-hosted Jitsi that the carrier's own DNS refuses cannot, and the
+   message should now say so in the "host resolver" half.
+3. Dual-SIM phones, and any phone that showed "no route to host" on cellular:
+   join with Wi-Fi off, each SIM in turn.
+4. Handover: connect on Wi-Fi, turn Wi-Fi off while connected, then back on.
+   Within a minute it should be back each time.
+5. If you run your own olcRTC on Jitsi with transport vp8channel: import its
+   link. Expect the notice on the card and a message on connect, not a hang.
+6. Ten minutes connected with something streaming; note any pause longer than
+   a few seconds.
 
 KNOWN AND EXPECTED
 
-• The text inside the red box is still technical. Closing it is fixed; making it
-  readable is next.
 • Background energy stays "High" in Xcode's report: a tunnel keeping a
   connection alive, not a bug.
-• A card may say "KEY NO LONGER VALID · REFRESH THIS LIST". The refresh button on
-  the list header fixes it.
-• If your carrier runs a whitelist that blocks all public DNS, no build can
-  resolve names for you; tell us which carrier and we will look at it.
+• "KEY NO LONGER VALID · REFRESH THIS LIST" on a card from a server list: the
+  refresh button on the list header fixes it.
+• A whitelisted network resolves and reaches only what the carrier allows. A
+  Jitsi outside that list will not work there in any build.
 
 Please report anything that looks wrong with a screenshot — and, for a
 connection that did not come up or dropped, the shared log file.
