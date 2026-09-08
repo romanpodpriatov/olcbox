@@ -571,6 +571,9 @@ data class LocationBundleV4(
      * own would be three implementations and three chances to disagree.
      */
     val settings: SubscriptionSettings = SubscriptionSettings(),
+    /** What leaves through the tunnel. See [RoutingSettings]; kept here for the reason stated on [settings]. */
+    @SerialName("routing")
+    val routing: RoutingSettings = RoutingSettings(),
     /**
      * When the user accepted the VPN disclosure, in epoch millis; null until they
      * have. A timestamp rather than a flag because the question Play asks is when

@@ -5,6 +5,7 @@ import org.olcbox.app.data.model.LocationBundleV4
 import org.olcbox.app.data.model.LocationConfig
 import org.olcbox.app.data.model.LocationEntry
 import org.olcbox.app.data.model.SubscriptionSettings
+import org.olcbox.app.data.model.RoutingSettings
 
 interface LocationsRepository {
     val changes: StateFlow<Long>
@@ -55,6 +56,10 @@ interface LocationsRepository {
     /** How subscriptions behave. Persisted with the bundle, so one copy per device. */
     suspend fun getSubscriptionSettings(): SubscriptionSettings
     suspend fun saveSubscriptionSettings(settings: SubscriptionSettings)
+
+    /** What leaves through the tunnel. Persisted with the bundle, so one copy per device. */
+    suspend fun getRoutingSettings(): RoutingSettings
+    suspend fun saveRoutingSettings(settings: RoutingSettings)
 
     /**
      * Whether the VPN disclosure has been accepted on this device.

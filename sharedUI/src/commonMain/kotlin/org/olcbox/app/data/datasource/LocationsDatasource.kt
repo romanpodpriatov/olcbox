@@ -30,6 +30,7 @@ import org.olcbox.app.data.model.LocationBundleV4
 import org.olcbox.app.data.model.LocationConfig
 import org.olcbox.app.data.model.LocationEntry
 import org.olcbox.app.data.model.SubscriptionSettings
+import org.olcbox.app.data.model.RoutingSettings
 import org.olcbox.app.data.model.LocationMetadata
 import org.olcbox.app.data.model.SubscriptionMetadata
 import org.olcbox.app.data.repository.LocationsRepository
@@ -164,11 +165,22 @@ class LocationsRepositoryImpl(
         val stored = dataSource.loadLocationBundle()?.normalized()
         if (stored != null && stored.locations.isNotEmpty()) return stored
 
+        // No locations yet: look for the pre-bundle storage once and adopt what
+        // it has. But adopt only the locations. The stored bundle, even with
+        // none, is the device's record of everything else — its settings, the
+        // routing choice, the accepted disclosure — and replacing it wholesale
+        // reset all of that on every fresh install until the first server list
+        // arrived, and again whenever the last one was deleted.
         val legacy = migrateLegacyBundle()
         if (legacy.locations.isNotEmpty()) {
-            dataSource.saveLocationBundle(legacy)
+            val adopted = stored?.copy(
+                activeLocationId = legacy.activeLocationId,
+                locations = legacy.locations
+            ) ?: legacy
+            dataSource.saveLocationBundle(adopted)
+            return adopted
         }
-        return legacy
+        return stored ?: legacy
     }
 
     override suspend fun saveBundle(bundle: LocationBundleV4) {
@@ -514,6 +526,15 @@ class LocationsRepositoryImpl(
         mutationMutex.withLock {
             val bundle = getBundleUnlocked()
             saveBundleUnlocked(bundle.copy(settings = settings.normalized()))
+        }
+    }
+
+    override suspend fun getRoutingSettings(): RoutingSettings = getBundle().routing
+
+    override suspend fun saveRoutingSettings(settings: RoutingSettings) {
+        mutationMutex.withLock {
+            val bundle = getBundleUnlocked()
+            saveBundleUnlocked(bundle.copy(routing = settings))
         }
     }
 
