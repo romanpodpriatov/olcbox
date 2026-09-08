@@ -566,11 +566,7 @@ class LocationViewModel(
     fun refreshOlcrtcSlots() {
         olcrtcSlotsJob?.cancel()
         olcrtcSlotsJob = viewModelScope.launch {
-            val targets = locations.mapNotNull { item ->
-                val config = item.config ?: return@mapNotNull null
-                if (config.kind != LocationKind.Olcrtc) return@mapNotNull null
-                config.key.takeIf { it.isNotBlank() }?.let { item.storageId to it }
-            }
+            val targets = OlcrtcProbePlan.targets(locations)
             if (targets.isEmpty()) return@launch
 
             val fetched = mutableMapOf<String, OlcrtcSlots>()
@@ -587,7 +583,12 @@ class LocationViewModel(
                     OlcrtcNodeStatus.Unavailable -> Unit
                 }
             }
-            olcrtcRevoked = olcrtcRevoked - alive + gone
+            olcrtcRevoked = OlcrtcProbePlan.nextRevoked(
+                previous = olcrtcRevoked,
+                probed = targets.map { it.first }.toSet(),
+                alive = alive,
+                gone = gone
+            )
             // Merge rather than replace: a node that failed this pass keeps the number
             // it had, which is older but truer than nothing.
             olcrtcSlots = olcrtcSlots + fetched
