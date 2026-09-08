@@ -75,7 +75,10 @@ enum OlcrtcEngine {
     /// covers enough of the attempt to say what is.
     private static let readyTimeoutMillis = 20_000
 
-    static func start(_ parameters: Parameters) throws {
+    /// `resolvers` are the servers of the network the extension stands on, as
+    /// ResolverSnapshot read them before the tunnel's settings went on; empty
+    /// when none could be read.
+    static func start(_ parameters: Parameters, resolvers: [String] = []) throws {
         // Fresh per attempt, so whatever the app reads back afterwards belongs
         // to the attempt it is reporting on.
         logWriter.reset()
@@ -86,7 +89,11 @@ enum OlcrtcEngine {
         MobileSetProtector(protector)
         MobileSetProviders()
         MobileSetTransport(parameters.transportName)
-        MobileSetDNS("1.1.1.1:53")
+        // The network's own resolvers first, a public operator behind them; the
+        // engine adds that operator's IPv6 twin and the other operators after.
+        // Some mobile networks answer only their own servers (olcbox#16).
+        MobileSetDNS((resolvers + ["1.1.1.1:53"]).joined(separator: ","))
+        log.info("resolvers from the network: \(resolvers.count, privacy: .public)")
         MobileSetVP8Options(parameters.vp8Fps, parameters.vp8BatchSize)
         // Loopback only. The port is fixed rather than user-set now: nothing
         // outside this process is meant to reach it.

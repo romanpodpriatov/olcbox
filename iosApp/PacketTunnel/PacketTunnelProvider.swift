@@ -120,6 +120,15 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         let olcrtc = (try? Data(contentsOf: olcrtcURL))
             .flatMap { try? JSONDecoder().decode(OlcrtcEngine.Parameters.self, from: $0) }
 
+        // Before the tunnel's settings go on: from then on the system resolver
+        // is our own tun, and the servers of the network underneath can no
+        // longer be read. Counted rather than listed in the trace — they are
+        // the network's addresses, and the trace keeps to interface names.
+        let resolvers = olcrtc == nil ? [] : ResolverSnapshot.servers()
+        if olcrtc != nil {
+            NetworkDiagnostics.record("resolvers from the network: \(resolvers.count)")
+        }
+
         // Applied before the engine starts: libbox asks for the descriptor
         // synchronously and complains if answering takes long.
         setTunnelNetworkSettings(LibboxPlatform.tunnelSettings()) { [weak self] error in
@@ -139,6 +148,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
                 config: config,
                 xrayConfig: xrayConfig?.isEmpty == false ? xrayConfig : nil,
                 olcrtc: olcrtc,
+                resolvers: resolvers,
                 container: container,
                 completionHandler: completionHandler
             )
@@ -149,6 +159,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         config: String,
         xrayConfig: String?,
         olcrtc: OlcrtcEngine.Parameters?,
+        resolvers: [String],
         container: URL,
         completionHandler: @escaping (Error?) -> Void
     ) {
@@ -210,7 +221,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
             }
             if let olcrtc {
                 mark("olcrtc")
-                try OlcrtcEngine.start(olcrtc)
+                try OlcrtcEngine.start(olcrtc, resolvers: resolvers)
             }
             mark("service")
 
