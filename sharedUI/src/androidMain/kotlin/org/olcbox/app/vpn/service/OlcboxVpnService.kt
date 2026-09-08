@@ -41,13 +41,17 @@ import org.olcbox.app.data.datasource.LocationsDataSourceImpl
 import org.olcbox.app.data.datasource.LocationsRepositoryImpl
 import org.olcbox.app.data.identity.PersistentDeviceIdentityProvider
 import org.olcbox.app.data.model.LocationConfig
+import org.olcbox.app.data.model.RoutingMode
 import org.olcbox.app.net.UpstreamDns
 import org.olcbox.app.data.repository.LocationsRepository
 import org.olcbox.app.net.AndroidSingBoxController
 import org.olcbox.app.net.AndroidXrayController
+import org.olcbox.app.net.DirectDns
 import org.olcbox.app.net.LinkParser
 import org.olcbox.app.net.LocationKind
 import org.olcbox.app.net.OutboundSpec
+import org.olcbox.app.net.Routing
+import org.olcbox.app.net.RuleSets
 import org.olcbox.app.net.SingBoxConfig
 import org.olcbox.app.net.TransportSpec
 import org.olcbox.app.net.TunnelExit
@@ -147,6 +151,16 @@ class OlcboxVpnService : VpnService() {
     private val singBoxCore by lazy { AndroidSingBoxController(this) }
     private val xrayCore by lazy { AndroidXrayController(this) }
     private var activeCorePort: Int? = null
+
+    /** The routing choice read at the last start, so a reconnect in place keeps it. */
+    private var routingMode = RoutingMode.Global
+
+    /**
+     * Whether sing-box is standing in front of olcRTC. Both then have to be
+     * alive for the transport to count as running; the core port alone would
+     * hide a dead engine behind a live front.
+     */
+    private var frontsOlcrtc = false
 
     private data class StartOptions(
         val connectionMode: AndroidConnectionMode,
@@ -465,6 +479,7 @@ class OlcboxVpnService : VpnService() {
                         stopTransportProcesses(closeTun = true, waitForSocksPort = false)
                         return@withLock
                     }
+                    routingMode = repository.getRoutingSettings().mode
 
                     if (isMigration && !forceFullRestart && canReconnectTransportInPlace()) {
                         reconnectTransport(location, requestedGeneration)
@@ -677,11 +692,61 @@ class OlcboxVpnService : VpnService() {
         requestedGeneration: Long,
         setErrorOnFailure: Boolean
     ): Boolean {
+        val routing = routingFor(upstream)
         return if (location.kind == LocationKind.Olcrtc) {
             activeCorePort = null
-            startMobile(location, upstream, requestedGeneration, setErrorOnFailure)
+            val started = startMobile(location, upstream, requestedGeneration, setErrorOnFailure)
+            if (started && routing is Routing.BypassRussia) startFront(routing, setErrorOnFailure) else started
         } else {
-            startCore(location, setErrorOnFailure)
+            startCore(location, setErrorOnFailure, routing)
+        }
+    }
+
+    /**
+     * sing-box between hev-socks5-tunnel and olcRTC, so the routing rules see
+     * every connection before the relay does. Only in tun mode: in proxy mode
+     * the promised endpoint is olcRTC's own port, and a front there would be a
+     * second port nobody was told about.
+     */
+    private suspend fun startFront(routing: Routing.BypassRussia, setErrorOnFailure: Boolean): Boolean {
+        if (connectionMode != AndroidConnectionMode.Tun) {
+            addLog("Routing: proxy mode keeps olcRTC global")
+            return true
+        }
+        val port = SingBoxConfig.SINGBOX_SOCKS_PORT
+        return try {
+            stopCoreProcesses()
+            waitForSocksPortReleased(port, SOCKS_RELEASE_QUICK_TIMEOUT_MS)
+            singBoxCore.start(
+                SingBoxConfig.buildSocksChain(
+                    upstreamPort = socksListenPort,
+                    socksPort = port,
+                    username = socksUsername,
+                    password = socksPassword,
+                    routing = routing
+                )
+            )
+            activeCorePort = port
+            frontsOlcrtc = true
+            if (!waitForSocksPortOpen(port, MOBILE_READY_TIMEOUT_MS)) {
+                addLog(singBoxCore.diagnostics())
+                error("sing-box front SOCKS not ready on $port")
+            }
+            coroutineContext.ensureActive()
+            addLog("sing-box front ready on $socksListenHost:$port")
+            true
+        } catch (e: CancellationException) {
+            withContext(NonCancellable) { stopCoreProcesses() }
+            throw e
+        } catch (e: Exception) {
+            val msg = e.message ?: "sing-box front failed"
+            addLog("front start failed: $msg")
+            stopCoreProcesses()
+            if (setErrorOnFailure) {
+                setStatus(VpnStatus.Error(msg))
+                updateNotification("Connection failed")
+            }
+            false
         }
     }
 
@@ -693,7 +758,11 @@ class OlcboxVpnService : VpnService() {
      * leaves that promised port dead. In tun mode nothing outside talks to it, so
      * it takes the internal core port and tun2socks follows [activeCorePort].
      */
-    private suspend fun startCore(location: LocationConfig, setErrorOnFailure: Boolean): Boolean {
+    private suspend fun startCore(
+        location: LocationConfig,
+        setErrorOnFailure: Boolean,
+        routing: Routing
+    ): Boolean {
         val port = if (connectionMode == AndroidConnectionMode.Proxy) {
             socksListenPort
         } else {
@@ -709,12 +778,24 @@ class OlcboxVpnService : VpnService() {
             // from the label — the failure path should not have to parse a string
             // we build for humans.
             val diagnose: () -> String
+            val fronted = routing is Routing.BypassRussia && connectionMode == AndroidConnectionMode.Tun
             if (spec is OutboundSpec.Vless && spec.transport is TransportSpec.Xhttp) {
-                xrayCore.start(XrayConfig.buildXhttp(spec, socksPort = port))
-                label = "Xray/xhttp"
-                diagnose = xrayCore::diagnostics
+                if (fronted) {
+                    // Xray does not route; sing-box does, so it goes in front.
+                    xrayCore.start(XrayConfig.buildXhttp(spec, socksPort = XRAY_BEHIND_FRONT_PORT))
+                    singBoxCore.start(
+                        SingBoxConfig.buildSocksChain(XRAY_BEHIND_FRONT_PORT, socksPort = port, routing = routing)
+                    )
+                    label = "sing-box front + Xray/xhttp"
+                    diagnose = { singBoxCore.diagnostics() + "\n" + xrayCore.diagnostics() }
+                } else {
+                    if (routing is Routing.BypassRussia) addLog("Routing: proxy mode keeps xhttp global")
+                    xrayCore.start(XrayConfig.buildXhttp(spec, socksPort = port))
+                    label = "Xray/xhttp"
+                    diagnose = xrayCore::diagnostics
+                }
             } else {
-                singBoxCore.start(SingBoxConfig.build(spec, socksPort = port))
+                singBoxCore.start(SingBoxConfig.build(spec, socksPort = port, routing = routing))
                 label = "sing-box/${location.kind}"
                 diagnose = singBoxCore::diagnostics
             }
@@ -752,6 +833,7 @@ class OlcboxVpnService : VpnService() {
         singBoxCore.stopNow()
         xrayCore.stopNow()
         activeCorePort = null
+        frontsOlcrtc = false
     }
 
     /** Poll until the given local SOCKS port accepts connections, or timeout. */
@@ -1527,14 +1609,16 @@ class OlcboxVpnService : VpnService() {
      * seconds after it came up and restarted it, forever.
      */
     private fun isActiveTransportRunning(): Boolean =
-        if (activeCorePort != null) {
+        if (frontsOlcrtc) {
+            Mobile.isRunning() && singBoxCore.isRunning()
+        } else if (activeCorePort != null) {
             singBoxCore.isRunning() || xrayCore.isRunning()
         } else {
             Mobile.isRunning()
         }
 
     private fun activeTransportLabel(): String =
-        if (activeCorePort != null) "core transport" else "olcRTC"
+        if (activeCorePort != null && !frontsOlcrtc) "core transport" else "olcRTC"
 
     private fun shouldRestartForStartCommand(): Boolean {
         return when (OlcboxVpnState.status.value) {
@@ -1626,6 +1710,30 @@ class OlcboxVpnService : VpnService() {
         addLog("Resolvers from ${network?.let { getNetName(it) } ?: "no network"}: ${servers.size}")
         return UpstreamDns.list(servers)
     }
+
+    /**
+     * What the builders get for [routingMode]: the rule files on disk and the
+     * network's resolvers for direct names. Files are rewritten on every start —
+     * 59 KB, and the alternative is a version check that can be wrong.
+     */
+    private suspend fun routingFor(upstream: Network?): Routing = when (routingMode) {
+        RoutingMode.Global -> Routing.Global
+        RoutingMode.BypassRussia -> {
+            val dir = File(filesDir, RULE_SETS_DIR).apply { mkdirs() }
+            for (file in RuleSets.all) File(dir, file.name).writeBytes(RuleSets.bytes(file))
+            addLog("Routing: ${routingMode.hubSummary()}")
+            Routing.BypassRussia(
+                ruleSetDir = dir.absolutePath,
+                directDns = DirectDns.Servers(upstreamDnsAddresses(upstream))
+            )
+        }
+    }
+
+    /** The network's resolvers as the system lists them, for the direct DNS server. */
+    private fun upstreamDnsAddresses(network: Network?): List<String> =
+        network?.let { connectivityManager.getLinkProperties(it)?.dnsServers }
+            ?.mapNotNull { it.hostAddress }
+            .orEmpty()
 
     private fun Network.transportOrNull(): UpstreamTransport? {
         val caps = connectivityManager.getNetworkCapabilities(this) ?: return null
@@ -1954,6 +2062,12 @@ class OlcboxVpnService : VpnService() {
         private const val WAKE_LOCK_REFRESH_INTERVAL_MS = 30_000L
         private const val WAKE_LOCK_TIMEOUT_MS = 2 * 60 * 1000L
         private const val TUN_MTU = 1500
+
+        /** Under filesDir, so a cache sweep cannot take the lists out from under a running core. */
+        private const val RULE_SETS_DIR = "rulesets"
+
+        /** Where Xray listens when sing-box fronts it, so the front can keep the core port. */
+        private const val XRAY_BEHIND_FRONT_PORT = 10811
         private const val TUN_IPV4_ADDRESS = "10.0.88.88"
         private const val IPV4_PREFIX_LENGTH = 24
         private const val MAPDNS_ADDRESS = "1.1.1.1"
