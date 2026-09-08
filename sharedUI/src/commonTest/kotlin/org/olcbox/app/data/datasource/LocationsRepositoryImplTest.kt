@@ -178,6 +178,42 @@ class LocationsRepositoryImplTest {
         assertNull(entry.metadata?.subscription)
     }
 
+    // The engine carries a Jitsi room over DataChannel only, so the app runs
+    // one over DataChannel whatever the link says - and used to say nothing
+    // about it. A server set up for vp8channel then waited for a peer that
+    // never spoke its transport (olcbox#15). The request is kept on the entry,
+    // so the board and the connect button can say what happened.
+    @Test
+    fun keepsTheTransportALinkAskedForWhenTheProviderCannotCarryIt() = runTest {
+        val source = FakeLocationsDataSource()
+        val key = "b".repeat(64)
+        val input = "olcrtc://jitsi?vp8channel<vp8-fps=25&vp8-batch=1>@https://meet.egovm.ru/olcrtc-x#$key"
+
+        LocationsRepositoryImpl(source).importText(input)
+
+        val entry = assertNotNull(source.stored).locations.single()
+        assertEquals(LocationConfig.TRANSPORT_DATACHANNEL, entry.location.transport)
+        assertEquals(LocationConfig.TRANSPORT_VP8CHANNEL, entry.metadata?.requestedTransport)
+    }
+
+    @Test
+    fun aTransportTheProviderCarriesIsNotARequest() = runTest {
+        val source = FakeLocationsDataSource()
+        val key = "b".repeat(64)
+        val input = listOf(
+            "olcrtc://telemost?vp8channel@12345#$key",
+            "olcrtc://jitsi?datachannel@https://meet.egovm.ru/olcrtc-y#$key"
+        ).joinToString("\n")
+
+        LocationsRepositoryImpl(source).importText(input)
+
+        val entries = assertNotNull(source.stored).locations
+        assertEquals(2, entries.size)
+        entries.forEach { entry ->
+            assertNull(entry.metadata?.requestedTransport, "${entry.location.bypassProvider} asked for nothing it cannot have")
+        }
+    }
+
     @Test
     fun importsJitsiOlcRtcUriWithRoomUrl() = runTest {
         val source = FakeLocationsDataSource()

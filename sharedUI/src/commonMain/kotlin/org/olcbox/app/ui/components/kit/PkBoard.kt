@@ -209,6 +209,13 @@ fun PkRoomCard(
     onMeasure: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
     /**
+     * One more line said where the seats would be, when there is something the
+     * user should know before pressing connect — a link that asked for a
+     * transport this provider cannot carry, say. Same voice as the revoked-key
+     * line, for the same reason.
+     */
+    notice: String? = null,
+    /**
      * Drawn at the end of the name row. A card whose location the user added
      * themselves puts its remove control here: a long-press is not something an
      * interface can tell you about, and the only other way out was a settings
@@ -323,6 +330,15 @@ fun PkRoomCard(
         if (keyGone) {
             Text(
                 text = "KEY NO LONGER VALID · REFRESH THIS LIST",
+                style = pkMono(9, 1.1),
+                color = palette.accent2,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        if (notice != null) {
+            Text(
+                text = notice,
                 style = pkMono(9, 1.1),
                 color = palette.accent2,
                 maxLines = 1,

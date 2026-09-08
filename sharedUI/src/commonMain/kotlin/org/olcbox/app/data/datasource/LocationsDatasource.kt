@@ -127,7 +127,9 @@ class LocationsRepositoryImpl(
 
     private data class ParsedOlcRtcUri(
         val location: LocationConfig,
-        val mimo: String? = null
+        val mimo: String? = null,
+        /** What the link asked for, when the room will run over something else. */
+        val requestedTransport: String? = null
     )
 
     private enum class ImportMode {
@@ -1186,7 +1188,8 @@ class LocationsRepositoryImpl(
             val metadata = buildLocationMetadata(
                 fields = fields,
                 mimo = parsed.mimo,
-                subscription = subscriptionMetadata
+                subscription = subscriptionMetadata,
+                requestedTransport = parsed.requestedTransport
             )
             val location = parsed.location.copy(
                 name = firstNotBlank(
@@ -1257,9 +1260,16 @@ class LocationsRepositoryImpl(
                 ?: LocationConfig.DEFAULT_VP8_BATCH
         ).normalized()
 
+        // A provider that cannot carry what the link asked for runs the room
+        // over what it can; the request is kept so the app can say so, rather
+        // than showing DataChannel for a link that plainly said vp8channel and
+        // leaving the server to wait for a peer that never comes (olcbox#15).
+        val requestedTransport = LocationConfig.transportOrNull(transport)
+            ?.takeIf { it != location.transport }
+
         return location
             .takeIf { it.isComplete() }
-            ?.let { ParsedOlcRtcUri(it, mimo.takeIf { value -> value.isNotBlank() }) }
+            ?.let { ParsedOlcRtcUri(it, mimo.takeIf { value -> value.isNotBlank() }, requestedTransport) }
     }
 
     private fun buildSubscriptionMetadata(fields: Map<String, String>): SubscriptionMetadata? {
@@ -1277,7 +1287,8 @@ class LocationsRepositoryImpl(
     private fun buildLocationMetadata(
         fields: Map<String, String>,
         mimo: String?,
-        subscription: SubscriptionMetadata?
+        subscription: SubscriptionMetadata?,
+        requestedTransport: String? = null
     ): LocationMetadata? {
         return LocationMetadata(
             name = fields["name"],
@@ -1288,7 +1299,8 @@ class LocationsRepositoryImpl(
             ip = fields["ip"],
             comment = fields["comment"],
             mimo = mimo,
-            subscription = subscription
+            subscription = subscription,
+            requestedTransport = requestedTransport
         ).normalized().takeUnless { it.isEmpty() }
     }
 

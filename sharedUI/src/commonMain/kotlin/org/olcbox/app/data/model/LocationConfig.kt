@@ -143,13 +143,23 @@ data class LocationConfig(
             }
         }
 
-        fun normalizeTransport(value: String, provider: String = DEFAULT_BYPASS_PROVIDER): String {
-            val normalized = when (value.trim().lowercase()) {
+        /** The transport [value] names, or null when it names none. */
+        fun transportOrNull(value: String): String? {
+            return when (value.trim().lowercase()) {
                 TRANSPORT_DATACHANNEL, "data", "dc" -> TRANSPORT_DATACHANNEL
                 TRANSPORT_VP8CHANNEL, "vp8", "video_vp8", "video-vp8" -> TRANSPORT_VP8CHANNEL
                 TRANSPORT_SEICHANNEL, "sei", "sei_channel", "sei-channel", "h264_sei" -> TRANSPORT_SEICHANNEL
-                else -> DEFAULT_TRANSPORT
+                else -> null
             }
+        }
+
+        /**
+         * The transport the room will run over: what [value] names when the
+         * provider carries it, else the provider's own. A link that asked for
+         * the former is remembered by the import as [LocationMetadata.requestedTransport].
+         */
+        fun normalizeTransport(value: String, provider: String = DEFAULT_BYPASS_PROVIDER): String {
+            val normalized = transportOrNull(value) ?: DEFAULT_TRANSPORT
             val supported = supportedTransportsForProvider(provider)
             return normalized.takeIf { it in supported }
                 ?: supported.firstOrNull()
@@ -359,7 +369,13 @@ data class LocationMetadata(
     val ip: String? = null,
     val comment: String? = null,
     val mimo: String? = null,
-    val subscription: SubscriptionMetadata? = null
+    val subscription: SubscriptionMetadata? = null,
+    /**
+     * The transport the link asked for when the provider cannot carry it -
+     * vp8channel on a Jitsi room - and the room runs over another. Kept so the
+     * board and the connect button can say so instead of silently rewriting.
+     */
+    val requestedTransport: String? = null
 ) {
     fun normalized(): LocationMetadata {
         val normalizedSubscription = subscription
@@ -374,7 +390,8 @@ data class LocationMetadata(
             ip = ip.cleanMetadataValue(),
             comment = comment.cleanMetadataValue(),
             mimo = mimo.cleanMetadataValue(),
-            subscription = normalizedSubscription
+            subscription = normalizedSubscription,
+            requestedTransport = requestedTransport.cleanMetadataValue()
         )
     }
 
@@ -387,6 +404,7 @@ data class LocationMetadata(
                 ip.isNullOrBlank() &&
                 comment.isNullOrBlank() &&
                 mimo.isNullOrBlank() &&
+                requestedTransport.isNullOrBlank() &&
                 (subscription == null || subscription.isEmpty())
     }
 }

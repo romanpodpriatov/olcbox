@@ -243,6 +243,13 @@ class HomeScreenViewModel(
                         }
                         return@launch
                     }
+                    // Said before a twenty-second wait for a peer that would
+                    // never speak this transport: the server is set up for
+                    // the one the link named, and the fix is on the server.
+                    TransportMismatch.explanation(active)?.let { why ->
+                        _state.update { it.copy(isVpnLoading = false, failure = why) }
+                        return@launch
+                    }
                     vpnManager.startVpn()
                 }
             } catch (e: Exception) {

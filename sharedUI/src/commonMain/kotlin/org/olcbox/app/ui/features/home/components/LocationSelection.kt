@@ -36,6 +36,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.olcbox.app.data.model.LocationConfig
+import org.olcbox.app.ui.features.home.TransportMismatch
 import org.olcbox.app.data.model.SubscriptionSort
 import org.olcbox.app.net.OlcrtcSlots
 import org.olcbox.app.net.TransportKind
@@ -523,6 +524,7 @@ private fun BoardRoomCard(
         isMeasuring = pingsState.isChecking(location.storageId),
         isOffline = pingsState.isOffline(location.storageId),
         keyGone = keyGone,
+        notice = TransportMismatch.caption(config, location.metadata),
         wire = wireShape(config),
         onClick = onClick,
         onLongClick = onLongClick,
