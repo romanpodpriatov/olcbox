@@ -112,3 +112,16 @@ object DesktopConnectionModePreference {
         return options.firstOrNull { it.enabled } ?: options.firstOrNull()
     }
 }
+
+/**
+ * Why the routing choice cannot be applied on this desktop right now, or null
+ * where it can. The proxy and the macOS tunnel apply it; the Linux and Windows
+ * tunnels route by policy and by metric, and a direct socket from the core
+ * would enter them, so they stay global until they have a way out.
+ */
+fun desktopRoutingUnavailableReason(): String? =
+    when (DesktopMode.current()) {
+        DesktopMode.LinuxTun, DesktopMode.WindowsTun ->
+            "Applies in proxy mode and in the macOS tunnel. The Linux and Windows tunnels follow in a later build."
+        DesktopMode.MacTun, DesktopMode.SystemProxy -> null
+    }

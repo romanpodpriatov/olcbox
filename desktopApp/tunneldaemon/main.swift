@@ -9,8 +9,45 @@ import Foundation
 
 let socketPath = "/var/run/org.olcbox.app.tunneld.sock"
 let child = TunnelChild()
+// Bumped when a request gains a field the app depends on: 2 = rule files on
+// `start`. The app reads it back to tell this daemon from an older one that
+// would silently drop the field.
+let protocolVersion = 2
+
+/// The daemon's own binary as it was when launchd started it.
+///
+/// An app update replaces the bundle underneath a daemon launchd keeps alive,
+/// and a request the old code serves with the new app's expectations fails the
+/// way a broken tunnel does. When the file on disk is no longer the one that is
+/// running, the daemon steps aside on the next start or stop and launchd brings
+/// up the new one.
+struct BinaryIdentity: Equatable {
+    let size: UInt64
+    let modified: Date
+    let fileNumber: UInt64?
+
+    static func onDisk() -> BinaryIdentity? {
+        guard let path = Bundle.main.executableURL?.path,
+              let attributes = try? FileManager.default.attributesOfItem(atPath: path) else { return nil }
+        return BinaryIdentity(
+            size: (attributes[.size] as? NSNumber)?.uint64Value ?? 0,
+            modified: attributes[.modificationDate] as? Date ?? Date.distantPast,
+            fileNumber: (attributes[.systemFileNumber] as? NSNumber)?.uint64Value
+        )
+    }
+}
+
+let launchedAs = BinaryIdentity.onDisk()
+var quitAfterReply = false
+
+func replacedOnDisk() -> Bool {
+    guard let launchedAs, let now = BinaryIdentity.onDisk() else { return false }
+    return now != launchedAs
+}
 
 func reply(_ object: [String: Any]) -> Data {
+    var object = object
+    object["protocol"] = protocolVersion
     let data = (try? JSONSerialization.data(withJSONObject: object))
         ?? Data("{\"ok\":false,\"error\":\"the daemon could not encode its own reply\"}".utf8)
     return data + Data("\n".utf8)
@@ -23,13 +60,29 @@ func handle(_ line: String) -> Data {
         return reply(["ok": false, "error": "unparseable request", "logTail": ""])
     }
 
+    if (verb == "start" || verb == "stop") && replacedOnDisk() {
+        // Only on the verbs that change the child's state: a status query from
+        // the new app must not cost a tunnel the old daemon is still carrying.
+        child.stop()
+        quitAfterReply = true
+        return reply([
+            "ok": false,
+            "error": "the tunnel helper was updated and is restarting",
+            "restarting": true,
+            "logTail": ""
+        ])
+    }
+
     switch verb {
     case "start":
         guard let config = object["config"] as? String else {
             return reply(["ok": false, "error": "start without a config", "logTail": ""])
         }
+        // Rule-set binaries the config refers to, file name → base64; absent
+        // for a config that names none.
+        let files = object["files"] as? [String: String] ?? [:]
         do {
-            try child.start(config: config)
+            try child.start(config: config, files: files)
             // Report what the child is doing a moment later, not what it was asked
             // to do. sing-box rejects a bad config in well under a second, and an
             // "ok" issued before that is a lie the app draws as a green light.
@@ -137,4 +190,6 @@ while true {
         send(handle(line.trimmingCharacters(in: .whitespacesAndNewlines)), to: client)
     }
     close(client)
+    // KeepAlive: launchd starts the binary now on disk in this one's place.
+    if quitAfterReply { exit(0) }
 }

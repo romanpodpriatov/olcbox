@@ -438,10 +438,106 @@ class SingBoxConfigTest {
     fun desktopTunCatchesDnsBeforeItRefusesIpv6() {
         // Order in a rule list is precedence: reject first and a query sent to a
         // v6 resolver is refused instead of answered.
-        val json = SingBoxConfig.buildDesktopTun(
-            corePort = 10810, verifyPort = 10811, upstreamUdpIsLossy = true
+        val rules = routeRules(
+            SingBoxConfig.buildDesktopTun(corePort = 10810, verifyPort = 10811, upstreamUdpIsLossy = true)
         )
-        assertTrue(json.indexOf("hijack-dns") < json.indexOf("\"reject\""))
+        val hijack = rules.indexOfFirst { it["action"]?.jsonPrimitive?.content == "hijack-dns" }
+        val reject6 = rules.indexOfFirst { it["action"]?.jsonPrimitive?.content == "reject" }
+        assertTrue(hijack in 0 until reject6, "hijack at $hijack, reject at $reject6")
+    }
+
+    // --- desktop tun under Bypass Russia, and its DNS ------------------------
+
+    private fun desktopBypass() = Routing.BypassRussia(
+        ruleSetDir = "/Library/Application Support/org.olcbox.app/rules",
+        directDns = DirectDns.System
+    )
+
+    @Test
+    fun desktopTunNativeGlobalIsExactlyWhatItWas() {
+        // No hijack, no fake addresses, no cache file: the native transports'
+        // DNS rides the tunnel as it always has, and this shape is on Macs today.
+        val json = SingBoxConfig.buildDesktopTun(
+            corePort = 10810, verifyPort = 10811,
+            excludeAddresses = listOf("203.0.113.7/32"), directDnsDomains = listOf("de1.example.org")
+        )
+        assertEquals(json, SingBoxConfig.buildDesktopTun(
+            corePort = 10810, verifyPort = 10811,
+            excludeAddresses = listOf("203.0.113.7/32"), directDnsDomains = listOf("de1.example.org"),
+            routing = Routing.Global
+        ))
+        assertTrue("fakeip" !in json)
+        assertNull(obj(json)["experimental"])
+    }
+
+    @Test
+    fun desktopTunAnswersNamesItselfWhenItHijacks() {
+        // olcRTC (lossy) and any bypass: the same scheme as iOS — fake addresses
+        // for the tunnel's names, HTTPS records refused, the mapping in a cache
+        // file the daemon owns. The direct resolver stays the system's: the
+        // official sing-box build reads the interface's DHCP resolvers there.
+        val shapes = mapOf(
+            "lossy" to SingBoxConfig.buildDesktopTun(
+                corePort = 10810, verifyPort = 10811, upstreamUdpIsLossy = true,
+                directDnsDomains = listOf("de1.example.org"), cacheFilePath = "/x/cache.db"
+            ),
+            "bypass" to SingBoxConfig.buildDesktopTun(
+                corePort = 10810, verifyPort = 10811, routing = desktopBypass(),
+                bindInterface = "en0", cacheFilePath = "/x/cache.db"
+            ),
+        )
+        for ((name, json) in shapes) {
+            val servers = dnsServers(json)
+            assertEquals(listOf("dns-remote", "dns-direct", "dns-fakeip"), servers.map { str(it, "tag") }, name)
+            assertEquals("local", str(servers[1], "type"), name)
+            val rules = obj(json)["dns"]!!.jsonObject["rules"]!!.jsonArray.map { it.jsonObject }
+            val fake = rules.first { it["server"]?.jsonPrimitive?.content == "dns-fakeip" }
+            assertEquals(listOf("A", "AAAA"), strings(fake, "query_type"), name)
+            assertEquals("reject", str(rules.last(), "action"), name)
+            assertEquals(listOf("HTTPS"), strings(rules.last(), "query_type"), name)
+            assertEquals("dns-remote", str(obj(json)["dns"]!!.jsonObject, "final"), name)
+            val cache = obj(json)["experimental"]!!.jsonObject["cache_file"]!!.jsonObject
+            assertEquals("/x/cache.db", str(cache, "path"), name)
+            assertEquals(true, cache["store_fakeip"]!!.jsonPrimitive.content.toBoolean(), name)
+            assertEquals("sniff", str(routeRules(json)[0], "action"), name)
+            assertEquals("hijack-dns", str(routeRules(json)[1], "action"), name)
+        }
+        // The server's own name stays ahead of everything: it is what the core
+        // redials, and answering it through the tunnel needs the tunnel.
+        val lossyRules = obj(shapes["lossy"]!!)["dns"]!!.jsonObject["rules"]!!.jsonArray.map { it.jsonObject }
+        assertEquals(listOf("de1.example.org"), strings(lossyRules[0], "domain"))
+        assertEquals("dns-direct", str(lossyRules[0], "server"))
+    }
+
+    @Test
+    fun desktopTunBypassRoutesRussiaDirectOnThePhysicalInterface() {
+        val json = SingBoxConfig.buildDesktopTun(
+            corePort = 10810, verifyPort = 10811, routing = desktopBypass(),
+            bindInterface = "en0", cacheFilePath = "/x/cache.db"
+        )
+        val rules = routeRules(json)
+        assertEquals(listOf("sniff", "hijack-dns", null, null, "reject"), rules.map { it["action"]?.jsonPrimitive?.content })
+        assertEquals(true, rules[2]["ip_is_private"]!!.jsonPrimitive.content.toBoolean())
+        assertEquals(RuleSets.all.map { it.tag }, strings(rules[3], "rule_set"))
+        assertEquals(6, rules[4]["ip_version"]!!.jsonPrimitive.content.toInt())
+        val sets = obj(json)["route"]!!.jsonObject["rule_set"]!!.jsonArray.map { it.jsonObject }
+        assertEquals("/Library/Application Support/org.olcbox.app/rules/${RuleSets.GEOIP_RU.name}", str(sets[2], "path"))
+        assertEquals("out", str(obj(json)["route"]!!.jsonObject, "final"))
+        // The daemon owns the tun, so its own direct sockets would enter it:
+        // they are bound to the physical interface instead, by name.
+        val direct = obj(json)["outbounds"]!!.jsonArray.map { it.jsonObject }.first { str(it, "tag") == "direct" }
+        assertEquals("en0", str(direct, "bind_interface"))
+        val dnsRules = obj(json)["dns"]!!.jsonObject["rules"]!!.jsonArray.map { it.jsonObject }
+        assertEquals(RuleSets.domains.map { it.tag }, strings(dnsRules[0], "rule_set"))
+    }
+
+    @Test
+    fun desktopTunBypassRefusesToBuildWithoutAnInterfaceToBindTo() {
+        // A direct outbound inside the tun's own process with nothing to bind to
+        // does not degrade — it loops. Better refused here than found on a Mac.
+        assertFailsWith<IllegalArgumentException> {
+            SingBoxConfig.buildDesktopTun(corePort = 10810, verifyPort = 10811, routing = desktopBypass())
+        }
     }
 
     @Test

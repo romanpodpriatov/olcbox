@@ -108,6 +108,7 @@ import org.olcbox.app.vpn.DesktopSocksProxySettings
 import org.olcbox.app.vpn.DesktopVpnManager
 import org.olcbox.app.vpn.DesktopConnectionMode
 import org.olcbox.app.vpn.DesktopConnectionModePreference
+import org.olcbox.app.vpn.desktopRoutingUnavailableReason
 import org.olcbox.app.vpn.JvmDesktopSocksProxySettingsStore
 import org.olcbox.app.vpn.desktop.MacOsTunnelDaemon
 
@@ -493,10 +494,7 @@ fun main(args: Array<String>) = application {
                         subscriptionSettings = subscriptionSettings,
                         routingSettings = routingSettings,
                         onRoutingSettingsChanged = dependencies.homeViewModel::updateRoutingSettings,
-                        // The desktop cores would dial "direct" straight into the
-                        // daemon's own utun. Until the bypass lives in the daemon,
-                        // the choice is shown here and not offered.
-                        routingUnavailableReason = "Applies on iOS and Android. Desktop follows in a later build.",
+                        routingUnavailableReason = desktopRoutingUnavailableReason(),
                         onSubscriptionSettingsChanged =
                             dependencies.homeViewModel::updateSubscriptionSettings,
                         onDismiss = { showDesktopSettings = false },

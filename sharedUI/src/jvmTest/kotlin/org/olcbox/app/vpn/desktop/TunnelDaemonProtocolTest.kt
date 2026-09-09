@@ -19,6 +19,36 @@ class TunnelDaemonProtocolTest {
     }
 
     @Test
+    fun aStartCarriesItsRuleFilesByNameUnderFiles() {
+        val start = TunnelDaemonProtocol.startRequest("{}", mapOf("geoip-ru.srs" to "AAEC"))
+        assertTrue("\"files\":{\"geoip-ru.srs\":\"AAEC\"}" in start)
+        // And none at all when there are none: the first daemons never look.
+        assertTrue("files" !in TunnelDaemonProtocol.startRequest("{}"))
+    }
+
+    @Test
+    fun aDaemonThatNamesNoProtocolIsTheFirstOne() {
+        val first = TunnelDaemonProtocol.parseReply("""{"ok":true,"state":"idle","logTail":""}""")
+        assertIs<DaemonReply.Ok>(first)
+        assertEquals(TunnelDaemonProtocol.PROTOCOL_FIRST, first.protocol)
+        val current = TunnelDaemonProtocol.parseReply("""{"ok":true,"state":"idle","logTail":"","protocol":2}""")
+        assertIs<DaemonReply.Ok>(current)
+        assertEquals(TunnelDaemonProtocol.PROTOCOL_FILES, current.protocol)
+    }
+
+    @Test
+    fun aDaemonSteppingAsideForAnUpdateSaysSo() {
+        val stepping = TunnelDaemonProtocol.parseReply(
+            """{"ok":false,"error":"the tunnel helper was updated and is restarting","restarting":true,"logTail":""}"""
+        )
+        assertIs<DaemonReply.Failure>(stepping)
+        assertTrue(stepping.restarting)
+        val plain = TunnelDaemonProtocol.parseReply("""{"ok":false,"error":"sing-box exited","logTail":""}""")
+        assertIs<DaemonReply.Failure>(plain)
+        assertTrue(!plain.restarting)
+    }
+
+    @Test
     fun aRunningDaemonReportsItsChildPid() {
         val reply = TunnelDaemonProtocol.parseReply(
             """{"ok":true,"state":"running","pid":4242,"logTail":"started"}"""

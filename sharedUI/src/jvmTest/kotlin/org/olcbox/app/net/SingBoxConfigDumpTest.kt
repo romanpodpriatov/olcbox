@@ -6,6 +6,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import java.io.File
@@ -57,17 +58,37 @@ class SingBoxConfigDumpTest {
      * dumps never exercise, and all of it is 1.12+ syntax.
      */
     @Test fun dumpDesktopTun() {
-        dump(
+        dumpWithSocksTwin(
             "desktop-tun",
             SingBoxConfig.buildDesktopTun(
                 corePort = 10810,
                 verifyPort = 10811,
                 excludeAddresses = listOf("203.0.113.7/32"),
                 directDnsDomains = listOf("de1.example.org"),
-                upstreamUdpIsLossy = true
+                upstreamUdpIsLossy = true,
+                cacheFilePath = "/Library/Application Support/org.olcbox.app/cache.db"
             )
         )
         assertTrue(File(outDir, "desktop-tun.json").exists())
+    }
+
+    /** The daemon's shape under Bypass Russia: rule-sets, a bound direct outbound, fake addresses. */
+    @Test fun dumpDesktopTunBypass() = runTest {
+        val rules = File(outDir, "rules").apply { mkdirs() }
+        for (file in RuleSets.all) File(rules, file.name).writeBytes(RuleSets.bytes(file))
+        dumpWithSocksTwin(
+            "desktop-tun-bypass",
+            SingBoxConfig.buildDesktopTun(
+                corePort = 10810,
+                verifyPort = 10811,
+                excludeAddresses = listOf("203.0.113.7/32"),
+                directDnsDomains = listOf("de1.example.org"),
+                routing = Routing.BypassRussia(rules.absolutePath, DirectDns.System),
+                bindInterface = "en0",
+                cacheFilePath = "/Library/Application Support/org.olcbox.app/cache.db"
+            )
+        )
+        assertTrue(File(outDir, "desktop-tun-bypass-as-socks.json").exists())
     }
 
     /**
@@ -114,6 +135,15 @@ class SingBoxConfigDumpTest {
         cache["path"] = JsonPrimitive(File(outDir, "$name.cache.db").absolutePath)
         experimental["cache_file"] = JsonObject(cache)
         obj["experimental"] = JsonObject(experimental)
+        // A daemon shape binds its direct outbound to a macOS interface; the twin
+        // runs on Linux, so it binds to the loopback there — nothing dials.
+        obj["outbounds"] = buildJsonArray {
+            obj["outbounds"]!!.jsonArray.forEach { outbound ->
+                val fields = outbound.jsonObject.toMutableMap()
+                if (fields["bind_interface"] != null) fields["bind_interface"] = JsonPrimitive("lo")
+                add(JsonObject(fields))
+            }
+        }
         dump("$name-as-socks", JsonObject(obj).toString())
     }
 

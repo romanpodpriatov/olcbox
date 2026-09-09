@@ -19,9 +19,13 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.olcbox.app.data.model.LocationConfig
+import org.olcbox.app.data.model.RoutingMode
+import org.olcbox.app.net.DirectDns
 import org.olcbox.app.net.LinkParser
 import org.olcbox.app.net.LocationKind
 import org.olcbox.app.net.PathLatency
+import org.olcbox.app.net.Routing
+import org.olcbox.app.vpn.desktop.TunnelDaemonProtocol
 import org.olcbox.app.data.repository.LocationsRepository
 import org.olcbox.app.data.repository.SubscriptionFetchProxy
 import org.olcbox.app.desktop.DesktopOs
@@ -301,6 +305,28 @@ class DesktopVpnManager private constructor(
             val desktopMode = DesktopMode.current()
             val socksSettings = _socksProxySettings.value.normalized()
 
+            // Where a bypass can apply here: the proxy, whose core's direct
+            // sockets are ordinary ones, and the macOS tunnel, whose daemon binds
+            // them to the physical interface. The Linux and Windows tunnels route
+            // by policy and by metric, and a direct socket from the core would
+            // enter them; they stay global until they have a way out.
+            val routingMode = locationsRepository.getRoutingSettings().mode
+            val bypassApplies = routingMode == RoutingMode.BypassRussia &&
+                (desktopMode == DesktopMode.SystemProxy || desktopMode == DesktopMode.MacTun)
+            if (routingMode == RoutingMode.BypassRussia && !bypassApplies) {
+                addLog("Routing: $desktopMode keeps everything through the tunnel for now")
+            } else if (bypassApplies) {
+                addLog("Routing: ${routingMode.hubSummary()}")
+            }
+            // In the proxy the rules live in the core; in the macOS tunnel they
+            // live in the daemon, and the core stays as it was.
+            val coreRouting: Routing = if (bypassApplies && desktopMode == DesktopMode.SystemProxy) {
+                Routing.BypassRussia(installRuleSets().toString(), DirectDns.System)
+            } else {
+                Routing.Global
+            }
+            var frontPort: Int? = null
+
             if (desktopMode == DesktopMode.WindowsTun) {
                 windowsTunController.ensureAdministratorOrRequestRestart()
             }
@@ -338,8 +364,11 @@ class DesktopVpnManager private constructor(
                     socksPort = socksSettings.port,
                     requestGeneration = requestGeneration
                 )
+                if (coreRouting is Routing.BypassRussia) {
+                    frontPort = startOlcRtcFront(socksSettings, coreRouting)
+                }
             } else {
-                startDesktopCore(location, effectiveSocksPort)
+                startDesktopCore(location, effectiveSocksPort, coreRouting)
             }
 
             if (requestGeneration != generation) {
@@ -353,16 +382,25 @@ class DesktopVpnManager private constructor(
                     corePort = effectiveSocksPort,
                     isOlcrtc = isOlcrtc,
                     socksSettings = socksSettings,
-                    location = location
+                    location = location,
+                    routing = if (bypassApplies) {
+                        Routing.BypassRussia(TunnelDaemonProtocol.RULES_DIR, DirectDns.System)
+                    } else {
+                        Routing.Global
+                    },
+                    ruleFiles = if (bypassApplies) daemonRuleFiles() else emptyMap()
                 )
                 DesktopMode.SystemProxy ->
                     startSystemProxy(
-                        // The cores listen without authentication; only the olcRTC
-                        // engine uses the stored credentials.
-                        if (isOlcrtc) {
+                        // The cores and the front listen without authentication;
+                        // only the olcRTC engine, reached directly, uses the
+                        // stored credentials.
+                        if (isOlcrtc && frontPort == null) {
                             socksSettings.copy(port = effectiveSocksPort)
                         } else {
-                            socksSettings.copy(port = effectiveSocksPort, username = "", password = "")
+                            socksSettings.copy(
+                                port = frontPort ?: effectiveSocksPort, username = "", password = ""
+                            )
                         },
                         requestGeneration
                     )
@@ -382,6 +420,9 @@ class DesktopVpnManager private constructor(
             } else if (!singBoxCore.isRunning() && !xrayCore.isRunning()) {
                 error("core exited before desktop proxy was enabled")
             }
+            if (frontPort != null && !singBoxCore.isRunning()) {
+                error("sing-box front exited before desktop proxy was enabled")
+            }
 
             if (desktopMode == DesktopMode.MacTun) {
                 startMacTunWatcher(requestGeneration)
@@ -395,11 +436,14 @@ class DesktopVpnManager private constructor(
             // green light means the tun carried the request — not merely that the
             // core would have. That inbound has no auth; only the olcRTC core's has.
             val verifiedThroughTun = desktopMode == DesktopMode.MacTun && macTunVerifyPort != null
+            // Through the front when there is one: it has no auth, and a green
+            // light has to be about the chain the traffic actually takes.
+            val directToOlcrtc = isOlcrtc && !verifiedThroughTun && frontPort == null
             val exit = org.olcbox.app.net.TunnelVerifier.verify(
                 socksHost = socksSettings.host,
-                socksPort = if (verifiedThroughTun) macTunVerifyPort!! else effectiveSocksPort,
-                username = if (isOlcrtc && !verifiedThroughTun) socksSettings.username else "",
-                password = if (isOlcrtc && !verifiedThroughTun) socksSettings.password else ""
+                socksPort = if (verifiedThroughTun) macTunVerifyPort!! else (frontPort ?: effectiveSocksPort),
+                username = if (directToOlcrtc) socksSettings.username else "",
+                password = if (directToOlcrtc) socksSettings.password else ""
             )
             if (requestGeneration != generation) {
                 throw CancellationException("Desktop start superseded")
@@ -493,7 +537,9 @@ class DesktopVpnManager private constructor(
         corePort: Int,
         isOlcrtc: Boolean,
         socksSettings: DesktopSocksProxySettings,
-        location: LocationConfig
+        location: LocationConfig,
+        routing: Routing,
+        ruleFiles: Map<String, String>
     ) {
         val verifyPort = allocateVerifyPort(corePort)
         macOsTunController.start(
@@ -505,7 +551,9 @@ class DesktopVpnManager private constructor(
             serverHost = serverEndpoint(location)?.first,
             // olcRTC relays UDP over a lossy video carrier, so DNS takes the
             // reliable path. The native transports carry UDP themselves.
-            upstreamUdpIsLossy = isOlcrtc
+            upstreamUdpIsLossy = isOlcrtc,
+            routing = routing,
+            ruleFiles = ruleFiles
         )
         macTunVerifyPort = verifyPort
         macTunActive = true
@@ -530,27 +578,35 @@ class DesktopVpnManager private constructor(
     }
 
     /** Start a sing-box (reality/hy2) or Xray (xhttp) core on the core SOCKS port. */
-    private suspend fun startDesktopCore(location: LocationConfig, port: Int) {
+    private suspend fun startDesktopCore(location: LocationConfig, port: Int, routing: Routing) {
         val raw = location.rawLink ?: error("core location has no link")
         val spec = org.olcbox.app.net.LinkParser.parse(raw) ?: error("unparseable core link")
         stopDesktopCores()
-        if (spec is org.olcbox.app.net.OutboundSpec.Vless &&
-            spec.transport is org.olcbox.app.net.TransportSpec.Xhttp
-        ) {
-            xrayCore.start(org.olcbox.app.net.XrayConfig.buildXhttp(spec, socksPort = port))
+        val xhttp = (spec as? org.olcbox.app.net.OutboundSpec.Vless)
+            ?.takeIf { it.transport is org.olcbox.app.net.TransportSpec.Xhttp }
+        // Which processes must be alive once the port answers. A port that
+        // answers proves nothing about who answers.
+        val alive: () -> Boolean
+        if (xhttp != null && routing is Routing.BypassRussia) {
+            // Xray does not route; sing-box does, so it goes in front.
+            val xrayPort = allocateVerifyPort(port)
+            xrayCore.start(org.olcbox.app.net.XrayConfig.buildXhttp(xhttp, socksPort = xrayPort))
+            singBoxCore.start(
+                org.olcbox.app.net.SingBoxConfig.buildSocksChain(xrayPort, socksPort = port, routing = routing)
+            )
+            addLog("Xray/xhttp core on 127.0.0.1:$xrayPort behind a sing-box front on 127.0.0.1:$port")
+            alive = { singBoxCore.isRunning() && xrayCore.isRunning() }
+        } else if (xhttp != null) {
+            xrayCore.start(org.olcbox.app.net.XrayConfig.buildXhttp(xhttp, socksPort = port))
             addLog("Xray/xhttp core starting on 127.0.0.1:$port")
+            alive = xrayCore::isRunning
         } else {
-            singBoxCore.start(org.olcbox.app.net.SingBoxConfig.build(spec, socksPort = port))
+            singBoxCore.start(org.olcbox.app.net.SingBoxConfig.build(spec, socksPort = port, routing = routing))
             addLog("sing-box core (${location.kind}) starting on 127.0.0.1:$port")
+            alive = singBoxCore::isRunning
         }
-        if (!waitForCoreSocks(port)) {
-            val exit = if (spec is org.olcbox.app.net.OutboundSpec.Vless &&
-                spec.transport is org.olcbox.app.net.TransportSpec.Xhttp
-            ) {
-                xrayCore.exitCodeOrNull()
-            } else {
-                singBoxCore.exitCodeOrNull()
-            }
+        if (!waitForCoreSocks(port) || !alive()) {
+            val exit = if (xhttp != null) xrayCore.exitCodeOrNull() else singBoxCore.exitCodeOrNull()
             error(
                 "core SOCKS not ready on 127.0.0.1:$port" +
                     (exit?.let { " (core exited with code $it — see the lines above)" } ?: "")
@@ -558,6 +614,58 @@ class DesktopVpnManager private constructor(
         }
         addLog("core ready on 127.0.0.1:$port")
     }
+
+    /**
+     * sing-box between the proxy and olcRTC, so the routing rules see every
+     * connection before the relay does. The engine keeps its own port and its
+     * credentials; the front listens without any, like the cores do.
+     */
+    private suspend fun startOlcRtcFront(
+        socksSettings: DesktopSocksProxySettings,
+        routing: Routing.BypassRussia
+    ): Int {
+        stopDesktopCores()
+        val port = allocateCorePort()
+        singBoxCore.start(
+            org.olcbox.app.net.SingBoxConfig.buildSocksChain(
+                upstreamPort = socksSettings.port,
+                socksPort = port,
+                username = socksSettings.username,
+                password = socksSettings.password,
+                routing = routing
+            )
+        )
+        addLog("sing-box front for olcRTC starting on 127.0.0.1:$port")
+        if (!waitForCoreSocks(port) || !singBoxCore.isRunning()) {
+            error(
+                "sing-box front not running on 127.0.0.1:$port" +
+                    (singBoxCore.exitCodeOrNull()?.let { " (exited with code $it — see the lines above)" } ?: "")
+            )
+        }
+        activeCorePort = port
+        addLog("sing-box front ready on 127.0.0.1:$port")
+        return port
+    }
+
+    /**
+     * The rule-set files, written under the app's data directory for the
+     * proxy's core. Rewritten on every start: 59 KB, and the alternative is
+     * a version check that can be wrong.
+     */
+    private suspend fun installRuleSets(): Path {
+        val dir = DesktopPaths.appDataDir().resolve("rulesets")
+        Files.createDirectories(dir)
+        for (file in org.olcbox.app.net.RuleSets.all) {
+            Files.write(dir.resolve(file.name), org.olcbox.app.net.RuleSets.bytes(file))
+        }
+        return dir
+    }
+
+    /** The same files for the macOS daemon, which writes them itself, root-owned. */
+    private suspend fun daemonRuleFiles(): Map<String, String> =
+        org.olcbox.app.net.RuleSets.all.associate {
+            it.name to java.util.Base64.getEncoder().encodeToString(org.olcbox.app.net.RuleSets.bytes(it))
+        }
 
     /**
      * Port for the sing-box/Xray SOCKS listener.

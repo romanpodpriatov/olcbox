@@ -185,7 +185,25 @@ object SingBoxConfig {
         address: String = DESKTOP_TUN_ADDRESS,
         address6: String = DESKTOP_TUN_ADDRESS6,
         mtu: Int = DESKTOP_TUN_MTU,
+        routing: Routing = Routing.Global,
+        /**
+         * The physical interface the `direct` outbound binds to under a bypass.
+         * This sing-box owns the tun, so its own direct sockets would otherwise
+         * enter it; that does not degrade, it loops. Required with a bypass.
+         */
+        bindInterface: String? = null,
+        /** Where the fake-address mapping persists; the daemon's own directory. */
+        cacheFilePath: String? = null,
     ): String {
+        val bypass = routing as? Routing.BypassRussia
+        require(bypass == null || !bindInterface.isNullOrBlank()) {
+            "a direct outbound inside the tun's own process needs an interface to bind to"
+        }
+        // The daemon answers names itself whenever it hijacks them: for
+        // olcRTC's lossy carrier, as before, and under any bypass, which needs
+        // the Russian names resolved here. Then it fakes the tunnel's names
+        // too, exactly as iOS does and for the same twenty seconds a lookup.
+        val answersDns = upstreamUdpIsLossy || bypass != null
         val obj = buildJsonObject {
             putJsonObject("log") { put("level", "warn") }
             putJsonObject("dns") {
@@ -194,21 +212,31 @@ object SingBoxConfig {
                     // rule claims, so `dns-remote` has to come first whenever
                     // queries are hijacked here at all — put the local one first
                     // and every hijacked lookup leaves the machine unprotected.
-                    if (upstreamUdpIsLossy) {
-                        addJsonObject {
-                            put("type", "tcp"); put("tag", "dns-remote")
-                            put("server", REMOTE_DNS_SERVER); put("detour", "out")
-                        }
-                    }
+                    if (answersDns) addRemoteDnsServer(overTcp = upstreamUdpIsLossy)
+                    // The system's resolver. The official sing-box build reads
+                    // the interface's DHCP resolvers when a tun is present, so
+                    // this escapes the tun without help.
                     addJsonObject { put("type", "local"); put("tag", "dns-direct") }
+                    if (answersDns) addFakeIpServer()
                 }
-                if (directDnsDomains.isNotEmpty()) {
+                if (directDnsDomains.isNotEmpty() || answersDns) {
                     putJsonArray("rules") {
-                        addJsonObject {
-                            putJsonArray("domain") { directDnsDomains.forEach { add(it) } }
-                            put("server", "dns-direct")
+                        // The server's own name first: the core redials it while
+                        // the tun is up, and answering that through the tunnel
+                        // needs the tunnel being redialled.
+                        if (directDnsDomains.isNotEmpty()) {
+                            addJsonObject {
+                                putJsonArray("domain") { directDnsDomains.forEach { add(it) } }
+                                put("server", "dns-direct")
+                            }
                         }
+                        if (bypass != null) addRussianNamesRule()
+                        if (answersDns) addFakeIpRules()
                     }
+                }
+                if (answersDns) {
+                    put("final", "dns-remote")
+                    if (bypass != null) put("reverse_mapping", true)
                 }
             }
             putJsonArray("inbounds") {
@@ -241,9 +269,13 @@ object SingBoxConfig {
                     if (username.isNotBlank()) put("username", username)
                     if (password.isNotBlank()) put("password", password)
                 }
-                addJsonObject { put("type", "direct"); put("tag", "direct") }
+                addJsonObject {
+                    put("type", "direct"); put("tag", "direct")
+                    if (!bindInterface.isNullOrBlank()) put("bind_interface", bindInterface)
+                }
             }
             putJsonObject("route") {
+                if (bypass != null) putRuleSetDeclarations(bypass)
                 // Required since 1.12 as soon as a `dns` section exists: without
                 // it sing-box refuses to start, naming a deprecation and an
                 // environment variable rather than the config. It resolves domain
@@ -252,16 +284,16 @@ object SingBoxConfig {
                 // both correct and inert here.
                 put("default_domain_resolver", "dns-direct")
                 putJsonArray("rules") {
-                    if (upstreamUdpIsLossy) {
+                    if (answersDns) {
+                        addJsonObject { put("action", "sniff") }
                         // Without this the `dns` block above is dead weight for the
                         // system's queries: they would be forwarded as the
                         // datagrams they arrived as, which is the path being
-                        // avoided. Absent it, DNS keeps riding the tunnel as UDP,
-                        // which is what the native transports want. Before the
-                        // IPv6 reject, so a query to a v6 resolver is still caught
-                        // and answered rather than refused.
+                        // avoided. Before the IPv6 reject, so a query to a v6
+                        // resolver is still caught and answered rather than refused.
                         addJsonObject { put("action", "hijack-dns"); put("port", 53) }
                     }
+                    if (bypass != null) addBypassRouteRules()
                     // IPv6 is claimed and refused, not carried.
                     //
                     // Claimed because auto_route only takes the families the
@@ -276,6 +308,16 @@ object SingBoxConfig {
                     // a node without IPv6 would hang instead, which is the same
                     // outcome bought with a timeout.
                     addJsonObject { put("action", "reject"); put("ip_version", 6) }
+                }
+                if (bypass != null) put("final", "out")
+            }
+            if (answersDns) {
+                putJsonObject("experimental") {
+                    putJsonObject("cache_file") {
+                        put("enabled", true)
+                        put("store_fakeip", true)
+                        if (!cacheFilePath.isNullOrBlank()) put("path", cacheFilePath)
+                    }
                 }
             }
         }
@@ -372,21 +414,11 @@ object SingBoxConfig {
             putJsonArray("servers") {
                 addRemoteDnsServer(overTcp = remoteOverTcp)
                 addDirectDnsServer(direct)
-                addJsonObject {
-                    put("type", "fakeip"); put("tag", "dns-fakeip")
-                    put("inet4_range", FAKE_IP_RANGE)
-                }
+                addFakeIpServer()
             }
             putJsonArray("rules") {
                 if (bypass != null) addRussianNamesRule()
-                addJsonObject {
-                    putJsonArray("query_type") { add("A"); add("AAAA") }
-                    put("server", "dns-fakeip")
-                }
-                addJsonObject {
-                    putJsonArray("query_type") { add("HTTPS") }
-                    put("action", "reject")
-                }
+                addFakeIpRules()
             }
             put("final", "dns-remote")
             if (bypass != null) put("reverse_mapping", true)
@@ -465,6 +497,31 @@ object SingBoxConfig {
                     put("type", "udp"); put("server", DIRECT_DNS_PLACEHOLDER)
                 }
             }
+        }
+    }
+
+    /** Fake addresses for the tunnel's names; IPv4 only, see [FAKE_IP_RANGE]. */
+    private fun JsonArrayBuilder.addFakeIpServer() {
+        addJsonObject {
+            put("type", "fakeip"); put("tag", "dns-fakeip")
+            put("inet4_range", FAKE_IP_RANGE)
+        }
+    }
+
+    /**
+     * A and AAAA get a fake address at once; HTTPS-type queries, which a
+     * client sends beside them and would otherwise wait on the tunnel for,
+     * are refused, which a client treats as "no such record" and carries on.
+     * Anything else still goes wherever `final` points.
+     */
+    private fun JsonArrayBuilder.addFakeIpRules() {
+        addJsonObject {
+            putJsonArray("query_type") { add("A"); add("AAAA") }
+            put("server", "dns-fakeip")
+        }
+        addJsonObject {
+            putJsonArray("query_type") { add("HTTPS") }
+            put("action", "reject")
         }
     }
 

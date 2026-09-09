@@ -51,7 +51,7 @@ final class TunnelChild {
             .appendingPathComponent("Resources/sing-box")
     }
 
-    func start(config: String) throws {
+    func start(config: String, files: [String: String] = [:]) throws {
         stop()
 
         let source = bundledCore
@@ -73,6 +73,29 @@ final class TunnelChild {
             [.posixPermissions: 0o700, .ownerAccountID: 0],
             ofItemAtPath: core.path
         )
+
+        // The rule-sets a Bypass Russia config names, root-owned like the
+        // config, at the paths the app wrote into it. Written or removed, never
+        // left behind: a config naming a file that is not there stops sing-box
+        // with "no such file", and a file nothing names is dead weight.
+        let rulesDir = Self.stateDir.appendingPathComponent("rules", isDirectory: true)
+        if files.isEmpty {
+            try? FileManager.default.removeItem(at: rulesDir)
+        } else {
+            try makeRootOnlyDirectory(rulesDir)
+            for (name, base64) in files {
+                guard !name.contains("/"), !name.hasPrefix("."),
+                      let data = Data(base64Encoded: base64) else {
+                    throw DaemonError.message("rule-set \(name) is not a plain file name with base64 content")
+                }
+                let url = rulesDir.appendingPathComponent(name)
+                try data.write(to: url, options: .atomic)
+                try FileManager.default.setAttributes(
+                    [.posixPermissions: 0o600, .ownerAccountID: 0],
+                    ofItemAtPath: url.path
+                )
+            }
+        }
 
         let configURL = Self.stateDir.appendingPathComponent("tun.json")
         try config.write(to: configURL, atomically: true, encoding: .utf8)
