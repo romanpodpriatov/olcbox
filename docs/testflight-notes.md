@@ -29,16 +29,18 @@ WHAT CHANGED
 WHAT TO TEST
 
 1. Bypass Russia on, connect to any location. Open sberbank.ru, gosuslugi.ru,
-   ozon.ru — they should open, and 2ip.ru should show your real address.
-   ipify.org (or any foreign site showing your IP) should show the exit's.
+   ozon.ru — they should open, and yandex.ru/internet should show your real
+   address. whatismyip.com should show the exit's. (2ip.ru only works for
+   this from inside Russia: from abroad it hands you to 2ip.io, which goes
+   through the tunnel.)
 2. Same, on an olcRTC room: Russian sites should be noticeably quicker than
    foreign ones — they no longer share the room's bandwidth.
 3. Wi-Fi → cellular, or back, while connected with Bypass Russia on. Known
    limitation: Russian names may stop resolving until you reconnect (the
    resolver is the one captured at connect). Tell us if it happens and on
    which carrier.
-4. Switch back to "All traffic through the tunnel": 2ip.ru should now show
-   the exit's address.
+4. Switch back to "All traffic through the tunnel": yandex.ru/internet should
+   now show the exit's address too.
 5. Memory: nothing should change, but if the tunnel drops on its own under
    Bypass Russia, say so — the extension's ceiling is the one thing the lists
    could push on.
