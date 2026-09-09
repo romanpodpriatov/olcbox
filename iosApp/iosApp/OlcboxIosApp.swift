@@ -551,11 +551,22 @@ final class SwiftPacketTunnelBridge: NSObject, @unchecked Sendable, IosPacketTun
         ) else { return "" }
         // olcRTC's first, since it is the engine that fails on its own; the
         // other two write to stderr, which lands in engine.log.
-        let both = ["network-diagnostics.log", "olcrtc.log", "engine.log"].compactMap { name -> String? in
+        var both = ["network-diagnostics.log", "olcrtc.log", "engine.log"].compactMap { name -> String? in
             try? String(
                 contentsOf: container.appendingPathComponent(name), encoding: .utf8
             )
         }
+        #if DEBUG
+        // Debug builds also carry sing-box's own log (SingBoxDebugLog in the
+        // extension): the last few hundred lines, where the connection being
+        // asked about is.
+        if let singBox = try? String(
+            contentsOf: container.appendingPathComponent("libbox/work/sing-box.log"), encoding: .utf8
+        ) {
+            let tail = singBox.split(separator: "\n", omittingEmptySubsequences: false).suffix(400)
+            both.append("--- sing-box (debug build) ---\n" + tail.joined(separator: "\n"))
+        }
+        #endif
         return both.joined(separator: "\n")
     }
 }

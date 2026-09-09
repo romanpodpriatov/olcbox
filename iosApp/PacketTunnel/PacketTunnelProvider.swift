@@ -237,7 +237,15 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
             // Bypass Russia: the config names a placeholder where the direct
             // resolver goes, because only this process could read it. A Global
             // config carries no placeholder and passes through untouched.
-            let config = DirectResolver.substitute(in: config, resolvers: resolvers)
+            let substituted = DirectResolver.substitute(in: config, resolvers: resolvers)
+            #if DEBUG
+            // Debug builds keep sing-box's own log in the working directory for
+            // the app's log export: it is the only account of what a rule did.
+            SingBoxDebugLog.reset(workingPath: container.appendingPathComponent("libbox/work").path)
+            let config = SingBoxDebugLog.enable(in: substituted)
+            #else
+            let config = substituted
+            #endif
             // Deliberately not `server.start()`: that binds the gRPC command
             // socket for an app that talks to us through handleAppMessage
             // instead. Starting the engine is a separate call, and this is it.
