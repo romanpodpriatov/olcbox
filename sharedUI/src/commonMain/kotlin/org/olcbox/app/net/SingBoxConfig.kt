@@ -91,7 +91,8 @@ object SingBoxConfig {
         address: String = TUN_ADDRESS,
         mtu: Int = TUN_MTU,
         routing: Routing = Routing.Global,
-    ): String = renderTun(address, mtu, resolveOverTcp = false, routing) { addOutbound(outbound) }
+        directDns: DirectDns = DirectDns.Placeholder,
+    ): String = renderTun(address, mtu, resolveOverTcp = false, routing, directDns) { addOutbound(outbound) }
 
     /**
      * Config for a core that owns the tun and hands the traffic to another core
@@ -110,7 +111,8 @@ object SingBoxConfig {
         address: String = TUN_ADDRESS,
         mtu: Int = TUN_MTU,
         routing: Routing = Routing.Global,
-    ): String = renderTun(address, mtu, resolveOverTcp = upstreamUdpIsLossy, routing) {
+        directDns: DirectDns = DirectDns.Placeholder,
+    ): String = renderTun(address, mtu, resolveOverTcp = upstreamUdpIsLossy, routing, directDns) {
         addSocksOutbound(socksPort, username, password)
     }
 
@@ -298,43 +300,49 @@ object SingBoxConfig {
      */
     const val DIRECT_DNS_FALLBACK = "77.88.8.8"
 
+    /**
+     * The fake-address range for names bound for the tunnel. RFC 2544's
+     * benchmarking block, which nothing on the internet answers from, so a
+     * leaked fake can only fail; IPv4 only, because the tun on iOS claims no
+     * IPv6 and a fake IPv6 would leave through the physical interface.
+     */
+    private const val FAKE_IP_RANGE = "198.18.0.0/15"
+
+    /**
+     * The iOS shape. sing-box answers every name itself here, on every
+     * transport, for three reasons that turned up one at a time on a phone:
+     *
+     * - The tun delivers IPs, so a connection has no name unless the DNS that
+     *   produced the IP went through this process.
+     * - The system was told its resolver is 1.1.1.1, which iOS knows as an
+     *   encrypted-DNS provider and quietly upgraded to DoT/DoH — through the
+     *   tunnel, past the hijack, twenty seconds a lookup on a lossy relay. The
+     *   extension now names a resolver only this config answers.
+     * - Over olcRTC every lookup was a TCP connection through the relay, and
+     *   took 20–25 s. Names bound for the tunnel now get a fake address at once
+     *   and the connection leaves by name; the exit resolves it, as it did in
+     *   the old in-app SOCKS mode that was fast. The mapping lives in libbox's
+     *   cache file so an address an app remembered across a reconnect still
+     *   means something. HTTPS-type queries, the other slow half, are refused,
+     *   which a client treats as "no such record" and carries on.
+     *
+     * Under Bypass Russia the Russian lists are resolved for real, on the
+     * network underneath, before any of that; those connections then match
+     * by name or by address and go direct.
+     */
     private fun renderTun(
         address: String,
         mtu: Int,
         resolveOverTcp: Boolean,
         routing: Routing,
+        directDns: DirectDns,
         outbounds: JsonArrayBuilder.() -> Unit,
     ): String {
         val bypass = routing as? Routing.BypassRussia
+        val direct = bypass?.directDns ?: directDns
         val obj = buildJsonObject {
             putJsonObject("log") { put("level", "warn") }
-            // Name resolution is the one thing that must not ride an unreliable
-            // datagram path: lose it and nothing resolves, so no app opens a
-            // socket at all and the tunnel looks perfectly connected behind a
-            // blank browser. That is not hypothetical — it is what olcRTC did
-            // with no UDP relay at all, its server logging real traffic to
-            // Telegram and Meta, which dial hardcoded IPs, and nothing from
-            // Safari.
-            //
-            // olcRTC relays UDP now, but over a lossy video carrier, so DNS
-            // keeps its own reliable path: sing-box answers it here and asks
-            // upstream over TCP. Everything else, calls and games included,
-            // goes as plain UDP. Transports whose UDP is as good as their TCP
-            // need none of this and get none of it.
-            //
-            // Bypass Russia has its own dns section, which covers this case too.
-            if (bypass != null) {
-                putBypassDns(bypass, remoteOverTcp = resolveOverTcp)
-            } else if (resolveOverTcp) {
-                putJsonObject("dns") {
-                    putJsonArray("servers") {
-                        addJsonObject {
-                            put("type", "tcp"); put("tag", "dns-remote")
-                            put("server", REMOTE_DNS_SERVER); put("detour", "out")
-                        }
-                    }
-                }
-            }
+            putIosDns(remoteOverTcp = resolveOverTcp, direct = direct, bypass = bypass)
             putJsonArray("inbounds") {
                 addJsonObject {
                     put("type", "tun"); put("tag", "tun-in")
@@ -348,20 +356,54 @@ object SingBoxConfig {
                 outbounds()
                 if (bypass != null) addDirectOutbound()
             }
-            if (bypass != null) {
-                putBypassRoute(bypass)
-            } else if (resolveOverTcp) {
-                putJsonObject("route") {
-                    putJsonArray("rules") {
-                        // Without this the `dns` block above is dead weight:
-                        // queries would be forwarded as the datagrams they
-                        // arrived as, which is the path being avoided.
-                        addJsonObject { put("action", "hijack-dns"); put("port", 53) }
-                    }
+            putIosRoute(bypass)
+            putJsonObject("experimental") {
+                putJsonObject("cache_file") {
+                    put("enabled", true)
+                    put("store_fakeip", true)
                 }
             }
         }
         return obj.toString()
+    }
+
+    private fun JsonObjectBuilder.putIosDns(remoteOverTcp: Boolean, direct: DirectDns, bypass: Routing.BypassRussia?) {
+        putJsonObject("dns") {
+            putJsonArray("servers") {
+                addRemoteDnsServer(overTcp = remoteOverTcp)
+                addDirectDnsServer(direct)
+                addJsonObject {
+                    put("type", "fakeip"); put("tag", "dns-fakeip")
+                    put("inet4_range", FAKE_IP_RANGE)
+                }
+            }
+            putJsonArray("rules") {
+                if (bypass != null) addRussianNamesRule()
+                addJsonObject {
+                    putJsonArray("query_type") { add("A"); add("AAAA") }
+                    put("server", "dns-fakeip")
+                }
+                addJsonObject {
+                    putJsonArray("query_type") { add("HTTPS") }
+                    put("action", "reject")
+                }
+            }
+            put("final", "dns-remote")
+            if (bypass != null) put("reverse_mapping", true)
+        }
+    }
+
+    private fun JsonObjectBuilder.putIosRoute(bypass: Routing.BypassRussia?) {
+        putJsonObject("route") {
+            if (bypass != null) putRuleSetDeclarations(bypass)
+            putJsonArray("rules") {
+                addJsonObject { put("action", "sniff") }
+                addJsonObject { put("action", "hijack-dns"); put("port", 53) }
+                if (bypass != null) addBypassRouteRules()
+            }
+            put("final", "out")
+            put("default_domain_resolver", "dns-direct")
+        }
     }
 
     fun buildOlcrtcSocks(olcrtcPort: Int, socksPort: Int = SINGBOX_SOCKS_PORT): String =
@@ -395,93 +437,109 @@ object SingBoxConfig {
         addJsonObject { put("type", "direct"); put("tag", "direct") }
     }
 
+    /** The tunnel-side resolver, reached through `out`; TCP when the upstream's UDP is lossy. */
+    private fun JsonArrayBuilder.addRemoteDnsServer(overTcp: Boolean) {
+        addJsonObject {
+            put("type", if (overTcp) "tcp" else "udp"); put("tag", "dns-remote")
+            put("server", REMOTE_DNS_SERVER); put("detour", "out")
+        }
+    }
+
     /**
-     * The split: names on the Russian lists are resolved on the network
-     * underneath, everything else through the tunnel.
-     *
-     * `dns-remote` first because the first server is what answers when no rule
-     * claims a query, and `final` says so explicitly as well. `reverse_mapping`
-     * keeps the name of every address sing-box handed out, so a connection to
-     * that address is matched by the domain lists even when nothing in it can be
-     * sniffed.
+     * The resolver for names that go direct — and for the outbound's own server
+     * name. No `detour`: the default dialer already goes straight out, pinned to
+     * the physical interface on iOS, outside the VPN on Android, and sing-box
+     * refuses, at start rather than at check, a detour to a direct outbound
+     * with no options: "detour to an empty direct outbound makes no sense".
+     * That line is what the first Bypass Russia tunnel on a phone died of.
+     */
+    private fun JsonArrayBuilder.addDirectDnsServer(direct: DirectDns) {
+        addJsonObject {
+            put("tag", "dns-direct")
+            when (direct) {
+                DirectDns.System -> put("type", "local")
+                is DirectDns.Servers -> {
+                    put("type", "udp"); put("server", direct.pick())
+                }
+                DirectDns.Placeholder -> {
+                    put("type", "udp"); put("server", DIRECT_DNS_PLACEHOLDER)
+                }
+            }
+        }
+    }
+
+    /** Names on the Russian lists resolve on the network underneath. */
+    private fun JsonArrayBuilder.addRussianNamesRule() {
+        addJsonObject {
+            putJsonArray("rule_set") { RuleSets.domains.forEach { add(it.tag) } }
+            put("server", "dns-direct")
+        }
+    }
+
+    private fun JsonObjectBuilder.putRuleSetDeclarations(bypass: Routing.BypassRussia) {
+        putJsonArray("rule_set") {
+            RuleSets.all.forEach { file ->
+                addJsonObject {
+                    put("type", "local"); put("tag", file.tag)
+                    put("format", "binary"); put("path", "${bypass.ruleSetDir}/${file.name}")
+                }
+            }
+        }
+    }
+
+    /**
+     * After `sniff` and `hijack-dns`, in an order that matters: the local
+     * network direct first only because it is cheaper to match, then the
+     * Russian lists. Domain matches come from the sniff, the reverse mapping or
+     * the fake-address store; the IP list matches raw-address dials. sing-box
+     * skips IP rules for an unresolved name, so nothing here resolves a
+     * foreign name on the network underneath.
+     */
+    private fun JsonArrayBuilder.addBypassRouteRules() {
+        addJsonObject { put("ip_is_private", true); put("outbound", "direct") }
+        addJsonObject {
+            putJsonArray("rule_set") { RuleSets.all.forEach { add(it.tag) } }
+            put("outbound", "direct")
+        }
+    }
+
+    /**
+     * The split for the socks shapes (Android, where hev-socks5-tunnel hands
+     * sing-box a hostname per connection): names on the Russian lists resolve
+     * on the network underneath, everything else through the tunnel.
+     * `dns-remote` first because the first server answers what no rule claims,
+     * and `final` says so explicitly as well. `reverse_mapping` keeps the name
+     * of every address handed out, so a connection to it is matched by the
+     * domain lists even when nothing in it can be sniffed.
      */
     private fun JsonObjectBuilder.putBypassDns(bypass: Routing.BypassRussia, remoteOverTcp: Boolean) {
         putJsonObject("dns") {
             putJsonArray("servers") {
-                addJsonObject {
-                    put("type", if (remoteOverTcp) "tcp" else "udp"); put("tag", "dns-remote")
-                    put("server", REMOTE_DNS_SERVER); put("detour", "out")
-                }
-                addJsonObject {
-                    put("tag", "dns-direct")
-                    // No `detour`. The default dialer already goes straight out —
-                    // pinned to the physical interface on iOS, outside the VPN on
-                    // Android — and sing-box refuses, at start rather than at
-                    // check, a detour to a direct outbound with no options:
-                    // "detour to an empty direct outbound makes no sense". That
-                    // line is what the first Bypass Russia tunnel on a phone
-                    // died of, after every check had passed.
-                    when (val dns = bypass.directDns) {
-                        DirectDns.System -> put("type", "local")
-                        is DirectDns.Servers -> {
-                            put("type", "udp"); put("server", dns.pick())
-                        }
-                        DirectDns.Placeholder -> {
-                            put("type", "udp"); put("server", DIRECT_DNS_PLACEHOLDER)
-                        }
-                    }
-                }
+                addRemoteDnsServer(overTcp = remoteOverTcp)
+                addDirectDnsServer(bypass.directDns)
             }
-            putJsonArray("rules") {
-                addJsonObject {
-                    putJsonArray("rule_set") { RuleSets.domains.forEach { add(it.tag) } }
-                    put("server", "dns-direct")
-                }
-            }
+            putJsonArray("rules") { addRussianNamesRule() }
             put("final", "dns-remote")
             put("reverse_mapping", true)
         }
     }
 
     /**
-     * The rules, in an order that matters:
-     *
-     * 1. `sniff`, so a TLS or HTTP connection carries its domain and the lists
-     *    can match it. Without it every connection arriving by IP — which on
-     *    iOS is all of them — could only match the IP list.
-     * 2. `hijack-dns`, so the system's queries are answered here and split by
-     *    the rules above rather than forwarded as datagrams to a public
-     *    resolver through the tunnel.
-     * 3. The local network direct: printers, routers, a NAS. Before the lists
-     *    only because it is cheaper to match.
-     * 4. The Russian lists direct. Domain matches come from the sniff or the
-     *    reverse mapping; the IP list matches raw-address dials and, on iOS,
-     *    every connection. sing-box skips IP rules for an unresolved name, so
-     *    nothing here resolves a foreign name on the network underneath.
-     *
-     * `default_domain_resolver` is what an outbound uses to dial a *name*: the
-     * server's own hostname in `out`, and any Russian name `direct` is handed.
-     * Both belong on the network underneath. The tunnel-bound names never reach
-     * it — sing-box sends those to the server unresolved.
+     * `sniff` first so a TLS or HTTP connection carries its domain; then
+     * `hijack-dns`, so the system's queries are answered here rather than
+     * forwarded as datagrams; then the bypass rules. `default_domain_resolver`
+     * is what an outbound uses to dial a *name*: the server's own hostname in
+     * `out`, and any Russian name `direct` is handed — both belong on the
+     * network underneath. Tunnel-bound names never reach it; sing-box sends
+     * those to the server unresolved.
      */
     private fun JsonObjectBuilder.putBypassRoute(bypass: Routing.BypassRussia) {
         putJsonObject("route") {
-            putJsonArray("rule_set") {
-                RuleSets.all.forEach { file ->
-                    addJsonObject {
-                        put("type", "local"); put("tag", file.tag)
-                        put("format", "binary"); put("path", "${bypass.ruleSetDir}/${file.name}")
-                    }
-                }
-            }
+            putRuleSetDeclarations(bypass)
             putJsonArray("rules") {
                 addJsonObject { put("action", "sniff") }
                 addJsonObject { put("action", "hijack-dns"); put("port", 53) }
-                addJsonObject { put("ip_is_private", true); put("outbound", "direct") }
-                addJsonObject {
-                    putJsonArray("rule_set") { RuleSets.all.forEach { add(it.tag) } }
-                    put("outbound", "direct")
-                }
+                addBypassRouteRules()
             }
             put("final", "out")
             put("default_domain_resolver", "dns-direct")

@@ -19,6 +19,12 @@ WHAT CHANGED
   when you connected. Everything else resolves through the tunnel, over TCP
   when the room is an olcRTC one.
 • Changing the choice while connected reconnects.
+• Name lookups through an olcRTC room no longer wait on the relay: a name
+  bound for the tunnel gets an address at once and the exit resolves it, and
+  the DNS the tunnel announces to the system is now its own, so iOS stops
+  upgrading lookups to encrypted DNS at Cloudflare behind the tunnel's back.
+  Pages through a room should start loading in a second or two rather than
+  twenty.
 
 WHAT TO TEST
 

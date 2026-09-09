@@ -1,6 +1,13 @@
 package org.olcbox.app.net
 
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.addJsonObject
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.put
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertNotNull
@@ -86,6 +93,46 @@ class SingBoxConfigDumpTest {
      * opens local rule-sets while building the router — a missing file fails the
      * check exactly as it would fail a connect.
      */
+    /**
+     * A tun shape cannot be started on a runner — a tun needs privileges — but
+     * everything that failed at *start* so far lived in the dns section, which
+     * a socks inbound exercises just as well. So every tun dump also gets a
+     * twin with a socks inbound and its cache file pointed into the build
+     * directory, and the check script starts the twin.
+     */
+    private fun dumpWithSocksTwin(name: String, json: String) {
+        dump(name, json)
+        val obj = Json.parseToJsonElement(json).jsonObject.toMutableMap()
+        obj["inbounds"] = buildJsonArray {
+            addJsonObject {
+                put("type", "socks"); put("tag", "in")
+                put("listen", "127.0.0.1"); put("listen_port", 18811)
+            }
+        }
+        val experimental = obj["experimental"]?.jsonObject?.toMutableMap() ?: mutableMapOf()
+        val cache = experimental["cache_file"]?.jsonObject?.toMutableMap() ?: mutableMapOf()
+        cache["path"] = JsonPrimitive(File(outDir, "$name.cache.db").absolutePath)
+        experimental["cache_file"] = JsonObject(cache)
+        obj["experimental"] = JsonObject(experimental)
+        dump("$name-as-socks", JsonObject(obj).toString())
+    }
+
+    /** The iOS shapes in Global: they answer DNS themselves now, with fake addresses. */
+    @Test fun dumpIosShapes() {
+        val reality = LinkParser.parse(
+            "vless://11111111-1111-1111-1111-111111111111@127.0.0.1:443" +
+                "?security=reality&encryption=none&pbk=jNXHt1yRo0vDuchQlIP6Z0ZvjT3KtzVI-T4E7RoLJS0" +
+                "&sid=ab12cd34&fp=chrome&sni=www.microsoft.com&flow=xtls-rprx-vision&type=tcp#DE-reality"
+        )
+        assertNotNull(reality)
+        dumpWithSocksTwin("ios-tun-reality", SingBoxConfig.buildTun(reality))
+        dumpWithSocksTwin(
+            "ios-tun-socks-lossy",
+            SingBoxConfig.buildTunSocks(10810, username = "u", password = "p", upstreamUdpIsLossy = true)
+        )
+        assertTrue(File(outDir, "ios-tun-socks-lossy-as-socks.json").exists())
+    }
+
     @Test fun dumpBypassShapes() = runTest {
         val rules = File(outDir, "rules").apply { mkdirs() }
         for (file in RuleSets.all) File(rules, file.name).writeBytes(RuleSets.bytes(file))
@@ -105,10 +152,10 @@ class SingBoxConfigDumpTest {
 
         dump("bypass-socks-reality", SingBoxConfig.build(reality, routing = android))
         dump("bypass-socks-chain", SingBoxConfig.buildSocksChain(10808, username = "u", password = "p", routing = android))
-        dump("bypass-tun-reality", SingBoxConfig.buildTun(reality, routing = ios))
-        dump("bypass-tun-hysteria2", SingBoxConfig.buildTun(hy2, routing = ios))
-        dump("bypass-tun-socks", SingBoxConfig.buildTunSocks(10810, routing = ios))
-        dump(
+        dumpWithSocksTwin("bypass-tun-reality", SingBoxConfig.buildTun(reality, routing = ios))
+        dumpWithSocksTwin("bypass-tun-hysteria2", SingBoxConfig.buildTun(hy2, routing = ios))
+        dumpWithSocksTwin("bypass-tun-socks", SingBoxConfig.buildTunSocks(10810, routing = ios))
+        dumpWithSocksTwin(
             "bypass-tun-socks-lossy",
             SingBoxConfig.buildTunSocks(10810, username = "u", password = "p", upstreamUdpIsLossy = true, routing = ios)
         )

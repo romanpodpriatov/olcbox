@@ -23,7 +23,12 @@ final class LibboxPlatform: NSObject, LibboxPlatformInterfaceProtocol {
         static let address = "172.19.0.1"
         static let mask = "255.255.255.252"
         static let mtu = 9000
-        static let dns = ["1.1.1.1", "8.8.8.8"]
+        // An address only our own sing-box answers — every query to it is
+        // hijacked on port 53. It used to be 1.1.1.1 and 8.8.8.8, which iOS
+        // knows as encrypted-DNS providers and quietly upgraded to DoT/DoH:
+        // those queries left through the tunnel past the hijack, and on a
+        // lossy relay each one took twenty seconds. Inside the tun's own /30.
+        static let dns = ["172.19.0.2"]
     }
 
     private weak var provider: NEPacketTunnelProvider?

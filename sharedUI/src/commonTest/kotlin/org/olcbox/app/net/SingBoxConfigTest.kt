@@ -131,20 +131,98 @@ class SingBoxConfigTest {
         // must be left alone: olcRTC's UDP relay is the whole reason calls and
         // games work, and a blanket reject here — which this config did carry
         // while the relay was missing — silently kills them.
-        val rules = lossyUdp()["route"]!!.jsonObject["rules"]!!.jsonArray
-        assertEquals("hijack-dns", rules[0].jsonObject["action"]!!.jsonPrimitive.content)
-        assertEquals(53, rules[0].jsonObject["port"]!!.jsonPrimitive.content.toInt())
-        assertEquals(1, rules.size, "nothing may reject UDP: calls and games ride it")
+        val rules = lossyUdp()["route"]!!.jsonObject["rules"]!!.jsonArray.map { it.jsonObject }
+        assertEquals("hijack-dns", str(rules[1], "action"))
+        assertEquals(53, rules[1]["port"]!!.jsonPrimitive.content.toInt())
+        assertTrue(rules.none { it["action"]?.jsonPrimitive?.content == "reject" }, "nothing may reject UDP: calls and games ride it")
     }
 
-    @Test fun upstreamsWithSoundUdpAreLeftExactlyAsTheyWere() {
-        // xhttp reaches Xray through this same builder and works today; every
-        // native outbound carries UDP itself. Rewriting their DNS would be a
-        // regression dressed as a fix, so the sections appear for no one else.
-        for (json in listOf(SingBoxConfig.buildTunSocks(10810), SingBoxConfig.buildTun(vless()))) {
+    @Test fun socksShapesStayDnsFreeInGlobal() {
+        // Android reaches these through hev-socks5-tunnel, whose own fake-IP
+        // mapping hands sing-box a hostname per connection: names never arrive
+        // as queries there, so a dns section would be dead weight. The iOS tun
+        // shapes are the opposite case and get one always — see below.
+        for (json in listOf(SingBoxConfig.build(vless()), SingBoxConfig.buildSocksChain(10808))) {
             val obj = Json.parseToJsonElement(json).jsonObject
-            assertTrue(obj["dns"] == null, "an upstream with sound UDP must resolve as before")
-            assertTrue(obj["route"] == null, "no rules belong on a transport that already works")
+            assertTrue(obj["dns"] == null, "a socks shape resolves nothing itself")
+            assertTrue(obj["route"] == null, "no rules belong on a socks shape in Global")
+        }
+    }
+
+    // --- iOS: sing-box answers every name itself, and fakes the tunnel's ---
+
+    private fun iosShapes(routing: Routing = Routing.Global) = mapOf(
+        "tun" to SingBoxConfig.buildTun(vless(), routing = routing),
+        "tun-socks" to SingBoxConfig.buildTunSocks(10810, routing = routing),
+        "tun-socks-lossy" to SingBoxConfig.buildTunSocks(
+            10810, username = "u", password = "p", upstreamUdpIsLossy = true, routing = routing
+        ),
+    )
+
+    @Test fun everyIosShapeAnswersDnsItself() {
+        // The tun delivers IPs, so every name must be resolved here; and the
+        // resolver the system is told about is one only this config answers,
+        // so iOS stops upgrading to DoT/DoH at Cloudflare behind our back.
+        for ((name, json) in iosShapes()) {
+            val obj = obj(json)
+            val servers = dnsServers(json)
+            assertEquals(listOf("dns-remote", "dns-direct", "dns-fakeip"), servers.map { str(it, "tag") }, name)
+            assertEquals("out", str(servers[0], "detour"), name)
+            assertEquals(SingBoxConfig.DIRECT_DNS_PLACEHOLDER, str(servers[1], "server"), name)
+            assertNull(servers[1]["detour"], name)
+            assertEquals("fakeip", str(servers[2], "type"), name)
+            val rules = routeRules(json)
+            assertEquals("sniff", str(rules[0], "action"), name)
+            assertEquals("hijack-dns", str(rules[1], "action"), name)
+            assertEquals(53, rules[1]["port"]!!.jsonPrimitive.content.toInt(), name)
+            assertEquals("out", str(obj["route"]!!.jsonObject, "final"), name)
+            assertEquals("dns-direct", str(obj["route"]!!.jsonObject, "default_domain_resolver"), name)
+            val cache = obj["experimental"]!!.jsonObject["cache_file"]!!.jsonObject
+            assertEquals(true, cache["enabled"]!!.jsonPrimitive.content.toBoolean(), name)
+            assertEquals(true, cache["store_fakeip"]!!.jsonPrimitive.content.toBoolean(), name)
+        }
+    }
+
+    @Test fun tunnelBoundNamesGetAFakeAddressAndHttpsRecordsAreRefused() {
+        // A fake address is answered at once and the connection leaves by name,
+        // so the exit resolves it: no round trip through a relay that took
+        // twenty seconds per lookup. HTTPS-type queries were the other twenty
+        // seconds, and a refusal is all a client needs to carry on without one.
+        for ((name, json) in iosShapes()) {
+            val rules = obj(json)["dns"]!!.jsonObject["rules"]!!.jsonArray.map { it.jsonObject }
+            assertEquals(2, rules.size, name)
+            assertEquals(listOf("A", "AAAA"), strings(rules[0], "query_type"), name)
+            assertEquals("dns-fakeip", str(rules[0], "server"), name)
+            assertEquals(listOf("HTTPS"), strings(rules[1], "query_type"), name)
+            assertEquals("reject", str(rules[1], "action"), name)
+            assertEquals("dns-remote", str(obj(json)["dns"]!!.jsonObject, "final"), name)
+        }
+    }
+
+    @Test fun fakeAddressesAreIPv4OnlyBecauseTheTunCarriesNoIPv6() {
+        // Without an inet6 range sing-box answers AAAA with an empty NOERROR,
+        // and the device uses the IPv4 fake. A fake IPv6 would leave through
+        // the physical interface, which the tun does not claim on iOS.
+        val fake = dnsServers(SingBoxConfig.buildTun(vless()))[2]
+        assertEquals("198.18.0.0/15", str(fake, "inet4_range"))
+        assertNull(fake["inet6_range"])
+    }
+
+    @Test fun bypassOnIosResolvesRussianNamesForRealBeforeFakingTheRest() {
+        for ((name, json) in iosShapes(bypass(DirectDns.Placeholder))) {
+            val rules = obj(json)["dns"]!!.jsonObject["rules"]!!.jsonArray.map { it.jsonObject }
+            assertEquals(3, rules.size, name)
+            assertEquals(RuleSets.domains.map { it.tag }, strings(rules[0], "rule_set"), name)
+            assertEquals("dns-direct", str(rules[0], "server"), name)
+            assertEquals("dns-fakeip", str(rules[1], "server"), name)
+            assertEquals("reject", str(rules[2], "action"), name)
+        }
+    }
+
+    @Test fun iosGlobalShapesRouteOnlyDnsAndKeepOneOutbound() {
+        for ((name, json) in iosShapes()) {
+            assertEquals(2, routeRules(json).size, name)
+            assertEquals(1, obj(json)["outbounds"]!!.jsonArray.size, name)
         }
     }
 
@@ -453,7 +531,8 @@ class SingBoxConfigTest {
         for ((name, json) in shapes(bypass())) {
             val dns = obj(json)["dns"]!!.jsonObject
             val servers = dnsServers(json)
-            assertEquals(listOf("dns-remote", "dns-direct"), servers.map { str(it, "tag") }, name)
+            // The iOS shapes append a fakeip server after these two; see below.
+            assertEquals(listOf("dns-remote", "dns-direct"), servers.take(2).map { str(it, "tag") }, name)
             assertEquals("out", str(servers[0], "detour"), name)
             assertEquals("udp", str(servers[1], "type"), name)
             assertEquals("10.20.30.40", str(servers[1], "server"), name)
@@ -461,7 +540,6 @@ class SingBoxConfigTest {
             // refuses at start a detour to a direct outbound with no options.
             assertNull(servers[1]["detour"], name)
             val rules = dns["rules"]!!.jsonArray.map { it.jsonObject }
-            assertEquals(1, rules.size, name)
             assertEquals(RuleSets.domains.map { it.tag }, strings(rules[0], "rule_set"), name)
             assertEquals("dns-direct", str(rules[0], "server"), name)
             assertEquals("dns-remote", str(dns, "final"), name)
