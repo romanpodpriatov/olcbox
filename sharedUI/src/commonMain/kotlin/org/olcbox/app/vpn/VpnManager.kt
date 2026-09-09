@@ -54,4 +54,14 @@ interface VpnManager {
     suspend fun ping(locationConfig: LocationConfig): Long?
     suspend fun checkConnection(locationConfig: LocationConfig): Long?
     fun subscriptionFetchProxy(): SubscriptionFetchProxy? = null
+
+    /**
+     * What the platform's tunnel component wrote, for the exported log only.
+     *
+     * On iOS the tunnel is another process, and its files reached [logs] only
+     * when a start had failed — a session that connected and then routed
+     * wrongly exported nothing about itself. Empty where the tunnel runs
+     * in-process and its lines already reach [logs].
+     */
+    fun diagnosticsLog(): String = ""
 }

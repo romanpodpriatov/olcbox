@@ -116,6 +116,8 @@ class IosVpnManager(
 
     override fun needsPermission(): Boolean = false
 
+    override fun diagnosticsLog(): String = packetTunnelBridge.engineLog()
+
     override fun startVpn() {
         desiredConnected = true
         reconnectAttempt = 0
