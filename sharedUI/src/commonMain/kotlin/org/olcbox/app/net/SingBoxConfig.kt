@@ -414,13 +414,20 @@ object SingBoxConfig {
                 }
                 addJsonObject {
                     put("tag", "dns-direct")
+                    // No `detour`. The default dialer already goes straight out —
+                    // pinned to the physical interface on iOS, outside the VPN on
+                    // Android — and sing-box refuses, at start rather than at
+                    // check, a detour to a direct outbound with no options:
+                    // "detour to an empty direct outbound makes no sense". That
+                    // line is what the first Bypass Russia tunnel on a phone
+                    // died of, after every check had passed.
                     when (val dns = bypass.directDns) {
                         DirectDns.System -> put("type", "local")
                         is DirectDns.Servers -> {
-                            put("type", "udp"); put("server", dns.pick()); put("detour", "direct")
+                            put("type", "udp"); put("server", dns.pick())
                         }
                         DirectDns.Placeholder -> {
-                            put("type", "udp"); put("server", DIRECT_DNS_PLACEHOLDER); put("detour", "direct")
+                            put("type", "udp"); put("server", DIRECT_DNS_PLACEHOLDER)
                         }
                     }
                 }

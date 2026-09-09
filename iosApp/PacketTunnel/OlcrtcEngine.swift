@@ -73,7 +73,11 @@ enum OlcrtcEngine {
     /// short and the number wants choosing properly; if it still stops dead
     /// after the same pairs, more time was never the problem and the log now
     /// covers enough of the attempt to say what is.
-    private static let readyTimeoutMillis = 20_000
+    // 35 s, up from 20. A cellular ICE negotiation to the Telemost SFU took
+    // 21 s from start to "SOCKS5 server listening" on 2026-09-09 and was
+    // declared timed out one second short of ready; the app itself waits 45 s
+    // for the tunnel, so there is room, and a slow start is not a dead one.
+    private static let readyTimeoutMillis = 35_000
 
     /// `resolvers` are the servers of the network the extension stands on, as
     /// ResolverSnapshot read them before the tunnel's settings went on; empty

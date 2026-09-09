@@ -457,7 +457,9 @@ class SingBoxConfigTest {
             assertEquals("out", str(servers[0], "detour"), name)
             assertEquals("udp", str(servers[1], "type"), name)
             assertEquals("10.20.30.40", str(servers[1], "server"), name)
-            assertEquals("direct", str(servers[1], "detour"), name)
+            // No detour: the default dialer is already direct, and sing-box
+            // refuses at start a detour to a direct outbound with no options.
+            assertNull(servers[1]["detour"], name)
             val rules = dns["rules"]!!.jsonArray.map { it.jsonObject }
             assertEquals(1, rules.size, name)
             assertEquals(RuleSets.domains.map { it.tag }, strings(rules[0], "rule_set"), name)
@@ -484,7 +486,7 @@ class SingBoxConfigTest {
         val json = SingBoxConfig.buildTun(vless(), routing = bypass(DirectDns.Placeholder))
         val server = dnsServers(json)[1]
         assertEquals(SingBoxConfig.DIRECT_DNS_PLACEHOLDER, str(server, "server"))
-        assertEquals("direct", str(server, "detour"))
+        assertNull(server["detour"])
         // Exactly once, quoted: the extension substitutes by string and must not
         // be able to hit anything else.
         val quoted = Regex("\"" + Regex.escape(SingBoxConfig.DIRECT_DNS_PLACEHOLDER) + "\"")

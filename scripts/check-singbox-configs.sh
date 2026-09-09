@@ -27,4 +27,31 @@ for config in "${configs[@]}"; do
     failed=1
   fi
 done
+
+# `check` builds the box and stops; sing-box validates some things only when
+# it starts — a DNS server's detour, for one, which is how a config passed
+# every check here and then refused to start on a phone. So every shape that
+# needs no tun (a tun needs privileges this runner may not have) is started
+# for a few seconds as well: it either comes up and is killed by the timeout,
+# or it names what is wrong with it.
+if command -v timeout >/dev/null 2>&1; then
+  for config in "${configs[@]}"; do
+    if grep -q '"type":"tun"' "$config"; then
+      continue
+    fi
+    set +e
+    output="$(timeout 4 "$bin" run -c "$config" 2>&1)"
+    code=$?
+    set -e
+    if [ "$code" -eq 124 ] || [ "$code" -eq 0 ]; then
+      echo "runs $(basename "$config")"
+    else
+      echo "FAIL $(basename "$config") did not start (exit $code):"
+      echo "$output" | tail -5
+      failed=1
+    fi
+  done
+else
+  echo "no 'timeout' here; the start-up check was skipped (it runs in CI)"
+fi
 exit "$failed"
