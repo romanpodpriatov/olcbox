@@ -105,9 +105,19 @@ object DesktopConnectionModePreference {
     }
 
     /** The option currently in force, which is not always the one stored. */
-    fun effective(): DesktopConnectionModeOption? {
-        val options = available()
-        val stored = options.firstOrNull { it.mode == selected() }
+    fun effective(): DesktopConnectionModeOption? = effective(available(), selected())
+
+    /**
+     * The same answer from values the caller already holds. A screen that keeps
+     * the options and the choice as state derives the answer from them, so a
+     * pick redraws it; asked the disk each time, it redraws only when something
+     * unrelated happens to.
+     */
+    fun effective(
+        options: List<DesktopConnectionModeOption>,
+        selected: DesktopConnectionMode
+    ): DesktopConnectionModeOption? {
+        val stored = options.firstOrNull { it.mode == selected }
         if (stored != null && stored.enabled) return stored
         return options.firstOrNull { it.enabled } ?: options.firstOrNull()
     }
@@ -119,9 +129,18 @@ object DesktopConnectionModePreference {
  * tunnels route by policy and by metric, and a direct socket from the core
  * would enter them, so they stay global until they have a way out.
  */
-fun desktopRoutingUnavailableReason(): String? =
-    when (DesktopMode.current()) {
-        DesktopMode.LinuxTun, DesktopMode.WindowsTun ->
-            "Applies in proxy mode and in the macOS tunnel. The Linux and Windows tunnels follow in a later build."
-        DesktopMode.MacTun, DesktopMode.SystemProxy -> null
+fun desktopRoutingUnavailableReason(effective: DesktopConnectionMode?): String? =
+    routingUnavailableReasonFor(DesktopPaths.os, effective)
+
+internal fun routingUnavailableReasonFor(os: DesktopOs, effective: DesktopConnectionMode?): String? {
+    val tunWithoutAWayOut = when (os) {
+        DesktopOs.Linux -> true
+        DesktopOs.Windows -> effective != DesktopConnectionMode.Proxy
+        DesktopOs.MacOS, DesktopOs.Other -> false
     }
+    return if (tunWithoutAWayOut) {
+        "Applies in proxy mode and in the macOS tunnel. The Linux and Windows tunnels follow in a later build."
+    } else {
+        null
+    }
+}

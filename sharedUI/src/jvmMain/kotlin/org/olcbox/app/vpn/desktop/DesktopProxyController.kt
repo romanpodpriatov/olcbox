@@ -108,8 +108,13 @@ internal class MacOsProxyController : DesktopProxyController {
                     "networksetup", "-setsocksfirewallproxy", service,
                     target.socksHost, target.socksPort.toString()
                 )
-                if (target.username.isNotBlank()) {
-                    set += listOf("on", target.username, target.password)
+                // "off" said out loud: without it macOS keeps the authenticated
+                // flag and the credentials of the last proxy that had any, and a
+                // front that takes none is then greeted with somebody else's login.
+                set += if (target.username.isNotBlank()) {
+                    listOf("on", target.username, target.password)
+                } else {
+                    listOf("off")
                 }
                 listOf(
                     set.toList(),

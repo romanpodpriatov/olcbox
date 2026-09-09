@@ -206,7 +206,7 @@ class DesktopProxyModeTest {
         )
         assertEquals(
             listOf(
-                listOf("networksetup", "-setsocksfirewallproxy", "Wi-Fi", "127.0.0.1", "10810"),
+                listOf("networksetup", "-setsocksfirewallproxy", "Wi-Fi", "127.0.0.1", "10810", "off"),
                 listOf("networksetup", "-setsocksfirewallproxystate", "Wi-Fi", "on"),
                 listOf("networksetup", "-setautoproxystate", "Wi-Fi", "off")
             ),

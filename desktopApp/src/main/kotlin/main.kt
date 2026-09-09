@@ -186,7 +186,11 @@ fun main(args: Array<String>) = application {
     // itself in two places at once.
     var connectionModeOptions by remember { mutableStateOf(DesktopConnectionModePreference.available()) }
     var selectedConnectionMode by remember { mutableStateOf(DesktopConnectionModePreference.selected()) }
-    val effectiveConnectionMode = DesktopConnectionModePreference.effective()
+    // Derived from the two states above, not read back from disk: a pick has to
+    // redraw the chooser, and a value nothing in the composition depends on
+    // redraws only when something unrelated happens to.
+    val effectiveConnectionMode =
+        DesktopConnectionModePreference.effective(connectionModeOptions, selectedConnectionMode)
     val scope = rememberCoroutineScope()
     val trayState = rememberTrayState()
     val trayHomeState by dependencies.homeViewModel.state.collectAsState()
@@ -494,7 +498,7 @@ fun main(args: Array<String>) = application {
                         subscriptionSettings = subscriptionSettings,
                         routingSettings = routingSettings,
                         onRoutingSettingsChanged = dependencies.homeViewModel::updateRoutingSettings,
-                        routingUnavailableReason = desktopRoutingUnavailableReason(),
+                        routingUnavailableReason = desktopRoutingUnavailableReason(effectiveConnectionMode?.mode),
                         onSubscriptionSettingsChanged =
                             dependencies.homeViewModel::updateSubscriptionSettings,
                         onDismiss = { showDesktopSettings = false },
