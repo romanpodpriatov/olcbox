@@ -1163,8 +1163,11 @@ jobs:
           # Made by name from the team's distribution certificates and installed
           # where xcodebuild looks, so a renewed certificate costs a re-run, not
           # a new secret. See the script for what the key has to be allowed to do.
-          python3 -m pip install --quiet pyjwt cryptography
-          python3 scripts/asc-profiles.py \
+          # A venv, because the runner's Homebrew Python refuses to install into
+          # itself (PEP 668, "externally-managed-environment").
+          python3 -m venv "$RUNNER_TEMP/asc-venv"
+          "$RUNNER_TEMP/asc-venv/bin/pip" install --quiet pyjwt cryptography
+          "$RUNNER_TEMP/asc-venv/bin/python" scripts/asc-profiles.py \
             --key-id "$MACOS_NOTARY_KEY_ID" \
             --issuer-id "$MACOS_NOTARY_ISSUER_ID" \
             --key-path "$RUNNER_TEMP/asc.p8" \
