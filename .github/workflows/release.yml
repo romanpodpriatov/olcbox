@@ -1463,6 +1463,12 @@ jobs:
         with:
           path: dist
 
+      - name: Keep the debug symbols out of the release
+        # The dSYMs ride along as a workflow artifact so a crash log can be
+        # read later; they are not something to ship. Left here, the DWARF
+        # binaries and their Info.plists became release assets once.
+        run: rm -rf dist/ProofKit-ios-dSYMs
+
       - name: Generate checksums and release notes
         run: |
           checksum_file="dist/SHA256SUMS.txt"
