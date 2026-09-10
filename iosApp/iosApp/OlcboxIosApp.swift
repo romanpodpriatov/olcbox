@@ -33,6 +33,17 @@ struct OlcboxIosApp: App {
                 appSession: appSession
             )
             .ignoresSafeArea()
+            // The one-tap import link: proofkit://add?url=… by scheme, and
+            // https://proofkit.org/add#… as a universal link. Both end in the
+            // same import a paste goes through.
+            .onOpenURL { url in
+                appSession.handleIncomingLink(uri: url.absoluteString)
+            }
+            .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { activity in
+                if let url = activity.webpageURL {
+                    appSession.handleIncomingLink(uri: url.absoluteString)
+                }
+            }
         }
     }
 }
