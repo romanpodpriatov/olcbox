@@ -86,7 +86,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           repository: romanpodpriatov/olcrtc
-          ref: proofkit-udp-spike
+          ref: proofkit
           path: olcrtc
           submodules: recursive
       - name: Setup JDK
@@ -164,7 +164,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           repository: romanpodpriatov/olcrtc
-          ref: proofkit-udp-spike
+          ref: proofkit
           path: olcrtc
           submodules: recursive
 
@@ -357,7 +357,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           repository: romanpodpriatov/olcrtc
-          ref: proofkit-udp-spike
+          ref: proofkit
           path: olcrtc
           submodules: recursive
 

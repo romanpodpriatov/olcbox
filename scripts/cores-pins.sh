@@ -30,10 +30,11 @@
 GO_VERSION="${GO_VERSION:-1.26.5}"
 SINGBOX_VERSION="${SINGBOX_VERSION:-1.13.14}"
 LIBXRAY_VERSION="${LIBXRAY_VERSION:-v1.260711.0}"
-# Branch `proofkit-udp-spike` — the only lineage carrying a UDP relay. The pin
-# before this was upstream `42ae4e0c`, where internal/client/udp.go does not
-# exist at all, so the SOCKS5 server could not answer UDP ASSOCIATE and every
-# datagram died inside the extension, DNS first among them.
+# Branch `proofkit` of the fork, re-laid on upstream master 189d16c. The lineage
+# before it, `proofkit-udp-spike` (archived), was the only one carrying a UDP
+# relay; the pin before that was upstream `42ae4e0c`, where
+# internal/client/udp.go does not exist at all, so the SOCKS5 server could not
+# answer UDP ASSOCIATE and every datagram died inside the extension.
 #
 # c83717e7e900 → 240487450763: the dual-stack dial fix (olcrtc#1). Carrier auth
 # resolved through a single IPv4 literal and dialed whichever family survived
@@ -67,7 +68,12 @@ LIBXRAY_VERSION="${LIBXRAY_VERSION:-v1.260711.0}"
 # server answers, on a four-second budget. The build before this one replaced
 # the carrier's resolver rather than preceding it, and a network that drops
 # every public resolver then answered nothing at all (olcbox#15, second round).
-OLCRTC_VERSION="${OLCRTC_VERSION:-v0.0.0-20260910041948-47646a95afb3}"
+#
+# 47646a95afb3 → 9da2735b06c4: the fork rebased onto upstream 189d16c (record
+# layer v2, handshake v3, per-session resolver, the mobile.Runtime API). Not
+# wire-compatible with the build before it: a room served by the old engine
+# answers this one with a handshake timeout, which the app now names.
+OLCRTC_VERSION="${OLCRTC_VERSION:-v0.0.0-20260910180915-9da2735b06c4}"
 
 # Bumped when the framework's *shape* changes while its pins do not — adding the
 # macOS slice being the first case. The versions alone cannot express that: they
@@ -101,7 +107,10 @@ OLCRTC_VERSION="${OLCRTC_VERSION:-v0.0.0-20260910041948-47646a95afb3}"
 # 8 → 9: olcRTC moved again (the Jitsi signalling dial), for the same reason.
 #
 # 9 → 10: olcRTC moved again (the system-resolver fallback), for the same reason.
-CORES_BUILD="${CORES_BUILD:-12}"
+#
+# 12 → 13: olcRTC moved and its API changed shape (mobile.Runtime instead of
+# package functions); every bridge in the app was rewritten for it.
+CORES_BUILD="${CORES_BUILD:-13}"
 
 # The revision rather than the whole pseudo-version: the tag stays readable and
 # still changes whenever olcRTC does.
