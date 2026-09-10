@@ -67,7 +67,7 @@ LIBXRAY_VERSION="${LIBXRAY_VERSION:-v1.260711.0}"
 # server answers, on a four-second budget. The build before this one replaced
 # the carrier's resolver rather than preceding it, and a network that drops
 # every public resolver then answered nothing at all (olcbox#15, second round).
-OLCRTC_VERSION="${OLCRTC_VERSION:-v0.0.0-20260908014047-bc61399dd254}"
+OLCRTC_VERSION="${OLCRTC_VERSION:-v0.0.0-20260910041948-47646a95afb3}"
 
 # Bumped when the framework's *shape* changes while its pins do not — adding the
 # macOS slice being the first case. The versions alone cannot express that: they
@@ -101,7 +101,7 @@ OLCRTC_VERSION="${OLCRTC_VERSION:-v0.0.0-20260908014047-bc61399dd254}"
 # 8 → 9: olcRTC moved again (the Jitsi signalling dial), for the same reason.
 #
 # 9 → 10: olcRTC moved again (the system-resolver fallback), for the same reason.
-CORES_BUILD="${CORES_BUILD:-11}"
+CORES_BUILD="${CORES_BUILD:-12}"
 
 # The revision rather than the whole pseudo-version: the tag stays readable and
 # still changes whenever olcRTC does.

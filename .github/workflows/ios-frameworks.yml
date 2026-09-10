@@ -38,7 +38,7 @@ env:
   LIBXRAY_VERSION: v1.260711.0
   # A published revision, not the OLCRTC_REPO working copy the app's own
   # OlcRtcMobile is built from — this runner has no such checkout.
-  OLCRTC_VERSION: v0.0.0-20260908014047-bc61399dd254
+  OLCRTC_VERSION: v0.0.0-20260910041948-47646a95afb3
 
 jobs:
   build:
