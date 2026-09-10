@@ -19,6 +19,12 @@ WHAT CHANGED
   when you connected. Everything else resolves through the tunnel, over TCP
   when the room is an olcRTC one.
 • Changing the choice while connected reconnects.
+• Links from your provider's bot or panel (proofkit.org/add… or
+  proofkit://add?url=…) open in the app and add the server list.
+• The camera message before the permission has one button, Continue, and
+  the decision is made in the system prompt.
+• olcRTC rooms on Jitsi no longer drop during a long upload (the queue
+  behind the control channel was unbounded).
 • Name lookups through an olcRTC room no longer wait on the relay: a name
   bound for the tunnel gets an address at once and the exit resolves it, and
   the DNS the tunnel announces to the system is now its own, so iOS stops
@@ -44,4 +50,9 @@ WHAT TO TEST
 5. Memory: nothing should change, but if the tunnel drops on its own under
    Bypass Russia, say so — the extension's ceiling is the one thing the lists
    could push on.
+6. Import link: put proofkit://add?url=<your list link, percent-encoded> in
+   Notes and tap it — the app opens and the list appears. Tap the "Open in
+   ProofKit" button under the bot's link too.
+7. Jitsi rooms: run a Speedtest upload through a room for a minute. Before,
+   the tunnel reconnected mid-upload; now it should hold.
 

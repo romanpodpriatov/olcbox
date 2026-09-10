@@ -1536,6 +1536,14 @@ jobs:
             fi
             echo
             echo
+            # A note that belongs to this release and not to a commit: an
+            # Android reinstall, a server switch. Written for one release and
+            # removed after it ships, so it never repeats.
+            if [ -f docs/release-notes/pending.md ]; then
+              cat docs/release-notes/pending.md
+              echo
+              echo
+            fi
             cat release-notes.md
           } > versioned-notes.md
 
