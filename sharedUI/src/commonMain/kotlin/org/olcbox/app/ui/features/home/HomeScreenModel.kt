@@ -25,6 +25,7 @@ import org.olcbox.app.util.nowMillis
 import org.olcbox.app.data.repository.LocationsRepository
 import org.olcbox.app.data.repository.SubscriptionRefreshReport
 import org.olcbox.app.ui.features.locations.LocationItem
+import org.olcbox.app.vpn.OlcrtcFailure
 import org.olcbox.app.vpn.VpnManager
 import org.olcbox.app.vpn.VpnStatus
 
@@ -582,7 +583,7 @@ data class HomeScreenState(
         // returns to START and says nothing. The commonest case of all is a
         // user who declined the VPN permission prompt.
         is VpnStatus.Error ->
-            copy(isVpnConnected = false, isVpnLoading = false, failure = status.message)
+            copy(isVpnConnected = false, isVpnLoading = false, failure = OlcrtcFailure.describe(status.message))
     }
 }
 

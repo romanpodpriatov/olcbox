@@ -1,6 +1,7 @@
 package org.olcbox.app.ui.features.home
 
 import org.olcbox.app.data.model.LocationConfig
+import org.olcbox.app.vpn.OlcrtcFailure
 import org.olcbox.app.vpn.VpnStatus
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -29,6 +30,12 @@ class HomeScreenStateTest {
         assertEquals("carrier auth failed", failed.notice())
         assertFalse(failed.isVpnLoading)
         assertFalse(failed.isVpnConnected)
+    }
+
+    @Test
+    fun anEngineProtocolErrorIsTranslatedForTheUser() {
+        val state = idle.applying(VpnStatus.Error("handshake: peer speaks an incompatible olcrtc protocol"))
+        assertEquals(OlcrtcFailure.PROTOCOL, state.notice())
     }
 
     // ── what clears it ────────────────────────────────────────────────────
