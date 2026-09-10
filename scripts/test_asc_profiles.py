@@ -109,6 +109,42 @@ class EnsureProfile(unittest.TestCase):
             asc.ensure_profile(client, "ProofKit App Store", "org.proofkit.app", [])
 
 
+class EnsureCapability(unittest.TestCase):
+    bundle = {"id": "b1", "attributes": {"identifier": "org.proofkit.app"}}
+
+    def test_a_missing_capability_is_enabled_on_the_app_id(self):
+        client = FakeClient({"/bundleIds?": [self.bundle], "/bundleIds/b1/bundleIdCapabilities": []})
+        self.assertTrue(asc.ensure_capability(client, "org.proofkit.app", "ASSOCIATED_DOMAINS"))
+        (path, body), = client.posted
+        self.assertEqual("/bundleIdCapabilities", path)
+        self.assertEqual("ASSOCIATED_DOMAINS", body["data"]["attributes"]["capabilityType"])
+        self.assertEqual("b1", body["data"]["relationships"]["bundleId"]["data"]["id"])
+
+    def test_a_present_capability_is_left_alone(self):
+        client = FakeClient({
+            "/bundleIds?": [self.bundle],
+            "/bundleIds/b1/bundleIdCapabilities": [{"attributes": {"capabilityType": "ASSOCIATED_DOMAINS"}}],
+        })
+        self.assertFalse(asc.ensure_capability(client, "org.proofkit.app", "ASSOCIATED_DOMAINS"))
+        self.assertEqual([], client.posted)
+
+    def test_a_fine_looking_profile_is_remade_when_forced(self):
+        # Made before the App ID gained the capability: ACTIVE, right
+        # certificate, wrong entitlements. Only force tells them apart.
+        client = FakeClient({
+            "/profiles?": [profile("p1", "ProofKit App Store", "ACTIVE", ["c1"])],
+            "/bundleIds?": [self.bundle],
+        })
+        made = asc.ensure_profile(client, "ProofKit App Store", "org.proofkit.app", [cert("c1", "2099-01-01T00:00:00Z")], force=True)
+        self.assertEqual(["/profiles/p1"], client.deleted)
+        self.assertEqual("new", made["id"])
+
+    def test_the_capability_argument_is_parsed_and_upper_cased(self):
+        self.assertEqual(("org.proofkit.app", "ASSOCIATED_DOMAINS"), asc.parse_capability_arg("org.proofkit.app=associated_domains"))
+        with self.assertRaises(Exception):
+            asc.parse_capability_arg("org.proofkit.app")
+
+
 class Install(unittest.TestCase):
     def test_writes_the_decoded_profile_under_its_uuid_in_every_directory(self):
         with tempfile.TemporaryDirectory() as a, tempfile.TemporaryDirectory() as b:

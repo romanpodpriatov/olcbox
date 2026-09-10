@@ -1171,6 +1171,7 @@ jobs:
             --key-id "$MACOS_NOTARY_KEY_ID" \
             --issuer-id "$MACOS_NOTARY_ISSUER_ID" \
             --key-path "$RUNNER_TEMP/asc.p8" \
+            --capability "org.proofkit.app=ASSOCIATED_DOMAINS" \
             --profile "ProofKit App Store=org.proofkit.app" \
             --profile "ProofKit PacketTunnel App Store=org.proofkit.app.PacketTunnel"
 

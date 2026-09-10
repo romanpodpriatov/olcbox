@@ -126,18 +126,52 @@ def bundle_id_resource(client, identifier: str) -> dict:
     )
 
 
-def ensure_profile(client, name: str, identifier: str, certificates: list) -> dict:
-    """Return the profile resource, creating or recreating it as needed."""
+def ensure_capability(client, identifier: str, capability_type: str) -> bool:
+    """Enable a capability on the App ID; True when this call enabled it.
+
+    A profile carries the App ID's capabilities as entitlements, so an app that
+    starts declaring, say, associated domains needs the App ID to have them
+    before its profile is made — otherwise xcodebuild signs nothing and says
+    the profile lacks the entitlement. Apple invalidates a profile when its App
+    ID gains a capability; the caller remakes it either way.
+    """
+    bundle = bundle_id_resource(client, identifier)
+    present = client.get_all(f"/bundleIds/{bundle['id']}/bundleIdCapabilities?limit=200")
+    if any(c["attributes"].get("capabilityType") == capability_type for c in present):
+        print(f"{identifier} already has {capability_type}")
+        return False
+    client.post(
+        "/bundleIdCapabilities",
+        {
+            "data": {
+                "type": "bundleIdCapabilities",
+                "attributes": {"capabilityType": capability_type},
+                "relationships": {"bundleId": {"data": {"type": "bundleIds", "id": bundle["id"]}}},
+            }
+        },
+    )
+    print(f"enabled {capability_type} on {identifier}")
+    return True
+
+
+def ensure_profile(client, name: str, identifier: str, certificates: list, force: bool = False) -> dict:
+    """Return the profile resource, creating or recreating it as needed.
+
+    `force` remakes a profile that looks fine: the App ID under it just gained
+    a capability, and a profile made before that carries the old entitlements
+    whatever its state says.
+    """
     wanted = {c["id"] for c in certificates}
     for existing in client.get_all(f"/profiles?filter[name]={urllib.request.quote(name)}&include=certificates&limit=200"):
         if existing["attributes"].get("name") != name:
             continue
         state = existing["attributes"].get("profileState")
         have = {c["id"] for c in existing.get("relationships", {}).get("certificates", {}).get("data", [])}
-        if state == "ACTIVE" and wanted and wanted <= have:
+        if state == "ACTIVE" and wanted and wanted <= have and not force:
             print(f"reusing {name} ({existing['attributes'].get('uuid')})")
             return existing
-        print(f"replacing {name}: state {state}, certificates {sorted(have)} vs {sorted(wanted)}")
+        why = "the App ID gained a capability" if force else f"state {state}, certificates {sorted(have)} vs {sorted(wanted)}"
+        print(f"replacing {name}: {why}")
         client.delete(f"/profiles/{existing['id']}")
 
     if not certificates:
@@ -174,6 +208,13 @@ def install(profile: dict, dirs=PROFILE_DIRS) -> list:
     return written
 
 
+def parse_capability_arg(value: str):
+    if "=" not in value:
+        raise argparse.ArgumentTypeError(f"expected BUNDLE_ID=CAPABILITY_TYPE, got {value!r}")
+    identifier, capability = value.split("=", 1)
+    return identifier.strip(), capability.strip().upper()
+
+
 def parse_profile_arg(value: str):
     name, sep, identifier = value.partition("=")
     if not sep or not name.strip() or not identifier.strip():
@@ -187,14 +228,23 @@ def main(argv=None) -> int:
     parser.add_argument("--issuer-id", required=True)
     parser.add_argument("--key-path", required=True, help="the .p8 private key")
     parser.add_argument("--profile", action="append", required=True, type=parse_profile_arg, metavar="NAME=BUNDLE_ID")
+    parser.add_argument(
+        "--capability",
+        action="append",
+        default=[],
+        type=parse_capability_arg,
+        metavar="BUNDLE_ID=CAPABILITY_TYPE",
+        help="enable a capability on the App ID first, e.g. org.proofkit.app=ASSOCIATED_DOMAINS",
+    )
     args = parser.parse_args(argv)
 
     with open(args.key_path) as f:
         client = Client(args.key_id, args.issuer_id, f.read())
+    changed = {identifier for identifier, capability in args.capability if ensure_capability(client, identifier, capability)}
     certificates = current_distribution_certificates(client)
     print(f"distribution certificates in the team: {len(certificates)}")
     for name, identifier in args.profile:
-        profile = ensure_profile(client, name, identifier, certificates)
+        profile = ensure_profile(client, name, identifier, certificates, force=identifier in changed)
         for path in install(profile):
             print(f"installed {path}")
     return 0
