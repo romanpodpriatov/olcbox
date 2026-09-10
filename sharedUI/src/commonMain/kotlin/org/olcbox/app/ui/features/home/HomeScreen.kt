@@ -578,14 +578,13 @@ fun HomeScreen(
     }
 
     if (showCameraRationale) {
+        // The only way out is forward, into the system prompt: App Review reads a
+        // message that can be dismissed as a permission request being delayed.
         CameraRationaleSheet(
-            onAllow = {
+            onContinue = {
                 showCameraRationale = false
                 onScanQrRequested()
-            },
-            // Declining connects nothing and asks nothing: the three other ways of
-            // adding a list are still on the sheet behind this one.
-            onDismiss = { showCameraRationale = false }
+            }
         )
     }
 

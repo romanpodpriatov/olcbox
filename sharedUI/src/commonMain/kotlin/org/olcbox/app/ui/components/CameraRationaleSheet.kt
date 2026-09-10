@@ -26,7 +26,7 @@ import org.olcbox.app.ui.theme.LocalPkPalette
 /**
  * Why this app wants a camera, before the system asks.
  *
- * New. The scanner used to be launched straight from the add sheet, so the first
+ * The scanner used to be launched straight from the add sheet, so the first
  * thing a user saw was the operating system's own permission prompt with no
  * explanation attached — and on iOS that prompt is the only chance there is: a
  * declined camera permission cannot be asked for twice.
@@ -35,20 +35,22 @@ import org.olcbox.app.ui.theme.LocalPkPalette
  * a camera looks like a VPN client asking for a camera, and the reason is narrow
  * enough to state in three lines.
  *
- * Declining calls nothing — [onDismiss] closes the sheet and the other three ways
- * of adding a list are untouched.
+ * The shape is App Review's, not ours (guideline 5.1.1(iv), which rejected
+ * 1.0.392): a message before a permission request may explain, and may not
+ * gate. One button, worded neutrally — "Continue", not "Allow and scan" — and
+ * no way to wave the message away, because a "Not now" that skips the system
+ * prompt is "delaying the permission request". The decision itself is made in
+ * the system prompt that follows, where it belongs.
  */
 @Composable
-fun CameraRationaleSheet(
-    onAllow: () -> Unit,
-    onDismiss: () -> Unit
-) {
+fun CameraRationaleSheet(onContinue: () -> Unit) {
     PkBottomSheet(
         title = CAMERA_TITLE,
         subtitle = CAMERA_SUBTITLE,
-        onDismiss = onDismiss
+        onDismiss = {},
+        dismissible = false
     ) {
-        CameraRationaleBody(onAllow = onAllow, onDismiss = onDismiss)
+        CameraRationaleBody(onContinue = onContinue)
     }
 }
 
@@ -57,7 +59,7 @@ internal const val CAMERA_SUBTITLE = "QR codes only"
 
 /** The sheet's contents, separately so a test can render them. */
 @Composable
-internal fun CameraRationaleBody(onAllow: () -> Unit, onDismiss: () -> Unit) {
+internal fun CameraRationaleBody(onContinue: () -> Unit) {
     val palette = LocalPkPalette.current
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Column(
@@ -88,8 +90,7 @@ internal fun CameraRationaleBody(onAllow: () -> Unit, onDismiss: () -> Unit) {
             }
         }
 
-        PkSheetButton(label = "Allow and scan", onClick = onAllow, primary = true)
-        PkSheetButton(label = "Not now", onClick = onDismiss)
+        PkSheetButton(label = "Continue", onClick = onContinue, primary = true)
     }
 }
 
@@ -97,11 +98,12 @@ internal fun CameraRationaleBody(onAllow: () -> Unit, onDismiss: () -> Unit) {
  * Three sentences, and no fourth.
  *
  * Each answers a question somebody actually has: what for, what happens to the
- * picture, and what it costs to say no.
+ * picture, and where the decision is made and what it costs to say no.
  */
-private val CAMERA_REASONS = listOf(
+internal val CAMERA_REASONS = listOf(
     "The camera is used to read a server-list QR code, and for nothing else.",
     "No photo or video is recorded, stored or uploaded. The frame is decoded and " +
         "thrown away.",
-    "Declining leaves every other way of adding a list open — a link, a URI or a file."
+    "You decide in the system prompt that follows. Declining leaves every other " +
+        "way of adding a list open — a link, a URI or a file."
 )

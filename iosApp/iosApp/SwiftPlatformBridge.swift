@@ -306,7 +306,7 @@ final class QrScannerViewController: UIViewController,
         preview = layer
 
         let hint = UILabel()
-        hint.text = "Point the camera at a subscription QR code"
+        hint.text = "Point the camera at a server-list QR code"
         hint.textColor = .white
         hint.textAlignment = .center
         hint.numberOfLines = 0

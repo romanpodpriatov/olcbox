@@ -63,7 +63,7 @@
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>NSCameraUsageDescription</key>
-	<string>ProofKit uses the camera only to scan a subscription QR code. Nothing is recorded or sent anywhere.</string>
+	<string>ProofKit uses the camera only to read a server-list QR code. No photo or video is recorded, stored or uploaded.</string>
 	<!--
 		No UIBackgroundModes.
 
