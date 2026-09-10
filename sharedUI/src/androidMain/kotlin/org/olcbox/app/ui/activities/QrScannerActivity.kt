@@ -270,7 +270,7 @@ class QrScannerActivity : ComponentActivity() {
     }
 
     companion object {
-        const val EXTRA_QR_TEXT = "org.olcbox.app.QR_TEXT"
+        const val EXTRA_QR_TEXT = "org.proofkit.app.QR_TEXT"
         private const val QR_ROTATION_ATTEMPTS = 4
     }
 }

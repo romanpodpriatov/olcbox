@@ -46,7 +46,9 @@ android {
         minSdk = 23
         targetSdk = 37
 
-        applicationId = "org.olcbox.app"
+        // org.proofkit.app, as on iOS: the olcbox id collided with every other
+        // app built from olcbox on the same phone. The Kotlin namespace stays.
+        applicationId = "org.proofkit.app"
         versionCode = olcboxVersionCode.get()
         versionName = olcboxVersion.get()
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

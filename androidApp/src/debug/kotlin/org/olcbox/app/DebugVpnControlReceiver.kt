@@ -37,7 +37,7 @@ class DebugVpnControlReceiver : BroadcastReceiver() {
     }
 
     companion object {
-        const val ACTION_DEBUG_START_VPN = "org.olcbox.app.DEBUG_START_VPN"
-        const val ACTION_DEBUG_STOP_VPN = "org.olcbox.app.DEBUG_STOP_VPN"
+        const val ACTION_DEBUG_START_VPN = "org.proofkit.app.DEBUG_START_VPN"
+        const val ACTION_DEBUG_STOP_VPN = "org.proofkit.app.DEBUG_STOP_VPN"
     }
 }

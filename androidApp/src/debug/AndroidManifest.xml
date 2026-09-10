@@ -6,8 +6,8 @@
             android:name=".DebugVpnControlReceiver"
             android:exported="true">
             <intent-filter>
-                <action android:name="org.olcbox.app.DEBUG_START_VPN" />
-                <action android:name="org.olcbox.app.DEBUG_STOP_VPN" />
+                <action android:name="org.proofkit.app.DEBUG_START_VPN" />
+                <action android:name="org.proofkit.app.DEBUG_STOP_VPN" />
             </intent-filter>
         </receiver>
     </application>
