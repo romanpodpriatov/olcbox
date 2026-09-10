@@ -1,5 +1,6 @@
 package org.olcbox.app.ui.features.home
 
+import org.olcbox.app.net.ImportLink
 import org.olcbox.app.net.isPartnerLink
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -361,6 +362,26 @@ class HomeScreenViewModel(
                 onImportFullConfig(text, onComplete, onError)
             }
         }
+    }
+
+    /**
+     * A `proofkit://add?url=…` or `https://proofkit.org/add#…` link, handed
+     * to the app by the system: the same import a paste goes through, once
+     * the payload is out of the envelope. Not an import link at all is an
+     * answer, not a crash — a bot or a panel may hand us a link we never
+     * taught it.
+     */
+    fun onImportLink(
+        uri: String,
+        onComplete: () -> Unit = {},
+        onError: (String) -> Unit = {}
+    ) {
+        val payload = ImportLink.payloadOf(uri)
+        if (payload == null) {
+            onError("Not a ProofKit import link")
+            return
+        }
+        onImportFullConfig(payload, onComplete, onError)
     }
 
     fun onImportFullConfig(

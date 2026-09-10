@@ -11,6 +11,7 @@ import androidx.activity.result.ActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import kotlinx.coroutines.flow.MutableStateFlow
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -48,7 +49,9 @@ fun AndroidMainScreen(
     viewModel: HomeScreenViewModel,
     locationViewModel: LocationViewModel,
     vpnManager: AndroidVpnManager,
-    appUpdateService: AppUpdateService? = null
+    appUpdateService: AppUpdateService? = null,
+    /** An import link the activity received; taken once, then cleared. */
+    pendingImportLink: MutableStateFlow<String?>? = null
 ) {
 
     var currentScreenRoute by rememberSaveable { mutableStateOf("home") }
@@ -240,6 +243,26 @@ fun AndroidMainScreen(
     fun reloadLocationsAfterImport(onComplete: () -> Unit = {}) {
         locationViewModel.loadLocations {
             viewModel.loadCurrentConfig(onComplete)
+        }
+    }
+
+    // A link from a bot or a panel goes through the same import as a paste;
+    // the person sees the list appear, or a toast saying why not.
+    if (pendingImportLink != null) {
+        LaunchedEffect(pendingImportLink) {
+            pendingImportLink.collect { link ->
+                if (link == null) return@collect
+                pendingImportLink.value = null
+                viewModel.onImportLink(
+                    uri = link,
+                    onComplete = {
+                        reloadLocationsAfterImport {
+                            Toast.makeText(context, "Server list added", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    onError = { message -> Toast.makeText(context, message, Toast.LENGTH_LONG).show() }
+                )
+            }
         }
     }
 

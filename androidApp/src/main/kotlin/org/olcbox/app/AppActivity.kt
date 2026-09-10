@@ -1,12 +1,14 @@
 package org.olcbox.app
 
 import android.Manifest
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import kotlinx.coroutines.flow.MutableStateFlow
 import org.olcbox.app.data.datasource.LocationsDataSourceImpl
 import org.olcbox.app.data.datasource.LocationsRepositoryImpl
 import org.olcbox.app.data.exporter.AndroidLogExporter
@@ -20,6 +22,10 @@ import org.olcbox.app.update.AppUpdateService
 import org.olcbox.app.vpn.AndroidVpnManager
 
 class AppActivity : ComponentActivity() {
+
+    // The import link the system handed us, until the screen takes it. Launch
+    // mode is singleInstance, so a link while running arrives in onNewIntent.
+    private val pendingImportLink = MutableStateFlow<String?>(null)
 
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -61,9 +67,17 @@ class AppActivity : ComponentActivity() {
                     viewModel = viewModel,
                     locationViewModel = locationViewModel,
                     vpnManager = vpnManager,
-                    appUpdateService = updateService
+                    appUpdateService = updateService,
+                    pendingImportLink = pendingImportLink
                 )
             }
         }
+        intent?.dataString?.let { pendingImportLink.value = it }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        intent.dataString?.let { pendingImportLink.value = it }
     }
 }
