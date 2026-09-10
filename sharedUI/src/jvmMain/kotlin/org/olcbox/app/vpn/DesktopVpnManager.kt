@@ -863,7 +863,6 @@ class DesktopVpnManager private constructor(
     ): Process {
         val config = location.normalized()
         val provider = OlcRtcCommand.desktopProviderArg(config.bypassProvider)
-        val dataDir = DesktopNativeAssets.resolveOlcRtcDataDir()
         val olcRtcCommand = OlcRtcCommand(
             binary = binary,
             location = config,
@@ -871,8 +870,7 @@ class DesktopVpnManager private constructor(
             socksPort = socksSettings.port,
             socksUser = socksSettings.username,
             socksPass = socksSettings.password,
-            dnsServer = dnsServer,
-            dataDir = dataDir
+            dnsServer = dnsServer
         )
         val configPath = writeOlcRtcClientConfig(olcRtcCommand)
         val command = olcRtcCommand.args(configPath)
@@ -1248,7 +1246,11 @@ class DesktopVpnManager private constructor(
             return "failed to connect link" in text ||
                     "join room failed" in text ||
                     "get room token" in text && "failed" in text ||
-                    "transport connect" in text && "failed" in text
+                    "transport connect" in text && "failed" in text ||
+                    "incompatible olcrtc protocol" in text ||
+                    "did not answer the handshake" in text ||
+                    "key does not match the peer" in text ||
+                    "no peer in room" in text
         }
     }
 }

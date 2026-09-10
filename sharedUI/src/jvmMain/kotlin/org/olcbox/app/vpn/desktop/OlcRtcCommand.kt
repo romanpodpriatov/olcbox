@@ -10,8 +10,7 @@ internal data class OlcRtcCommand(
     val socksPort: Int = PacServer.LOCAL_SOCKS_PORT,
     val socksUser: String = "",
     val socksPass: String = "",
-    val dnsServer: String,
-    val dataDir: Path? = null
+    val dnsServer: String
 ) {
     fun args(configPath: Path): List<String> {
         return listOf(binary.toString(), configPath.toString())
@@ -23,7 +22,6 @@ internal data class OlcRtcCommand(
 
         return buildString {
             appendLine("mode: cnc")
-            appendLine("link: direct")
             appendLine("auth:")
             appendLine("  provider: ${provider.yamlValue()}")
             appendLine("room:")
@@ -33,12 +31,6 @@ internal data class OlcRtcCommand(
             appendLine("net:")
             appendLine("  transport: ${config.transport.yamlValue()}")
             appendLine("  dns: ${dnsServer.yamlValue()}")
-            if (config.bypassProvider == LocationConfig.PROVIDER_JITSI) {
-                appendLine("tls:")
-                appendLine("  insecure_skip_verify: true")
-                appendLine("jitsi:")
-                appendLine("  insecure: true")
-            }
             appendLine("socks:")
             appendLine("  host: ${socksHost.yamlValue()}")
             appendLine("  port: $socksPort")
@@ -46,10 +38,8 @@ internal data class OlcRtcCommand(
                 appendLine("  user: ${socksUser.yamlValue()}")
                 appendLine("  pass: ${socksPass.yamlValue()}")
             }
-            // ProofKit fork: opt this client's engine into the lossy UDP relay
-            // (SOCKS5 UDP ASSOCIATE) so Telegram/Discord calls and games tunnel
-            // over olcRTC. The engine gate defaults OFF, so this line is what
-            // actually turns UDP on; a stock (pre-UDP) engine ignores the block.
+            // The engine's UDP relay is opt-in from yaml; without this line
+            // SOCKS5 UDP ASSOCIATE is refused and calls fall back to nothing.
             appendLine("udp:")
             appendLine("  enabled: true")
             when (config.transport) {
@@ -66,7 +56,6 @@ internal data class OlcRtcCommand(
                     appendLine("  ack_timeout_ms: 2000")
                 }
             }
-            appendLine("data: ${(dataDir?.toString() ?: "data").yamlValue()}")
         }
     }
 

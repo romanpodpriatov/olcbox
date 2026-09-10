@@ -79,15 +79,12 @@ class DesktopProxyModeTest {
             assertContains(yaml, "id: 'room-$provider'")
             assertContains(yaml, "port: 10808")
             assertContains(yaml, "dns: '192.168.43.1:53'")
-            if (LocationConfig.normalizeProvider(provider) == LocationConfig.PROVIDER_JITSI) {
-                assertContains(yaml, "tls:")
-                assertContains(yaml, "insecure_skip_verify: true")
-                assertContains(yaml, "jitsi:")
-                assertContains(yaml, "insecure: true")
-            } else {
-                assertTrue("insecure_skip_verify" !in yaml)
-                assertTrue("jitsi:" !in yaml)
-            }
+            // The upstream engine rejects unknown keys: the old tls/jitsi
+            // blocks must not appear for any provider.
+            assertTrue("tls:" !in yaml)
+            assertTrue("insecure_skip_verify" !in yaml)
+            assertTrue("jitsi:" !in yaml)
+            assertTrue("link:" !in yaml)
             if (expectedTransport == LocationConfig.TRANSPORT_VP8CHANNEL) {
                 assertContains(yaml, "vp8:")
                 assertContains(yaml, "fps: 60")
@@ -108,13 +105,12 @@ class DesktopProxyModeTest {
                 bypassProvider = LocationConfig.PROVIDER_WB_STREAM,
                 transport = LocationConfig.TRANSPORT_DATACHANNEL
             ),
-            dnsServer = "192.168.43.1:53",
-            dataDir = Path.of("/tmp/olcbox-data")
+            dnsServer = "192.168.43.1:53"
         ).yaml()
 
         assertContains(command, "transport: '${LocationConfig.TRANSPORT_DATACHANNEL}'")
         assertTrue("vp8:" !in command)
-        assertContains(command, "data: '/tmp/olcbox-data'")
+        assertTrue("data:" !in command)
     }
 
     @Test

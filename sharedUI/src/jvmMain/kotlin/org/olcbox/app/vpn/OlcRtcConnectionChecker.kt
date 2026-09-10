@@ -242,15 +242,13 @@ internal object OlcRtcConnectionChecker {
         privileged: Boolean
     ): Process {
         val normalized = config.normalized()
-        val dataDir = DesktopNativeAssets.resolveOlcRtcDataDir()
 
         val command = OlcRtcCommand(
             binary = binary,
             location = normalized,
             socksHost = PacServer.LOCAL_SOCKS_HOST,
             socksPort = socksPort,
-            dnsServer = DesktopDnsResolver.current(),
-            dataDir = dataDir
+            dnsServer = DesktopDnsResolver.current()
         )
         val configPath = writeOlcRtcClientConfig(command)
 
