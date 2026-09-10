@@ -64,6 +64,8 @@ import androidx.compose.ui.window.application
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.rememberTrayState
 import androidx.compose.ui.window.rememberWindowState
+import kotlinx.coroutines.flow.MutableStateFlow
+import org.olcbox.app.net.ImportLink
 import java.net.URI
 import java.awt.Desktop
 import java.awt.Dimension
@@ -142,7 +144,22 @@ private class DesktopAppDependencies {
 
 private const val WINDOWS_ELEVATED_START_ARGUMENT = "--olcbox-start-vpn-after-elevation"
 
+/**
+ * The one-tap import link, `proofkit://add?url=…`, until the screen takes it.
+ * Linux hands it over as an argument (the desktop entry's `%u`), macOS as an
+ * AWT open-URI event; Windows has no handler registered in this release.
+ */
+private val pendingImportLink = MutableStateFlow<String?>(null)
+
+private fun watchForImportLinks(args: Array<String>) {
+    args.firstOrNull { ImportLink.payloadOf(it) != null }?.let { pendingImportLink.value = it }
+    if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.APP_OPEN_URI)) {
+        Desktop.getDesktop().setOpenURIHandler { event -> pendingImportLink.value = event.uri.toString() }
+    }
+}
+
 fun main(args: Array<String>) = application {
+    remember { watchForImportLinks(args) }
     // Configure JNA to find native libraries in resources
     System.setProperty(
         "jna.library.path",
@@ -356,6 +373,20 @@ fun main(args: Array<String>) = application {
             fun reloadLocationsAfterImport(onComplete: () -> Unit = {}) {
                 dependencies.locationViewModel.loadLocations {
                     dependencies.homeViewModel.loadCurrentConfig(onComplete)
+                }
+            }
+
+            // A link from a bot or a panel goes through the same import as a
+            // paste; the notice says what came of it.
+            LaunchedEffect(Unit) {
+                pendingImportLink.collect { link ->
+                    if (link == null) return@collect
+                    pendingImportLink.value = null
+                    dependencies.homeViewModel.onImportLink(
+                        uri = link,
+                        onComplete = { reloadLocationsAfterImport { desktopNotice = "Server list added" } },
+                        onError = { message -> desktopNotice = message }
+                    )
                 }
             }
 
