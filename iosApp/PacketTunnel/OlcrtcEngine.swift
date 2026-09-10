@@ -10,8 +10,9 @@ import os
 /// transport like any other: sing-box owns the tun and reaches this engine over
 /// a loopback SOCKS port, the same arrangement xhttp already uses for Xray.
 ///
-/// olcRTC's whole API is a set of package functions plus two callbacks, so this
-/// is a namespace rather than an object — there is nothing to hold.
+/// The engine is one `MobileRuntime` for the life of the extension process;
+/// the log writer is still a package-level hook. This stays a namespace: the
+/// runtime is a static because a tunnel extension hosts one tunnel.
 enum OlcrtcEngine {
 
     /// What the app writes into the App Group for us. A room and a key address
@@ -49,9 +50,20 @@ enum OlcrtcEngine {
     /// App Group keeps them whether this is on or not.
     private static let verbose = false
 
+    /// The engine, from the Go constructor: `MobileRuntime()` allocates a
+    /// bare struct with no defaults and cannot start. `nonisolated(unsafe)`
+    /// because gobind classes are not Sendable and the extension drives one
+    /// tunnel at a time from the provider's own serialisation.
+    nonisolated(unsafe) private static let runtime: MobileRuntime = {
+        guard let runtime = MobileNew() else {
+            fatalError("olcrtc: MobileNew() returned nil")
+        }
+        return runtime
+    }()
+
     /// Held for the lifetime of the process: olcRTC keeps whatever is handed to
-    /// `SetProtector`/`SetLogWriter`, and Go's reference does not keep a Swift
-    /// object alive on its own.
+    /// `setProtector`/`MobileSetLogWriter`, and Go's reference does not keep a
+    /// Swift object alive on its own.
     private static let protector = InterfaceProtector()
     private static let logWriter = EngineLog(
         file: FileManager.default
@@ -79,6 +91,9 @@ enum OlcrtcEngine {
     // for the tunnel, so there is room, and a slow start is not a dead one.
     private static let readyTimeoutMillis = 35_000
 
+    /// How long a stop may take before the engine is abandoned to the process.
+    private static let stopTimeoutMillis = 5_000
+
     /// `resolvers` are the servers of the network the extension stands on, as
     /// ResolverSnapshot read them before the tunnel's settings went on; empty
     /// when none could be read.
@@ -87,49 +102,46 @@ enum OlcrtcEngine {
         // to the attempt it is reporting on.
         logWriter.reset()
         MobileSetLogWriter(logWriter)
-        MobileSetDebug(verbose)
+        runtime.setDebug(verbose)
         // Before anything dials: inside the extension the default route is our
         // own tun, so an unprotected socket loops straight back into it.
-        MobileSetProtector(protector)
-        MobileSetProviders()
-        MobileSetTransport(parameters.transportName)
+        runtime.setProtector(protector)
+        try runtime.setTransport(parameters.transportName)
         // The network's own resolvers first, a public operator behind them; the
         // engine adds that operator's IPv6 twin and the other operators after.
         // Some mobile networks answer only their own servers (olcbox#16).
-        MobileSetDNS((resolvers + ["1.1.1.1:53"]).joined(separator: ","))
+        try runtime.setDNS((resolvers + ["1.1.1.1:53"]).joined(separator: ","))
         log.info("resolvers from the network: \(resolvers.count, privacy: .public)")
-        MobileSetVP8Options(parameters.vp8Fps, parameters.vp8BatchSize)
+        try runtime.setVP8Options(parameters.vp8Fps, batchSize: parameters.vp8BatchSize)
         // Loopback only. The port is fixed rather than user-set now: nothing
         // outside this process is meant to reach it.
-        MobileSetSocksListenHost("127.0.0.1")
+        try runtime.setSocksListenHost("127.0.0.1")
+        try runtime.setProvider(parameters.carrierName)
+        try runtime.setRoom(parameters.roomId)
+        runtime.setDeviceID(parameters.clientId)
+        try runtime.setKey(parameters.keyHex)
+        try runtime.setSocksPort(parameters.socksPort)
+        try runtime.setSocksCredentials(parameters.socksUser, password: parameters.socksPass)
 
         // A previous tunnel that died without tearing down would otherwise hold
         // the port and make this look like a bind failure.
-        if MobileIsRunning() {
-            MobileStop()
+        if runtime.isRunning() {
+            try? runtime.stop(stopTimeoutMillis)
         }
 
-        var error: NSError?
-        let started = MobileStartWithTransport(
-            parameters.carrierName,
-            parameters.transportName,
-            parameters.roomId,
-            parameters.clientId,
-            parameters.keyHex,
-            parameters.socksPort,
-            parameters.socksUser,
-            parameters.socksPass,
-            &error
-        )
-        guard started else {
-            throw failure(error, "olcRTC would not start")
+        do {
+            try runtime.start()
+        } catch {
+            throw failure(error as NSError, "olcRTC would not start")
         }
 
-        guard MobileWaitReady(readyTimeoutMillis, &error) else {
+        do {
+            try runtime.waitReady(readyTimeoutMillis)
+        } catch {
             // Leaving a half-started engine behind would hold the SOCKS port
             // against the next attempt.
-            MobileStop()
-            throw failure(error, "olcRTC did not become ready")
+            try? runtime.stop(stopTimeoutMillis)
+            throw failure(error as NSError, "olcRTC did not become ready")
         }
         log.info("olcrtc ready on 127.0.0.1:\(parameters.socksPort, privacy: .public)")
     }
@@ -137,8 +149,8 @@ enum OlcrtcEngine {
     static func stop() {
         // Unconditional teardown runs on every tunnel stop, including tunnels
         // that never involved olcRTC at all.
-        if MobileIsRunning() {
-            MobileStop()
+        if runtime.isRunning() {
+            try? runtime.stop(stopTimeoutMillis)
         }
     }
 
@@ -154,7 +166,7 @@ enum OlcrtcEngine {
 /// at the tun sing-box owns — so a socket left to the system's judgement comes
 /// straight back to us. This is the same pin sing-box needs for its outbounds,
 /// and deliberately the same implementation.
-private final class InterfaceProtector: NSObject, MobileSocketProtectorProtocol {
+private final class InterfaceProtector: NSObject, MobileSocketProtectorProtocol, @unchecked Sendable {
     func protect(_ fd: Int) -> Bool {
         LibboxPlatform.pinToPhysicalInterface(Int32(fd))
     }

@@ -6,11 +6,25 @@ import SharedUI
 import UIKit
 
 final class SwiftOlcRtcManager: NSObject, @unchecked Sendable, IosOlcRtcBridge {
+    /// The in-app engine, from the Go constructor: `MobileRuntime()` allocates
+    /// a bare struct with no defaults and cannot start.
+    private let runtime: MobileRuntime
     private var logWriter: IosLogWriter?
     private var mobileLogWriter: MobileLogWriterAdapter?
     private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
     private let lock = NSLock()
     private let keepAlive = SilentAudioKeepAlive()
+
+    private static let readyTimeoutMillis = 8_000
+    private static let stopTimeoutMillis = 5_000
+
+    override init() {
+        guard let runtime = MobileNew() else {
+            fatalError("olcrtc: MobileNew() returned nil")
+        }
+        self.runtime = runtime
+        super.init()
+    }
 
     func setLogWriter(writer: IosLogWriter?) {
         lock.lock()
@@ -31,37 +45,37 @@ final class SwiftOlcRtcManager: NSObject, @unchecked Sendable, IosOlcRtcBridge {
         lock.lock()
         defer { lock.unlock() }
 
-        MobileSetProviders()
-        MobileSetTransport(request.transportName)
-        MobileSetDNS("1.1.1.1:53")
-        MobileSetVP8Options(Int(request.vp8Fps), Int(request.vp8BatchSize))
-
-        if MobileIsRunning() {
-            MobileStop()
+        do {
+            try runtime.setTransport(request.transportName)
+            try runtime.setDNS("1.1.1.1:53")
+            try runtime.setVP8Options(Int(request.vp8Fps), batchSize: Int(request.vp8BatchSize))
+            try runtime.setProvider(request.carrierName)
+            try runtime.setRoom(request.roomId)
+            runtime.setDeviceID(request.clientId)
+            try runtime.setKey(request.keyHex)
+            try runtime.setSocksPort(Int(request.socksPort))
+            try runtime.setSocksCredentials(request.socksUser, password: request.socksPass)
+        } catch {
+            return IosBridgeResult(success: false, message: error.localizedDescription)
         }
 
-        var error: NSError?
-        let started = MobileStartWithTransport(
-            request.carrierName,
-            request.transportName,
-            request.roomId,
-            request.clientId,
-            request.keyHex,
-            Int(request.socksPort),
-            request.socksUser,
-            request.socksPass,
-            &error
-        )
-        guard started else {
-            return IosBridgeResult(success: false, message: error?.localizedDescription ?? "olcRTC start failed")
+        if runtime.isRunning() {
+            try? runtime.stop(Self.stopTimeoutMillis)
         }
 
-        let ready = MobileWaitReady(8_000, &error)
-        guard ready else {
-            MobileStop()
+        do {
+            try runtime.start()
+        } catch {
+            return IosBridgeResult(success: false, message: error.localizedDescription)
+        }
+
+        do {
+            try runtime.waitReady(Self.readyTimeoutMillis)
+        } catch {
+            try? runtime.stop(Self.stopTimeoutMillis)
             endBackgroundTaskIfNeeded()
             keepAlive.stop(log: makeLogger())
-            return IosBridgeResult(success: false, message: error?.localizedDescription ?? "olcRTC start timed out")
+            return IosBridgeResult(success: false, message: error.localizedDescription)
         }
 
         // Real background survival: the `audio` UIBackgroundMode only keeps the app
@@ -79,7 +93,7 @@ final class SwiftOlcRtcManager: NSObject, @unchecked Sendable, IosOlcRtcBridge {
     func stop() {
         lock.lock()
         defer { lock.unlock() }
-        MobileStop()
+        try? runtime.stop(Self.stopTimeoutMillis)
         endBackgroundTaskIfNeeded()
         keepAlive.stop(log: makeLogger())
     }
@@ -87,7 +101,7 @@ final class SwiftOlcRtcManager: NSObject, @unchecked Sendable, IosOlcRtcBridge {
     func isRunning() -> Bool {
         lock.lock()
         defer { lock.unlock() }
-        return MobileIsRunning()
+        return runtime.isRunning()
     }
 
     func ping(request: IosOlcRtcCheckRequest) -> IosLongResult {
@@ -97,26 +111,24 @@ final class SwiftOlcRtcManager: NSObject, @unchecked Sendable, IosOlcRtcBridge {
         }
 
         var value: Int64 = -1
-        var error: NSError?
-        let success = MobilePing(
-            request.carrierName,
-            request.transportName,
-            request.roomId,
-            request.clientId,
-            request.keyHex,
-            port,
-            Int(request.timeoutMillis),
-            request.pingUrl,
-            Int(request.vp8Fps),
-            Int(request.vp8BatchSize),
-            &value,
-            &error
-        )
-        return IosLongResult(
-            success: success,
-            valueMillis: success ? value : -1,
-            message: success ? nil : error?.localizedDescription
-        )
+        do {
+            try runtime.ping(
+                request.carrierName,
+                transportName: request.transportName,
+                roomID: request.roomId,
+                deviceID: request.clientId,
+                keyHex: request.keyHex,
+                socksPort: port,
+                timeoutMillis: Int(request.timeoutMillis),
+                pingURL: request.pingUrl,
+                vp8FPS: Int(request.vp8Fps),
+                vp8BatchSize: Int(request.vp8BatchSize),
+                ret0_: &value
+            )
+        } catch {
+            return IosLongResult(success: false, valueMillis: -1, message: error.localizedDescription)
+        }
+        return IosLongResult(success: true, valueMillis: value, message: nil)
     }
 
     func check(request: IosOlcRtcCheckRequest) -> IosLongResult {
@@ -126,25 +138,23 @@ final class SwiftOlcRtcManager: NSObject, @unchecked Sendable, IosOlcRtcBridge {
         }
 
         var value: Int64 = -1
-        var error: NSError?
-        let success = MobileCheck(
-            request.carrierName,
-            request.transportName,
-            request.roomId,
-            request.clientId,
-            request.keyHex,
-            port,
-            Int(request.timeoutMillis),
-            Int(request.vp8Fps),
-            Int(request.vp8BatchSize),
-            &value,
-            &error
-        )
-        return IosLongResult(
-            success: success,
-            valueMillis: success ? value : -1,
-            message: success ? nil : error?.localizedDescription
-        )
+        do {
+            try runtime.check(
+                request.carrierName,
+                transportName: request.transportName,
+                roomID: request.roomId,
+                deviceID: request.clientId,
+                keyHex: request.keyHex,
+                socksPort: port,
+                timeoutMillis: Int(request.timeoutMillis),
+                vp8FPS: Int(request.vp8Fps),
+                vp8BatchSize: Int(request.vp8BatchSize),
+                ret0_: &value
+            )
+        } catch {
+            return IosLongResult(success: false, valueMillis: -1, message: error.localizedDescription)
+        }
+        return IosLongResult(success: true, valueMillis: value, message: nil)
     }
 
     private func allocateLocalPort() -> Int {
