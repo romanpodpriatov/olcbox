@@ -136,7 +136,9 @@ def ensure_capability(client, identifier: str, capability_type: str) -> bool:
     ID gains a capability; the caller remakes it either way.
     """
     bundle = bundle_id_resource(client, identifier)
-    present = client.get_all(f"/bundleIds/{bundle['id']}/bundleIdCapabilities?limit=200")
+    # No `limit` here: the relationship endpoint rejects it (PARAMETER_ERROR.ILLEGAL),
+    # and get_all follows `links.next` regardless.
+    present = client.get_all(f"/bundleIds/{bundle['id']}/bundleIdCapabilities")
     if any(c["attributes"].get("capabilityType") == capability_type for c in present):
         print(f"{identifier} already has {capability_type}")
         return False
