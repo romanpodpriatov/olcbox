@@ -35,6 +35,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import mobile.LogWriter
 import mobile.Mobile
+import mobile.Runtime as OlcrtcRuntime
 import mobile.SocketProtector
 import org.olcbox.app.data.TUN2SOCKS_CONFIG_FILE_NAME
 import org.olcbox.app.data.datasource.LocationsDataSourceImpl
@@ -161,6 +162,10 @@ class OlcboxVpnService : VpnService() {
      * hide a dead engine behind a live front.
      */
     private var frontsOlcrtc = false
+
+    // One engine per service. Created by the Go constructor: the generated
+    // no-argument Runtime() allocates an empty struct that cannot start.
+    private val olcrtc: OlcrtcRuntime by lazy { Mobile.new_() }
 
     private data class StartOptions(
         val connectionMode: AndroidConnectionMode,
@@ -334,13 +339,12 @@ class OlcboxVpnService : VpnService() {
     }
 
     private fun installMobileCallbacks() {
-        Mobile.setProtector(object : SocketProtector {
+        olcrtc.setProtector(object : SocketProtector {
             override fun protect(fd: Long): Boolean {
                 if (connectionMode == AndroidConnectionMode.Proxy) return true
                 return this@OlcboxVpnService.protect(fd.toInt())
             }
         })
-        Mobile.setProviders()
         Mobile.setLogWriter(object : LogWriter {
             override fun writeLog(msg: String) {
                 val line = msg.trimEnd()
@@ -888,17 +892,14 @@ class OlcboxVpnService : VpnService() {
                     "transport=${config.transport}, room=${config.id}"
             )
             lastMobileProvider = config.bypassProvider
-            Mobile.startWithTransport(
-                config.bypassProvider,
-                config.transport,
-                config.id,
-                deviceId,
-                config.key,
-                targetSocksPort.toLong(),
-                socksUsername,
-                socksPassword
-            )
-            Mobile.waitReady(MOBILE_READY_TIMEOUT_MS)
+            olcrtc.setProvider(config.bypassProvider)
+            olcrtc.setRoom(config.id)
+            olcrtc.setDeviceID(deviceId)
+            olcrtc.setKey(config.key)
+            olcrtc.setSocksPort(targetSocksPort.toLong())
+            olcrtc.setSocksCredentials(socksUsername, socksPassword)
+            olcrtc.start()
+            olcrtc.waitReady(MOBILE_READY_TIMEOUT_MS)
             if (requestedGeneration != generation) {
                 addLog("olcRTC start superseded")
                 return false
@@ -933,7 +934,7 @@ class OlcboxVpnService : VpnService() {
             }
             false
         } finally {
-            if (!keepProcessBound || !Mobile.isRunning()) {
+            if (!keepProcessBound || !olcrtc.isRunning()) {
                 unbindProcessFromNetwork()
             }
         }
@@ -952,13 +953,12 @@ class OlcboxVpnService : VpnService() {
 
     private fun configureMobileTransport(location: LocationConfig, upstream: Network?) {
         val config = location.normalized()
-        Mobile.setProviders()
-        Mobile.setTransport(config.transport)
+        olcrtc.setTransport(config.transport)
         // The upstream network's own resolvers first, the public operator
         // behind them: some mobile networks answer only their own (olcbox#16).
-        Mobile.setDNS(upstreamDnsList(upstream))
-        Mobile.setSocksListenHost(socksListenHost)
-        Mobile.setVP8Options(config.vp8Fps.toLong(), config.vp8Batch.toLong())
+        olcrtc.setDNS(upstreamDnsList(upstream))
+        olcrtc.setSocksListenHost(socksListenHost)
+        olcrtc.setVP8Options(config.vp8Fps.toLong(), config.vp8Batch.toLong())
     }
 
     private fun startTun2socks(pfd: ParcelFileDescriptor): Boolean {
@@ -1335,8 +1335,8 @@ class OlcboxVpnService : VpnService() {
 
     private fun stopMobile() {
         val provider = lastMobileProvider
-        val wasRunning = Mobile.isRunning()
-        runCatching { Mobile.stop() }
+        val wasRunning = olcrtc.isRunning()
+        runCatching { olcrtc.stop(MOBILE_STOP_TIMEOUT_MS) }
         // Also tear down any active sing-box / Xray core (no-op if none running).
         runCatching { stopCoreProcesses() }
         if (wasRunning && provider == LocationConfig.PROVIDER_JITSI) {
@@ -1620,17 +1620,17 @@ class OlcboxVpnService : VpnService() {
      *
      * olcRTC runs inside the gomobile library; sing-box and Xray run as child
      * processes. Everything here was written when olcRTC was the only transport and
-     * asked `Mobile.isRunning()` directly — which is false whenever a core is the
+     * asked the engine's `isRunning()` directly — which is false whenever a core is the
      * active transport, so the watchdog declared every core connection dead fifteen
      * seconds after it came up and restarted it, forever.
      */
     private fun isActiveTransportRunning(): Boolean =
         if (frontsOlcrtc) {
-            Mobile.isRunning() && singBoxCore.isRunning()
+            olcrtc.isRunning() && singBoxCore.isRunning()
         } else if (activeCorePort != null) {
             singBoxCore.isRunning() || xrayCore.isRunning()
         } else {
-            Mobile.isRunning()
+            olcrtc.isRunning()
         }
 
     private fun activeTransportLabel(): String =
@@ -1708,9 +1708,10 @@ class OlcboxVpnService : VpnService() {
             setUnderlyingNetworks(if (network != null) arrayOf(network) else null)
         }
         // A running olcRTC re-points its lookups at the new network's resolvers
-        // at once; the engine applies SetDNS live.
-        if (network != null && Mobile.isRunning()) {
-            Mobile.setDNS(upstreamDnsList(network))
+        // at once; the engine applies SetDNS live and refuses a malformed list.
+        if (network != null && olcrtc.isRunning()) {
+            runCatching { olcrtc.setDNS(upstreamDnsList(network)) }
+                .onFailure { addLog("olcRTC resolvers not updated: ${it.message}") }
         }
     }
 
@@ -2053,6 +2054,7 @@ class OlcboxVpnService : VpnService() {
         private const val LOCAL_SOCKS_PORT_BASE = 10818
         private const val LOCAL_SOCKS_PORT_MAX = 10858
         private const val MOBILE_READY_TIMEOUT_MS = 25_000L
+        private const val MOBILE_STOP_TIMEOUT_MS = 5_000L
         private const val PREVIOUS_STOP_WAIT_MS = 12_000L
         private const val JITSI_RESTART_SETTLE_MS = 2_000L
         private const val TUN2SOCKS_STOP_WAIT_MS = 1_000L

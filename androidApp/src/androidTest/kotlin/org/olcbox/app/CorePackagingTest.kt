@@ -120,7 +120,7 @@ class CorePackagingTest {
         assertFalse(
             "olcRTC claims to be running without being started — the watchdog's " +
                 "transport check would need rethinking",
-            mobile.Mobile.isRunning()
+            mobile.Mobile.new_().isRunning()
         )
     }
 

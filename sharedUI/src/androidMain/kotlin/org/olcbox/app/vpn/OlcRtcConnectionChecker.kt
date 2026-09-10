@@ -4,10 +4,14 @@ import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import mobile.Mobile
+import mobile.Runtime as OlcrtcRuntime
 import org.olcbox.app.data.model.LocationConfig
 import java.net.ServerSocket
 
 internal object OlcRtcConnectionChecker {
+    // The checker's own engine, so a probe never touches the service's.
+    private val runtime: OlcrtcRuntime by lazy { Mobile.new_() }
+
     suspend fun check(locationConfig: LocationConfig, deviceId: String): Long? {
         return withContext(Dispatchers.IO) {
             val config = locationConfig.normalized()
@@ -17,7 +21,7 @@ internal object OlcRtcConnectionChecker {
                 val socksPort = allocateLocalPort()
 
                 val result: Long? = runCatching {
-                    Mobile.check(
+                    runtime.check(
                         config.bypassProvider,
                         config.transport,
                         config.id,
@@ -48,7 +52,7 @@ internal object OlcRtcConnectionChecker {
                 val socksPort = allocateLocalPort()
 
                 val result: Long? = runCatching {
-                    Mobile.ping(
+                    runtime.ping(
                         config.bypassProvider,
                         config.transport,
                         config.id,
