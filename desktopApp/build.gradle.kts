@@ -586,6 +586,23 @@ compose.desktop {
             macOS {
                 iconFile.set(project.file("appIcons/MacosIcon.icns"))
                 bundleID = "org.olcbox.app.desktopApp"
+                // The one-tap import link, proofkit://add?url=…; the app
+                // receives it through Desktop.setOpenURIHandler.
+                infoPlist {
+                    extraKeysRawXml = """
+                        <key>CFBundleURLTypes</key>
+                        <array>
+                            <dict>
+                                <key>CFBundleURLName</key>
+                                <string>org.olcbox.app.desktopApp.import</string>
+                                <key>CFBundleURLSchemes</key>
+                                <array>
+                                    <string>proofkit</string>
+                                </array>
+                            </dict>
+                        </array>
+                    """.trimIndent()
+                }
 
                 // Signed only when CI has the Developer ID identity in its
                 // keychain; a developer without it still gets a build, exactly
@@ -653,9 +670,10 @@ if (currentBuildOs.isLinux) {
             [Desktop Entry]
             Type=Application
             Name=$desktopPackageName
-            Exec=$desktopPackageName
+            Exec=$desktopPackageName %u
             Icon=olcbox
             Categories=Network;Utility;
+            MimeType=x-scheme-handler/proofkit;
             Terminal=false
             DESKTOP
 
