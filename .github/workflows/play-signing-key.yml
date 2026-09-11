@@ -32,6 +32,9 @@ jobs:
       PLAY_ENCRYPTION_KEY_HEX: eb10fe8f7c7c9df715022017b00c6471f8ba8170b13049a11e6c09ffe3056a104a3bbe4ac5a955f4ba4fe93fc8cef27558a3eb9d2a529a2092761fb833b656cd48b9de6a
 
     steps:
+      - name: Checkout olcbox
+        uses: actions/checkout@v7
+
       - name: Setup JDK
         uses: actions/setup-java@v5.6.0
         with:
@@ -59,6 +62,18 @@ jobs:
           unzip -tq pepk.jar >/dev/null
           echo "pepk.jar sha256: $(sha256sum pepk.jar | cut -d' ' -f1)"
 
+          # The console's own page now shows the RSA-AES flow with a downloadable
+          # PEM; pepk still takes the older hex key too. When the PEM is checked
+          # in (a public key, from the "Export and upload a key from Java
+          # keystore" page), use exactly what the console shows; otherwise the hex.
+          pem="${GITHUB_WORKSPACE}/scripts/play/encryption_public_key.pem"
+          if [ -s "$pem" ]; then
+            echo "Encrypting with the console's encryption_public_key.pem (RSA-AES)."
+            enc=(--rsa-aes-encryption "--encryption-key-path=${pem}")
+          else
+            echo "No scripts/play/encryption_public_key.pem; encrypting with Google's published hex key."
+            enc=("--encryptionkey=${PLAY_ENCRYPTION_KEY_HEX}")
+          fi
           java -jar pepk.jar \
             --keystore=release-keystore.jks \
             --alias="${alias}" \
@@ -66,7 +81,7 @@ jobs:
             --key-pass="${key_pw}" \
             --output=play-signing-key.zip \
             --include-cert \
-            --encryptionkey="${PLAY_ENCRYPTION_KEY_HEX}"
+            "${enc[@]}"
           unzip -l play-signing-key.zip
 
           # The console shows the certificate it received; this is what it has to match.
