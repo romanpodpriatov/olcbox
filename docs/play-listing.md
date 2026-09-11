@@ -5,7 +5,107 @@ Store listing: the app has no translations, and a localised listing over an
 untranslated app reads as bait.
 
 Character limits are Google's and are enforced; counts in brackets are what the
-text below actually uses.
+text below actually uses. Checked against the console form and the 1.0.397
+bundle on 2026-09-11.
+
+---
+
+## Create app — the first form
+
+| Field | Value |
+|---|---|
+| App name | `ProofKit` — matches `android:label` in `androidApp/src/main/AndroidManifest.xml` |
+| Package name | `org.proofkit.app` — `applicationId` in `androidApp/build.gradle.kts`. Fixed for the life of the app; a bundle with any other id is refused at upload |
+| Default language | English (United States) – en-US |
+| App or game | App |
+| Free or paid | Free. Free → paid is impossible once published; nothing is sold in the app anyway |
+| Declarations | Both boxes: Developer Program Policies, and US export laws |
+
+> The export-laws box is the question `ITSAppUsesNonExemptEncryption` answers on
+> iOS, on the same EAR §742.15(b) route (publicly available source). Its
+> precondition — the one-time notification email to BIS and the NSA, template in
+> `app-store-listing.md` — still has to be sent once. One email covers both stores.
+
+---
+
+## Before the first upload — the things that cannot be undone later
+
+1. **Account type decides the path.** A *personal* developer account created
+   after 2023-11-13 cannot publish to production until the app has run a
+   **closed test with at least 12 opted-in testers for 14 consecutive days** and
+   then applied for production access. Organisation accounts (D-U-N-S) are
+   exempt. Either way the first track is *internal testing* (up to 100 tester
+   emails, no review, live in minutes).
+2. **Play App Signing — decide before the first bundle goes up.** Play's default
+   generates its own app signing key. Then the Play build and the sideloaded APK
+   carry different signatures, neither can update the other, and App Links
+   (`https://proofkit.org/add`) stop verifying for Play installs until Google's
+   certificate is added to `proofkit-dvpn/frontend/.well-known/assetlinks.json`.
+   The alternative is uploading our key: Setup → App integrity → App signing →
+   *Use a different key* → *Export and upload a key from Java keystore*.
+   Our release key: `CN=ProofKit, O=Globvent inc`, created 2026-07-28, valid to
+   2053, SHA-256 `59:DC:54:21:81:20:4C:88:40:2D:6C:71:EA:47:4B:8B:F0:9A:CA:B8:64:C9:00:DC:28:32:E6:FF:62:FC:3E:83`
+   (the fingerprint already in `assetlinks.json`). It exists only as the
+   `ANDROID_RELEASE_*` GitHub secrets — **it is on no server**, so the export
+   runs wherever the `.jks` is kept:
+   ```
+   java -jar pepk.jar --keystore=release-keystore.jks --alias=<ANDROID_RELEASE_KEY_ALIAS> \
+     --output=output.zip --include-cert --rsa-aes-encryption \
+     --encryption-key-path=encryption_public_key.pem
+   ```
+   `pepk.jar` and the `.pem` come from that same console page. If Google's key
+   is used instead: add its SHA-256 (shown on the App signing page) as a second
+   entry in `assetlinks.json`, redeploy `frontend/`, and accept that Play users
+   and APK users are two populations that cannot cross-update.
+3. **Upload the AAB, not an APK.** Every release carries
+   `ProofKit-<version>-android.aab`. Checked on 1.0.397: `targetSdk = 37` (Play
+   requires ≥ 36 for new apps since 2026-08-31); every arm64-v8a and x86_64 `.so`
+   is 16 KB-page aligned (`LOAD` align `0x4000`); signed with the key above.
+   `armeabi-v7a/libgojni.so` is 4 KB-aligned, which is fine — 32-bit is outside
+   the 16 KB requirement.
+4. **The bundle that exists is not yet the bundle Play will accept** — next
+   section.
+
+---
+
+## Two policy blockers in the current Android build
+
+The GitHub build is right for sideloading and wrong for Play, in two places that
+Play's automated review reads straight from the manifest before a human looks:
+
+- **`REQUEST_INSTALL_PACKAGES` + the in-app updater.** `AndroidUpdateInstaller`
+  downloads the next APK from GitHub Releases and hands it to the package
+  installer. Play's Device and Network Abuse policy: an app distributed via Play
+  may not update itself by any method other than Play's. And the permission's
+  permitted uses (browsers, file managers, messaging with attachments, backup,
+  device migration, enterprise management) do not include a VPN client, so the
+  declaration form would be refused.
+- **`QUERY_ALL_PACKAGES`.** Permitted only for device search, antivirus, file
+  managers and browsers; everyone else fills the Permissions Declaration Form and
+  is told no. The per-app routing list (`AndroidVpnManager.loadInstalledApps`)
+  already asks for launcher apps through the `<queries>` element, which needs no
+  permission; only its `getInstalledApplications` fallback shrinks without it.
+
+**The fix is a `play` product flavor, not a runtime check** — the manifest is
+judged at upload, before any code runs:
+
+- `androidApp/build.gradle.kts`: `flavorDimensions += "store"`; flavors `github`
+  (the default, unchanged) and `play` with
+  `buildConfigField("boolean", "SELF_UPDATE", "false")`.
+- `androidApp/src/play/AndroidManifest.xml`: both permissions with
+  `tools:node="remove"`.
+- `AppActivity`: construct `AppUpdateService` only when `BuildConfig.SELF_UPDATE`.
+  `AndroidMainScreen` already takes `appUpdateService = null` and skips the
+  automatic check; hide the manual "check for updates" row in that case instead
+  of letting it answer "Update service unavailable".
+- `release.yml`: `:androidApp:bundlePlayRelease` →
+  `dist/ProofKit-<version>-android-play.aab`, beside the existing APKs
+  (`assembleGithubRelease`). The APK file names must not change — the updater
+  matches them.
+- `pr-checks.yml`: any `assembleRelease` / `bundleRelease` task becomes the
+  flavored name.
+
+Not built as of 2026-09-11.
 
 ---
 
@@ -17,46 +117,60 @@ text below actually uses.
 ProofKit
 ```
 
-**Short description** (80 max) — [74]
+**Short description** (80 max) — [78]
 
 ```
-A client for your own VPN subscription. Reality, Hysteria2, XHTTP, olcRTC.
+A tunnel inside a video call. olcRTC, Reality, Hysteria2 and XHTTP in one app.
 ```
 
-> This is the line shown in search results and it is the one most people read.
-> It leads with "your own subscription" deliberately: the commonest complaint
-> against clients like this is a user installing it expecting a VPN service.
+> The line shown in search results, and the one most people read. It leads with
+> the thing only this app does. Play indexes the description for search (Apple
+> does not), so the protocol names belong here rather than in a keyword field
+> Play does not have.
 
-**Full description** (4000 max)
+**Full description** (4000 max) — [2640]
 
 ```
-ProofKit connects to a VPN subscription you already have.
+ProofKit carries your traffic inside a video call.
 
-It is a client, not a service: you bring a subscription link from your provider,
-and the app turns it into a list of servers you can connect to. There is no
-account to create here and nothing to sign up for.
+Most tunnels are recognisable. On a network that inspects what passes through it
+and drops anything shaped like a VPN, they stop working — not because the
+encryption failed, but because the shape of the connection gave it away.
 
-WHAT IT SPEAKS
+olcRTC is a different answer. It opens a WebRTC media session to a public
+meeting service — the same kind of call the network already carries all day —
+and moves your traffic inside it. What stays on the wire is a video call.
+
+ROOMS, AND HOW FULL THEY ARE
+
+An olcRTC relay holds a fixed number of slots, and a full room cannot take you.
+So the app asks each room how full it is and shows that in the list, before you
+pick one.
+
+IT ALSO SPEAKS THE ORDINARY PROTOCOLS
+
+A call-shaped tunnel costs bandwidth, and it is not needed until it is. The same
+app connects over the standard transports too, and you move between them as the
+network around you changes:
 
 • VLESS with Reality
 • VLESS over TLS, including through a CDN
 • Hysteria2, with Salamander obfuscation
 • XHTTP
-• olcRTC — an encrypted transport that rides inside a video call
 
-One subscription usually carries several of these. The app groups them by
-provider, filters them by protocol, and remembers which exit you last used.
+One app, because the moment you need the fallback is the worst possible moment
+to be installing another one.
 
-HOW IT WORKS
+BRINGING YOUR OWN SERVERS
 
-Add a subscription by pasting its link, scanning its QR code, or importing a
-file. The app fetches the server list, shows what the provider says about your
-plan — how much traffic is left, when it expires — and keeps it up to date on a
-schedule you choose.
+Add a server list by pasting its link, scanning its QR code, or importing a
+file. The app groups servers by where they came from, filters them by protocol,
+remembers which exit you last used, and refreshes the list on a schedule you
+choose.
 
 Connecting routes the whole device through the exit you picked, using Android's
-own VpnService. The status screen shows how long the session has been up and how
-much has gone through it.
+own VpnService. Apps you choose can stay outside the tunnel. The status screen
+shows how long the session has been up and how much has gone through it.
 
 MEASURING
 
@@ -68,64 +182,60 @@ number it guessed.
 PRIVACY
 
 Nothing is collected. No account, no analytics, no advertising identifier, no
-crash reporting service. Your subscriptions, your server list and the app's own
-log stay on the device and are never sent anywhere.
+crash reporting service. Your server lists and the app's own log stay on the
+device and are never sent anywhere.
 
-The app talks to exactly two kinds of address: your provider's subscription URL,
+The app talks to exactly two kinds of address: the server-list URL you added,
 and the VPN servers in it. The one exception is a partner link that has to be
-resolved into a subscription URL, and that request carries the link and nothing
+resolved into a server-list URL, and that request carries the link and nothing
 about you.
-
-Traffic is never redirected for advertising and never routed anywhere other than
-the exit you chose.
 
 REQUIREMENTS
 
-A subscription from a VPN provider. ProofKit does not sell one and does not
-include one. If you do not have a provider yet, the app can open proofkit.org,
-where you can get a subscription for the ProofKit network.
+A server configuration from a VPN provider: a server-list URL, a QR code, or a
+pasted link. ProofKit does not sell one and does not include one. Any provider
+that speaks the protocols above will work.
 
 OPEN SOURCE
 
 github.com/romanpodpriatov/olcbox
 ```
 
-**Category** — Tools. **Tags**: VPN, Privacy, Networking.
+> Two things stay out of this text. **No purchase pointer** ("the app can open
+> proofkit.org, where you can get a subscription"): on Play that is steering
+> users to a payment outside Google Play Billing for a service consumed in the
+> app — the Payments-policy twin of the Apple 3.1.1 rejection this text already
+> went through. And **no "subscription"** for the server-list URL: the 3.1.1
+> rename made every user-visible string say "server list", and the listing has
+> to agree with the screenshots.
 
-> Not "Communication" and not "Travel & Local", both of which VPN clients
-> sometimes pick and both of which invite a category-mismatch review.
+**Category** — Tools. **Tags** — VPN, Privacy.
 
-**Contact details** — support email, `https://proofkit.org` as the website,
-`https://proofkit.org/privacy-policy` as the privacy policy.
+> Not "Communication" and not "Travel & Local"; both invite a category-mismatch
+> review.
 
-> That last URL is the corrected one. `proofkit.org/privacy` serves the landing
-> page: the site is a single-page app and answers 200 to any unknown path, so a
-> wrong privacy URL does not look wrong, it looks like a marketing page — which
-> is what a reviewer would have seen.
+**Contact details** — support email; website `https://proofkit.org`; privacy
+policy `https://proofkit.org/privacy-policy/`.
+
+> `proofkit.org/privacy` 301s to that slug now. Use the real one anyway: the
+> site is a single-page app and answers 200 with the landing page to unknown
+> paths, so a wrong privacy URL does not look wrong, it looks like marketing.
 
 ---
 
-## Graphics
+## Graphics — `docs/play/`
 
-Play's sizes are its own; nothing from the App Store set fits.
-
-| Asset | Size | Notes |
+| Asset | File | Play's rule, and what was done |
 |---|---|---|
-| App icon | 512 × 512 PNG, no alpha | 32-bit PNG, no transparency |
-| Feature graphic | 1024 × 500 PNG/JPEG | Shown at the top of the listing. No essential text near the edges — it gets cropped in places |
-| Phone screenshots | 2–8, min 1080 px on the short side, 16:9 or 9:16 | The same five states as the App Store set |
+| App icon | `icon-512.png` | 512 × 512 PNG, ≤ 1 MB. `androidApp/src/main/res/playstore_icon.png` flattened over the app background `#07080D` — the source has an alpha channel, and Play paints transparency black under its own mask |
+| Feature graphic | `feature-graphic.png` | 1024 × 500, mandatory. Drawn from the app's own tokens and bundled fonts (Space Grotesk, IBM Plex); content inside a 72 px margin because some placements crop the edges. Regenerate with `scripts/play-assets.py` if the copy changes |
+| Phone screenshots | `screenshots/0[0-5]-*.png` | 2–8 files, 320–3840 px on a side, **longest side at most twice the shortest**. The App Store set (`docs/screenshots/`, 1320 × 2868, 2.17:1) is refused by the uploader; these are the same captures with the iOS status bar (top 168 px) and home indicator (bottom 68 px) cropped off → 1320 × 2632, 1.99:1 |
 
-The five, in the order a new user meets the app:
-
-1. **Empty state** — the three ways to add a subscription.
-2. **The list** — a subscription expanded, protocol filter chips, one exit selected.
-3. **Connected** — the dial on STOP, session timer, traffic counters.
-4. **Subscription header** — provider name, quota, expiry, the two links.
-5. **Subscription settings** — the switches, so it reads as configurable rather
-   than a black box.
-
-Two things to get right before pressing the shutter, same as last time: build
-with the admin gate on, and use the demo subscription rather than a real one.
+> The captures are from an iPhone. The UI is the same Compose code on both
+> platforms, but an Android capture (`adb exec-out screencap -p > x.png`) is
+> better when a device is at hand; keep the same six states. Upload order:
+> `03-connected`, `05-serverlistnotconnected`, `04-settings`, `02-vpnpopup` (the
+> disclosure — review wants to see it), `01-empty`, `00-intro`.
 
 ---
 
@@ -137,11 +247,12 @@ That ends the section. It is consistent with `PrivacyInfo.xcprivacy`, with the
 App Store answers, and with what the app does.
 
 > The two network calls the app makes are worth understanding rather than
-> guessing at. Fetching a subscription sends its URL to the provider that issued
+> guessing at. Fetching a server list sends its URL to the provider that issued
 > it; resolving a partner link sends that link to proofkit.org. Neither carries a
-> user identifier, and neither is one of Play's data types — but if analytics or
-> crash reporting is ever added, this answer and the privacy manifest have to
-> change in the same commit as the SDK.
+> user identifier, and neither is one of Play's data types. The tunnel itself
+> carries the user's traffic to the server they picked and is ephemeral
+> processing, not collection. If analytics or crash reporting is ever added,
+> this answer and the privacy manifest change in the same commit as the SDK.
 
 **Data deletion** — nothing is collected, so there is nothing to request the
 deletion of. Say so rather than leaving the URL field guessed at.
@@ -155,7 +266,7 @@ deletion of. Say so rather than leaving the URL field guessed at.
 - **Does your app use VpnService?** → **Yes**
 - **Is VPN the app's core functionality?** → **Yes**
 - **What data does the VPN service collect or transmit?** → None. The tunnel
-  carries the user's traffic to the server in their own subscription. The app
+  carries the user's traffic to the server in their own server list. The app
   does not read, record or transmit its contents, its destinations, or DNS
   queries.
 - **Does the app redirect or manipulate other apps' traffic for monetisation?**
@@ -168,39 +279,42 @@ reviewer cannot open:
 
 1. Opening the app and using the VPN.
 2. The prominent disclosure: the ordinary path to the screen, the whole text
-   scrolled slowly enough to read, **declining** and what happens after it, and
-   the screen being reached again. The decline path is the half that gets left
-   out and the half that gets declarations returned.
+   scrolled slowly enough to read, **declining** ("Not now") and what happens
+   after it, and the screen being reached again. The decline path is the half
+   that gets left out and the half that gets declarations returned.
 
-> The disclosure screen itself is `VpnDisclosureScreen` in `commonMain`, shown
-> before the first connection and before Android's own VPN prompt. It is its own
-> screen and combined with no other consent, which the policy requires
-> explicitly.
+> The disclosure is `VpnDisclosureScreen` in `commonMain` ("How the VPN
+> connection works"), shown before the first connection and before Android's own
+> VPN prompt. It is its own screen and combined with no other consent, which the
+> policy requires explicitly. `02-vpnpopup.png` is it.
 
 ### App access
 
-**Some functionality is restricted** — the app cannot be tested without a
-subscription, and a reviewer who cannot connect cannot review.
+**Some functionality is restricted** — the app cannot be tested without a server
+list, and a reviewer who cannot connect cannot review.
 
 ```
-ProofKit is a client for a VPN subscription the user already has. It does not
-sell or include one, so it cannot be tested without a subscription link.
+ProofKit is a client for a server list the user already has. It does not sell or
+include one, so it cannot be tested without a server-list link.
 
-A working test subscription is below. Paste it into the app: tap + in the top
-right, choose "Paste link or URI", then tap START.
+A working test link is below. In the app: tap + (top right) → "Paste link or
+URI" → paste the link. The servers appear under Rooms. Tap any server, then the
+button at the bottom of the screen ("CONNECT VIA …", or "TAKE A SEAT IN …" for an
+olcRTC room). Before the first connection the app shows its own disclosure ("How the VPN
+connection works" → I UNDERSTAND), then Android's VPN permission dialog.
 
-Subscription link:
+Server-list link:
   <PASTE A LIVE LINK HERE>
 
-The link carries several servers over different protocols. Any of them will
-connect. Traffic is routed through Android's VpnService.
+The link carries several servers over different protocols; any of them connects.
+Traffic is routed through Android's VpnService.
 
 The app collects no data. There is no account and no sign-in. The camera is used
-only to scan a subscription QR code, and only when the user taps that button.
+only to scan a QR code, and only when the user taps that button.
 ```
 
-> The link must be live on the day of review and for some days after. A
-> subscription that expires mid-review fails it.
+> The link must be live on the day of review and for some days after. A list
+> that expires mid-review fails it.
 
 ### The rest of App content
 
@@ -214,23 +328,21 @@ only to scan a subscription QR code, and only when the user taps that button.
   requirements with it.
 - **News app** → No. **Government app** → No. **Financial features** → None:
   payment happens entirely outside the app, so there is no in-app purchase and
-  none of the external-billing programmes apply.
+  none of the external-billing programmes apply. **Health** → None.
 
 ---
 
-## Before the first upload
+## Release path
 
-1. **Organisation account**, not personal. A personal account created after
-   November 2023 must run a closed test with 12 testers for 14 consecutive days
-   before it can reach production; organisations are exempt.
-2. **App signing — choose "Use an existing key" and upload ours.** Play's default
-   generates its own app signing key, which means the Play build and the
-   sideloaded APK have different signatures and cannot update each other. Two
-   channels that cannot cross is not what we want, and the choice is available
-   **only when the app is created**. Commands for the `pepk` tool when you reach
-   that screen.
-3. Upload the **AAB**, not an APK — `ProofKit-<version>-android.aab`, built
-   alongside the APKs since 1.0.240.
-4. Keep publishing the APKs. Clients for circumventing blocks do get pulled from
-   stores, and the day that happens is the wrong day to find the other channel
-   had been dropped.
+1. **Internal testing** — upload the `play` bundle, add tester emails, share the
+   opt-in link. No review. Verify on a real device installed *from Play*: connect
+   works, the App Link `https://proofkit.org/add#…` opens the app (only if the
+   signing key matches `assetlinks.json`), no "check for updates" row.
+2. **Closed testing** (personal account only) — 12 testers, 14 days, then
+   *Apply for production access* on the dashboard. Telegram users who already
+   run the APK are the obvious testers.
+3. **Production** — complete every App content declaration first; the first
+   production review of a VPN app takes days, not hours.
+4. **Keep publishing the APKs.** Clients for circumventing blocks do get pulled
+   from stores, and the day that happens is the wrong day to find the other
+   channel had been dropped.
