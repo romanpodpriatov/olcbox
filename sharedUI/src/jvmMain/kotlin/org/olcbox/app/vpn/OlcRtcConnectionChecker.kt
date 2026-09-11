@@ -276,7 +276,7 @@ internal object OlcRtcConnectionChecker {
     }
 
     private fun writeOlcRtcClientConfig(command: OlcRtcCommand): Path {
-        val runtimeDir = DesktopNativeAssets.resolveOlcRtcDataDir().parent.resolve("runtime")
+        val runtimeDir = DesktopPaths.appDataDir().resolve("runtime")
         Files.createDirectories(runtimeDir)
         val path = Files.createTempFile(runtimeDir, "olcrtc-check-", ".yaml")
         Files.writeString(path, command.yaml(), StandardCharsets.UTF_8)
