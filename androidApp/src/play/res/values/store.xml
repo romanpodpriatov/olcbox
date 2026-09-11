@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Google Play owns updates on its channel; see src/main/res/values/store.xml. -->
+<resources>
+    <bool name="store_self_update">false</bool>
+</resources>

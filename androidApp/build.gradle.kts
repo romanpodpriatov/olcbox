@@ -63,18 +63,18 @@ android {
     // for. `play` is the bundle Google Play distributes: Play owns updates and
     // refuses that permission — and QUERY_ALL_PACKAGES — at upload, before a
     // human looks (Device and Network Abuse; package visibility). Both are
-    // removed in src/play/AndroidManifest.xml, and store_self_update tells
-    // AppActivity not to build the updater. Same applicationId, version code
-    // and signing key on both, so a phone can move between them and update.
+    // removed in src/play/AndroidManifest.xml, and src/play/res overrides the
+    // store_self_update bool so AppActivity builds no updater. Same
+    // applicationId, version code and signing key on both, so a phone can move
+    // between them and update. (Plain res files rather than resValue: AGP 9
+    // ships with buildFeatures.resValues off.)
     flavorDimensions += "store"
     productFlavors {
         create("github") {
             dimension = "store"
-            resValue("bool", "store_self_update", "true")
         }
         create("play") {
             dimension = "store"
-            resValue("bool", "store_self_update", "false")
         }
     }
 

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Whether this build updates itself from the GitHub releases page. True for
+     the `github` flavor; src/play/res overrides it, because on Google Play the
+     store owns updates and the manifest there has no REQUEST_INSTALL_PACKAGES. -->
+<resources>
+    <bool name="store_self_update">true</bool>
+</resources>
