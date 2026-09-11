@@ -53,7 +53,12 @@ bundle on 2026-09-11; the `play` flavor and the CI upload landed the same day.
      `59:DC:54:21:81:20:4C:88:40:2D:6C:71:EA:47:4B:8B:F0:9A:CA:B8:64:C9:00:DC:28:32:E6:FF:62:FC:3E:83`,
      the fingerprint already in `assetlinks.json`.
    - Download the artifact (GitHub wraps it in another zip; the file to
-     upload is the inner `play-signing-key.zip`).
+     upload is the inner `play-signing-key.zip`), then **delete the artifact
+     from the run page** (the bin icon next to it). The repository is public,
+     so anyone signed in to GitHub can fetch a workflow artifact; this one is
+     ciphertext for Google's key and decryptable by nobody else, but a copy
+     lying around is a copy someone could try to register as their own app's
+     key. Retention is one day regardless.
    - Play Console → Setup → **App integrity** → App signing → *Use a
      different key* → *Export and upload a key from Java keystore* → upload
      it. The certificate the page then shows must match the summary above.

@@ -135,6 +135,12 @@ internal fun AppSettingsSheet(
     updateSettings: AppUpdateSettings,
     updateStatusText: String?,
     updateDownloadProgress: Float?,
+    /**
+     * False where the store owns updates (the `play` flavor has no
+     * AppUpdateService): the hub then draws no Update Settings row, the way
+     * the App Store build already behaves through ApplicationSettingsSheet.
+     */
+    showUpdates: Boolean = true,
     subscriptions: List<SubscriptionShareItem>,
     subscriptionSettings: SubscriptionSettings = SubscriptionSettings(),
     onSubscriptionSettingsChanged: (SubscriptionSettings) -> Unit = {},
@@ -247,6 +253,7 @@ internal fun AppSettingsSheet(
                     AppSettingsRoute.Hub -> AppSettingsHubContent(
                         selectedMode = selectedMode,
                         updateSettings = updateSettings,
+                        showUpdates = showUpdates,
                         subscriptionsCount = subscriptions.size,
                         enabled = enabled,
                         onConnectionSettingsClick = { route = AppSettingsRoute.ConnectionSettings },
@@ -350,6 +357,7 @@ internal enum class AppSettingsInitialRoute {
 private fun AppSettingsHubContent(
     selectedMode: AndroidConnectionMode,
     updateSettings: AppUpdateSettings,
+    showUpdates: Boolean,
     subscriptionsCount: Int,
     subscriptionSettings: SubscriptionSettings,
     enabled: Boolean,
@@ -390,13 +398,15 @@ private fun AppSettingsHubContent(
             onClick = onSubscriptionsSharingClick
         )
 
-        SettingsNavigationRow(
-            title = "Update Settings",
-            value = "Nightly · every ${updateSettings.intervalHours}h",
-            icon = Icons.Outlined.Refresh,
-            enabled = true,
-            onClick = onUpdatesClick
-        )
+        if (showUpdates) {
+            SettingsNavigationRow(
+                title = "Update Settings",
+                value = "Nightly · every ${updateSettings.intervalHours}h",
+                icon = Icons.Outlined.Refresh,
+                enabled = true,
+                onClick = onUpdatesClick
+            )
+        }
 
         SettingsNavigationRow(
             title = "Application Logs",
