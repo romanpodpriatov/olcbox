@@ -11,6 +11,12 @@ object OlcrtcFailure {
         "This room's server runs a different olcRTC protocol version. " +
             "Update the app, or ask the operator to update the server."
     const val KEY = "The key does not match this server. Import the link again."
+    /**
+     * A server that no longer holds our key cannot answer at all, so the engine
+     * reports a silent peer and [describe] names a protocol mismatch. The app
+     * knows better when the status probe has already marked the key as gone.
+     */
+    const val KEY_GONE = "Your key for this room is no longer valid. Refresh the server list, then try again."
     const val NO_PEER = "Nobody is serving this room right now."
 
     private val protocolMarkers = listOf(

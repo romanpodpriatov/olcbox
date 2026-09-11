@@ -551,7 +551,13 @@ data class HomeScreenState(
      * missing — the status pill already says "no location" and the button reads
      * SETUP, so repeating it adds noise rather than information.
      */
-    fun notice(): String? = failure
+    /**
+     * [keyGone]: the status probe has marked the selected room's key as revoked. A
+     * server without our key stays silent, which the engine cannot tell from an
+     * older server, so the protocol text is replaced by the one remedy that works.
+     */
+    fun notice(keyGone: Boolean = false): String? = failure
+        ?.let { if (keyGone && (it == OlcrtcFailure.PROTOCOL || it == OlcrtcFailure.KEY)) OlcrtcFailure.KEY_GONE else it }
         ?: startBlockedReason?.takeIf { selectedLocation != null && !canStartVpn }
 
     /** The state after the platform reports [status]. Pure, so it can be tested. */

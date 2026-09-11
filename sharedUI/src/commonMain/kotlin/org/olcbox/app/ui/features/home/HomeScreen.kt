@@ -408,7 +408,7 @@ fun HomeScreen(
             isActive = state.isVpnConnected,
             isBusy = state.isVpnLoading,
             trafficTrace = { throughputTrace(trafficSamples.value) },
-            notice = state.notice(),
+            notice = state.notice(keyGone = selectedId != null && selectedId in locationViewModel.olcrtcRevoked),
             noticeDismissible = state.failure != null,
             heading = boardHeading(model.hasRooms),
             sortLabel = sortLabel(subscriptionSettings.sort),
