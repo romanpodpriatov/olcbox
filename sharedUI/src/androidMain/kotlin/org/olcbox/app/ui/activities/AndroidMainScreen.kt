@@ -428,6 +428,7 @@ fun AndroidMainScreen(
             splitTunnelSettings = splitTunnelSettings,
             installedApps = installedApps,
             logs = logs,
+            showUpdates = appUpdateService != null,
             updateSettings = updateSettings,
             updateStatusText = updateStatusText,
             updateDownloadProgress = updateDownloadProgress,

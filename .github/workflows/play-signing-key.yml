@@ -1,0 +1,88 @@
+name: Play App Signing key export
+
+# One-time. Hands Google Play a copy of the Android release key, so Play signs
+# with the same key the GitHub APKs carry and a phone can move between the two
+# channels and keep updating. The .jks exists only as the ANDROID_RELEASE_*
+# secrets, which is why this runs here and not on a laptop.
+#
+# The artifact holds pepk's output: the private key encrypted to Google's
+# published public key (the P-256 point every "Use a different key" page
+# prints), which nothing but Google can open. Upload that zip in Play Console
+# -> Setup -> App integrity -> App signing -> Use a different key -> "Export and
+# upload a key from Java keystore". The choice exists only until the first
+# bundle is uploaded.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    env:
+      ANDROID_RELEASE_KEYSTORE_BASE64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 }}
+      ANDROID_RELEASE_STORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_STORE_PASSWORD }}
+      ANDROID_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
+      ANDROID_RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD }}
+      # Google's key for encrypting exported signing keys: 4 bytes of identity
+      # followed by a 64-byte P-256 point, the value the console shows next to
+      # the pepk command. A public key, so it can live here.
+      PLAY_ENCRYPTION_KEY_HEX: eb10fe8f7c7c9df715022017b00c6471f8ba8170b13049a11e6c09ffe3056a104a3bbe4ac5a955f4ba4fe93fc8cef27558a3eb9d2a529a2092761fb833b656cd48b9de6a
+
+    steps:
+      - name: Setup JDK
+        uses: actions/setup-java@v5.6.0
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Export the release key for Play
+        run: |
+          set -euo pipefail
+          for name in ANDROID_RELEASE_KEYSTORE_BASE64 ANDROID_RELEASE_STORE_PASSWORD ANDROID_RELEASE_KEY_ALIAS ANDROID_RELEASE_KEY_PASSWORD; do
+            [ -n "${!name}" ] || { echo "::error::${name} is not set" >&2; exit 1; }
+          done
+          work="$RUNNER_TEMP/pepk"
+          mkdir -p "$work"
+          cd "$work"
+
+          printf '%s' "${ANDROID_RELEASE_KEYSTORE_BASE64}" | tr -d '[:space:]' | base64 --decode > release-keystore.jks
+          # Same trimming as release.yml: whitespace survives a paste into a secret.
+          alias="$(printf '%s' "${ANDROID_RELEASE_KEY_ALIAS}" | tr -d '\r\n' | sed 's/[[:space:]]*$//')"
+          store_pw="$(printf '%s' "${ANDROID_RELEASE_STORE_PASSWORD}" | tr -d '\r\n')"
+          key_pw="$(printf '%s' "${ANDROID_RELEASE_KEY_PASSWORD}" | tr -d '\r\n')"
+          keytool -list -keystore release-keystore.jks -storepass "${store_pw}" -alias "${alias}" >/dev/null
+
+          curl -fsSL -o pepk.jar https://www.gstatic.com/play-apps-publisher-rapid/signing-tool/prod/pepk.jar
+          unzip -tq pepk.jar >/dev/null
+          echo "pepk.jar sha256: $(sha256sum pepk.jar | cut -d' ' -f1)"
+
+          java -jar pepk.jar \
+            --keystore=release-keystore.jks \
+            --alias="${alias}" \
+            --keystore-pass="${store_pw}" \
+            --key-pass="${key_pw}" \
+            --output=play-signing-key.zip \
+            --include-cert \
+            --encryptionkey="${PLAY_ENCRYPTION_KEY_HEX}"
+          unzip -l play-signing-key.zip
+
+          # The console shows the certificate it received; this is what it has to match.
+          {
+            echo "### Release certificate handed to Play"
+            echo '```'
+            keytool -list -v -keystore release-keystore.jks -storepass "${store_pw}" -alias "${alias}" \
+              | grep -E "Owner:|Valid from:|SHA256:"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          shred -u release-keystore.jks
+
+      - name: Keep the encrypted key for a day
+        uses: actions/upload-artifact@v7
+        with:
+          name: play-signing-key
+          path: ${{ runner.temp }}/pepk/play-signing-key.zip
+          retention-days: 1
+          if-no-files-found: error

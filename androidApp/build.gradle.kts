@@ -58,6 +58,26 @@ android {
         }
     }
 
+    // One app, two channels. `github` is the build on the releases page and
+    // updates itself from there, which is what REQUEST_INSTALL_PACKAGES is
+    // for. `play` is the bundle Google Play distributes: Play owns updates and
+    // refuses that permission — and QUERY_ALL_PACKAGES — at upload, before a
+    // human looks (Device and Network Abuse; package visibility). Both are
+    // removed in src/play/AndroidManifest.xml, and store_self_update tells
+    // AppActivity not to build the updater. Same applicationId, version code
+    // and signing key on both, so a phone can move between them and update.
+    flavorDimensions += "store"
+    productFlavors {
+        create("github") {
+            dimension = "store"
+            resValue("bool", "store_self_update", "true")
+        }
+        create("play") {
+            dimension = "store"
+            resValue("bool", "store_self_update", "false")
+        }
+    }
+
     signingConfigs {
         if (hasReleaseKeystore) {
             create("release") {

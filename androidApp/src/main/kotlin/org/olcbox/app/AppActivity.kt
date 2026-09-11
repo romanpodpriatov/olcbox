@@ -46,9 +46,16 @@ class AppActivity : ComponentActivity() {
         val locationsRepository = LocationsRepositoryImpl(locationsDataSource)
         val configImporter = AndroidConfigImporter(this)
         val logExporter = AndroidLogExporter(this)
-        val updateService = AppUpdateService(
-            deviceIdentityProvider = PersistentDeviceIdentityProvider(locationsDataSource)
-        )
+        // Null where the store owns updates (the `play` flavor): the screen then
+        // neither polls the release feed nor shows the Updates section, and the
+        // manifest of that flavor carries no REQUEST_INSTALL_PACKAGES to use.
+        val updateService = if (resources.getBoolean(R.bool.store_self_update)) {
+            AppUpdateService(
+                deviceIdentityProvider = PersistentDeviceIdentityProvider(locationsDataSource)
+            )
+        } else {
+            null
+        }
 
         val viewModel = HomeScreenViewModel(
             vpnManager = vpnManager,

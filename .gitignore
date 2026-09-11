@@ -43,3 +43,6 @@ keystore.properties
 release-keystore.jks
 .!80165!.DS_Store
 .zed
+
+# Python tooling under scripts/
+__pycache__/

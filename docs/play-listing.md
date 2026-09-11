@@ -6,7 +6,7 @@ untranslated app reads as bait.
 
 Character limits are Google's and are enforced; counts in brackets are what the
 text below actually uses. Checked against the console form and the 1.0.397
-bundle on 2026-09-11.
+bundle on 2026-09-11; the `play` flavor and the CI upload landed the same day.
 
 ---
 
@@ -32,80 +32,85 @@ bundle on 2026-09-11.
 
 1. **Account type decides the path.** A *personal* developer account created
    after 2023-11-13 cannot publish to production until the app has run a
-   **closed test with at least 12 opted-in testers for 14 consecutive days** and
-   then applied for production access. Organisation accounts (D-U-N-S) are
-   exempt. Either way the first track is *internal testing* (up to 100 tester
-   emails, no review, live in minutes).
-2. **Play App Signing — decide before the first bundle goes up.** Play's default
-   generates its own app signing key. Then the Play build and the sideloaded APK
-   carry different signatures, neither can update the other, and App Links
-   (`https://proofkit.org/add`) stop verifying for Play installs until Google's
-   certificate is added to `proofkit-dvpn/frontend/.well-known/assetlinks.json`.
-   The alternative is uploading our key: Setup → App integrity → App signing →
-   *Use a different key* → *Export and upload a key from Java keystore*.
-   Our release key: `CN=ProofKit, O=Globvent inc`, created 2026-07-28, valid to
-   2053, SHA-256 `59:DC:54:21:81:20:4C:88:40:2D:6C:71:EA:47:4B:8B:F0:9A:CA:B8:64:C9:00:DC:28:32:E6:FF:62:FC:3E:83`
-   (the fingerprint already in `assetlinks.json`). It exists only as the
-   `ANDROID_RELEASE_*` GitHub secrets — **it is on no server**, so the export
-   runs wherever the `.jks` is kept:
-   ```
-   java -jar pepk.jar --keystore=release-keystore.jks --alias=<ANDROID_RELEASE_KEY_ALIAS> \
-     --output=output.zip --include-cert --rsa-aes-encryption \
-     --encryption-key-path=encryption_public_key.pem
-   ```
-   `pepk.jar` and the `.pem` come from that same console page. If Google's key
-   is used instead: add its SHA-256 (shown on the App signing page) as a second
-   entry in `assetlinks.json`, redeploy `frontend/`, and accept that Play users
-   and APK users are two populations that cannot cross-update.
-3. **Upload the AAB, not an APK.** Every release carries
-   `ProofKit-<version>-android.aab`. Checked on 1.0.397: `targetSdk = 37` (Play
-   requires ≥ 36 for new apps since 2026-08-31); every arm64-v8a and x86_64 `.so`
-   is 16 KB-page aligned (`LOAD` align `0x4000`); signed with the key above.
-   `armeabi-v7a/libgojni.so` is 4 KB-aligned, which is fine — 32-bit is outside
-   the 16 KB requirement.
-4. **The bundle that exists is not yet the bundle Play will accept** — next
-   section.
+   closed test with at least 12 opted-in testers for 14 consecutive days.
+   **Ours is an organisation account, which is exempt.** The first track is
+   *internal testing* either way (up to 100 tester emails, no review, live in
+   minutes).
+2. **Play App Signing — hand Play our key before the first bundle goes up.**
+   Play's default generates its own app signing key. Then the Play build and
+   the sideloaded APK carry different signatures, neither can update the
+   other, and App Links (`https://proofkit.org/add`) stop verifying for Play
+   installs until Google's certificate is added to
+   `proofkit-dvpn/frontend/.well-known/assetlinks.json`. We want one key on
+   both channels, so Play gets a copy of ours:
+   - Actions → **Play App Signing key export** → *Run workflow*
+     (`.github/workflows/play-signing-key.yml`). It decodes the
+     `ANDROID_RELEASE_*` secrets — the `.jks` exists nowhere else — runs
+     Google's `pepk` against them, and keeps `play-signing-key.zip` as a
+     one-day artifact. The zip holds the private key encrypted to Google's
+     published P-256 key; nothing but Google can open it. The job summary
+     prints the certificate: `CN=ProofKit, O=Globvent inc`, SHA-256
+     `59:DC:54:21:81:20:4C:88:40:2D:6C:71:EA:47:4B:8B:F0:9A:CA:B8:64:C9:00:DC:28:32:E6:FF:62:FC:3E:83`,
+     the fingerprint already in `assetlinks.json`.
+   - Download the artifact (GitHub wraps it in another zip; the file to
+     upload is the inner `play-signing-key.zip`).
+   - Play Console → Setup → **App integrity** → App signing → *Use a
+     different key* → *Export and upload a key from Java keystore* → upload
+     it. The certificate the page then shows must match the summary above.
+   - That page also offers a separate **upload key**. Skip it: the upload key
+     is then the app signing key itself, which is what the release workflow
+     signs with anyway.
+3. **Upload the AAB, not an APK, and the `play` one.** Every release carries
+   `ProofKit-<version>-android-play.aab`. Checked on 1.0.397: `targetSdk = 37`
+   (Play requires ≥ 36 for new apps since 2026-08-31); every arm64-v8a and
+   x86_64 `.so` is 16 KB-page aligned (`LOAD` align `0x4000`).
+   `armeabi-v7a/libgojni.so` is 4 KB-aligned, which is fine — 32-bit is
+   outside the 16 KB requirement.
+4. **The first bundle goes through the console by hand.** Google registers an
+   app only through the console, so the Developer API — and the CI upload
+   below — works from the second bundle on.
 
 ---
 
-## Two policy blockers in the current Android build
+## Two channels, one app — the `play` flavor
 
-The GitHub build is right for sideloading and wrong for Play, in two places that
-Play's automated review reads straight from the manifest before a human looks:
+The GitHub build is right for sideloading and wrong for Play, in two places
+that Play's automated review reads straight from the manifest before a human
+looks:
 
 - **`REQUEST_INSTALL_PACKAGES` + the in-app updater.** `AndroidUpdateInstaller`
   downloads the next APK from GitHub Releases and hands it to the package
-  installer. Play's Device and Network Abuse policy: an app distributed via Play
-  may not update itself by any method other than Play's. And the permission's
-  permitted uses (browsers, file managers, messaging with attachments, backup,
-  device migration, enterprise management) do not include a VPN client, so the
-  declaration form would be refused.
+  installer. Play's Device and Network Abuse policy: an app distributed via
+  Play may not update itself by any method other than Play's. And the
+  permission's permitted uses (browsers, file managers, messaging with
+  attachments, backup, device migration, enterprise management) do not include
+  a VPN client, so the declaration form would be refused.
 - **`QUERY_ALL_PACKAGES`.** Permitted only for device search, antivirus, file
-  managers and browsers; everyone else fills the Permissions Declaration Form and
-  is told no. The per-app routing list (`AndroidVpnManager.loadInstalledApps`)
-  already asks for launcher apps through the `<queries>` element, which needs no
-  permission; only its `getInstalledApplications` fallback shrinks without it.
+  managers and browsers; everyone else fills the Permissions Declaration Form
+  and is told no. The per-app routing list (`AndroidVpnManager.loadInstalledApps`)
+  already asks for launcher apps through the `<queries>` element, which needs
+  no permission; only its `getInstalledApplications` fallback shrinks without
+  it.
 
-**The fix is a `play` product flavor, not a runtime check** — the manifest is
-judged at upload, before any code runs:
+So `androidApp` has a `store` flavor dimension: **`github`** (the APKs on the
+releases page, unchanged) and **`play`**:
 
-- `androidApp/build.gradle.kts`: `flavorDimensions += "store"`; flavors `github`
-  (the default, unchanged) and `play` with
-  `buildConfigField("boolean", "SELF_UPDATE", "false")`.
-- `androidApp/src/play/AndroidManifest.xml`: both permissions with
+- `androidApp/src/play/AndroidManifest.xml` removes both permissions with
   `tools:node="remove"`.
-- `AppActivity`: construct `AppUpdateService` only when `BuildConfig.SELF_UPDATE`.
-  `AndroidMainScreen` already takes `appUpdateService = null` and skips the
-  automatic check; hide the manual "check for updates" row in that case instead
-  of letting it answer "Update service unavailable".
-- `release.yml`: `:androidApp:bundlePlayRelease` →
-  `dist/ProofKit-<version>-android-play.aab`, beside the existing APKs
-  (`assembleGithubRelease`). The APK file names must not change — the updater
-  matches them.
-- `pr-checks.yml`: any `assembleRelease` / `bundleRelease` task becomes the
-  flavored name.
+- The `store_self_update` resource is `false`, so `AppActivity` builds no
+  `AppUpdateService`; `AndroidMainScreen` then passes `showUpdates = false`
+  and the Updates section is not drawn, the way the App Store build already
+  behaves.
+- `release.yml` builds `:androidApp:assembleGithubRelease` for the APKs and
+  `:androidApp:bundlePlayRelease` → `dist/ProofKit-<version>-android-play.aab`,
+  and refuses to publish a play bundle whose manifest still names either
+  permission (the bundle's manifest is protobuf, but permission names are
+  plain strings in it).
+- Same `applicationId`, version code and signing key on both flavors, so a
+  phone can move from the APK to the Play build and back and still update.
 
-Not built as of 2026-09-11.
+Do not put a runtime check in place of the flavor: the manifest is judged at
+upload, before any code runs.
 
 ---
 
@@ -334,13 +339,27 @@ only to scan a QR code, and only when the user taps that button.
 
 ## Release path
 
-1. **Internal testing** — upload the `play` bundle, add tester emails, share the
-   opt-in link. No review. Verify on a real device installed *from Play*: connect
-   works, the App Link `https://proofkit.org/add#…` opens the app (only if the
-   signing key matches `assetlinks.json`), no "check for updates" row.
-2. **Closed testing** (personal account only) — 12 testers, 14 days, then
-   *Apply for production access* on the dashboard. Telegram users who already
-   run the APK are the obvious testers.
+1. **Internal testing, by hand once** — upload
+   `ProofKit-<version>-android-play.aab` from a release, add tester emails,
+   share the opt-in link. No review. Verify on a real device installed *from
+   Play*: connect works, the App Link `https://proofkit.org/add#…` opens the
+   app, Settings has no Updates section.
+2. **Then from CI, like TestFlight.** The Android job uploads the play bundle
+   to a track whenever the `PLAY_SERVICE_ACCOUNT_JSON` secret is set
+   (`scripts/play-upload.py`, Google Play Developer API). To set it up:
+   - Google Cloud Console → IAM → *Service accounts* → create one (any
+     project; the name is for us) → *Keys* → add a JSON key.
+   - Play Console → *Users and permissions* → *Invite new users* → the
+     service account's email → *App permissions* → ProofKit → tick **Release
+     to testing tracks** and **View app information**; add **Release to
+     production** only if the `production` choice below is wanted.
+   - GitHub → Settings → Secrets → Actions → `PLAY_SERVICE_ACCOUNT_JSON` =
+     the whole JSON file.
+   Every `android`, `mobile` or `all` run then lands on Play's internal
+   track within minutes of the build. The `play_track` input goes to
+   `production` for a direct release (Play reviews it first) or `none` to
+   build only; promoting a tested internal build from the console is the
+   safer production path, because it ships the exact bundle testers had.
 3. **Production** — complete every App content declaration first; the first
    production review of a VPN app takes days, not hours.
 4. **Keep publishing the APKs.** Clients for circumventing blocks do get pulled

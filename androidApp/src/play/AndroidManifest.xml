@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Merged over src/main for the `play` flavor only. Google Play refuses both of
+  these at upload: REQUEST_INSTALL_PACKAGES exists for the GitHub build's
+  self-updater, and Play owns updates on its own channel; QUERY_ALL_PACKAGES
+  is granted only to device search, antivirus, file managers and browsers.
+  The per-app routing list still sees every launchable app through the
+  <queries> element in src/main, which needs no permission.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission
+        android:name="android.permission.REQUEST_INSTALL_PACKAGES"
+        tools:node="remove" />
+    <uses-permission
+        android:name="android.permission.QUERY_ALL_PACKAGES"
+        tools:node="remove" />
+
+</manifest>

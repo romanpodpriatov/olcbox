@@ -14,6 +14,14 @@ on:
           - mobile       # Android and iOS together  [10x]
           - desktop      # macOS arm64 + Windows + Linux  [10x]
           - all          # every platform, and publish the release  [10x]
+      play_track:
+        description: 'Google Play track for the play-flavor bundle (uploads only when PLAY_SERVICE_ACCOUNT_JSON is set)'
+        type: choice
+        default: 'internal'
+        options:
+          - internal     # Play's internal testing: testers get it in minutes, no review — the TestFlight of Android
+          - production   # everyone, after Play's review; prefer promoting a tested internal build from the console
+          - none         # build only
 
 permissions:
   contents: read
@@ -725,6 +733,10 @@ jobs:
       ANDROID_RELEASE_STORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_STORE_PASSWORD }}
       ANDROID_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
       ANDROID_RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD }}
+      # A Google Cloud service account invited into the Play Console with
+      # "Release to testing tracks" (and "Release to production" for that
+      # track). Absent, the play bundle is built and kept as an artifact only.
+      PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
 
     steps:
       - name: Checkout olcbox
@@ -959,13 +971,13 @@ jobs:
           export OLCRTC_REPO="${{ github.workspace }}/olcrtc"
           export ANDROID_NDK_HOME="${ANDROID_HOME}/ndk/${ANDROID_NDK_VERSION}"
           export ANDROID_NDK_ROOT="${ANDROID_NDK_HOME}"
-          ./gradlew -Polcbox.version="${OLCBOX_VERSION}" -Polcbox.versionCode="${OLCBOX_VERSION_CODE}" :sharedUI:jvmTest :androidApp:assembleRelease :androidApp:bundleRelease --stacktrace
+          ./gradlew -Polcbox.version="${OLCBOX_VERSION}" -Polcbox.versionCode="${OLCBOX_VERSION_CODE}" :sharedUI:jvmTest :androidApp:assembleGithubRelease :androidApp:bundlePlayRelease --stacktrace
 
       - name: Prepare universal Android release asset
         working-directory: olcbox
         run: |
           mkdir -p dist
-          release_apk="$(find androidApp/build/outputs/apk/release -maxdepth 1 -type f -name '*.apk' | sort | head -n 1)"
+          release_apk="$(find androidApp/build/outputs/apk/github/release -maxdepth 1 -type f -name '*.apk' | sort | head -n 1)"
           if [ -z "${release_apk}" ]; then
             echo "Android release APK was not found" >&2
             exit 1
@@ -976,16 +988,36 @@ jobs:
       # new app, and the APKs are the channel nobody can revoke — clients for
       # circumventing blocks do get pulled from stores, and the day that happens
       # is the wrong day to discover the other channel was dropped to make room.
-      - name: Prepare Android App Bundle for Google Play
+      - name: Prepare the play-flavor App Bundle for Google Play
         working-directory: olcbox
         run: |
           set -euo pipefail
-          bundle="$(find androidApp/build/outputs/bundle -type f -name '*.aab' | sort | head -n 1)"
+          bundle="$(find androidApp/build/outputs/bundle/playRelease -type f -name '*.aab' | sort | head -n 1)"
           if [ -z "${bundle}" ]; then
-            echo "Android App Bundle was not found" >&2
+            echo "Android App Bundle (play flavor) was not found" >&2
             exit 1
           fi
-          cp "${bundle}" "dist/ProofKit-${OLCBOX_VERSION}-android.aab"
+          aab="dist/ProofKit-${OLCBOX_VERSION}-android-play.aab"
+          cp "${bundle}" "$aab"
+
+          # What makes this bundle the Play one: the two permissions Play refuses
+          # at upload are gone (src/play/AndroidManifest.xml), and the cores are
+          # in. The manifest inside a bundle is protobuf, but permission names
+          # are stored as plain strings, so grep sees them.
+          manifest="$(mktemp)"
+          unzip -p "$aab" base/manifest/AndroidManifest.xml > "$manifest"
+          for perm in android.permission.REQUEST_INSTALL_PACKAGES android.permission.QUERY_ALL_PACKAGES; do
+            if grep -a -q "$perm" "$manifest"; then
+              echo "::error::${perm} is still in the play bundle's manifest; Play would refuse it." >&2
+              exit 1
+            fi
+            echo "ok   no ${perm}"
+          done
+          for core in libsingboxcore.so libxraycore.so libgojni.so; do
+            unzip -l "$aab" | grep -q "base/lib/arm64-v8a/${core}" \
+              || { echo "MISSING arm64-v8a/${core} in the bundle" >&2; exit 1; }
+            echo "ok   arm64-v8a/${core}"
+          done
           ls -la dist/
 
       # Asserted against the finished artifact, not against the staging directory.
@@ -1019,12 +1051,12 @@ jobs:
           export OLCRTC_REPO="${{ github.workspace }}/olcrtc"
           export ANDROID_NDK_HOME="${ANDROID_HOME}/ndk/${ANDROID_NDK_VERSION}"
           export ANDROID_NDK_ROOT="${ANDROID_NDK_HOME}"
-          ./gradlew -Polcbox.version="${OLCBOX_VERSION}" -Polcbox.versionCode="${OLCBOX_VERSION_CODE}" -Polcbox.android.abiFilters=armeabi-v7a :androidApp:clean :androidApp:assembleRelease --stacktrace
+          ./gradlew -Polcbox.version="${OLCBOX_VERSION}" -Polcbox.versionCode="${OLCBOX_VERSION_CODE}" -Polcbox.android.abiFilters=armeabi-v7a :androidApp:clean :androidApp:assembleGithubRelease --stacktrace
 
       - name: Prepare armeabi-v7a Android release asset
         working-directory: olcbox
         run: |
-          release_apk="$(find androidApp/build/outputs/apk/release -maxdepth 1 -type f -name '*.apk' | sort | head -n 1)"
+          release_apk="$(find androidApp/build/outputs/apk/github/release -maxdepth 1 -type f -name '*.apk' | sort | head -n 1)"
           if [ -z "${release_apk}" ]; then
             echo "Android armeabi-v7a release APK was not found" >&2
             exit 1
@@ -1049,7 +1081,33 @@ jobs:
           path: |
             olcbox/dist/ProofKit-*-android-release.apk
             olcbox/dist/ProofKit-*-android-armeabi-v7a-release.apk
-            olcbox/dist/ProofKit-*-android.aab
+            olcbox/dist/ProofKit-*-android-play.aab
+
+      # After the artifact, so a refusal from Play — the first bundle of an app
+      # has to go through the console by hand, and a version code Play already
+      # holds is refused — still leaves the APKs downloadable. Same shape as the
+      # TestFlight upload: secret present means upload, absent means build only.
+      - name: Upload the play bundle to Google Play
+        if: env.PLAY_SERVICE_ACCOUNT_JSON != '' && inputs.play_track != 'none'
+        working-directory: olcbox
+        env:
+          PLAY_TRACK: ${{ inputs.play_track || 'internal' }}
+        run: |
+          set -euo pipefail
+          sa="$RUNNER_TEMP/play-service-account.json"
+          printf '%s' "${PLAY_SERVICE_ACCOUNT_JSON}" > "$sa"
+          # A venv for the same reason as the App Store Connect step: the
+          # runner's Python refuses to install into itself.
+          python3 -m venv "$RUNNER_TEMP/play-venv"
+          "$RUNNER_TEMP/play-venv/bin/pip" install --quiet google-api-python-client google-auth
+          "$RUNNER_TEMP/play-venv/bin/python" scripts/play-upload.py \
+            --service-account "$sa" \
+            --package org.proofkit.app \
+            --bundle "dist/ProofKit-${OLCBOX_VERSION}-android-play.aab" \
+            --track "${PLAY_TRACK}" \
+            --release-name "${OLCBOX_VERSION}" \
+            --notes "ProofKit ${OLCBOX_VERSION}"
+          rm -f "$sa"
 
   build-ios:
     needs: [release_version, plan]
@@ -1491,6 +1549,7 @@ jobs:
             echo "- App version: \`${OLCBOX_VERSION}\`"
             echo "- Android versionCode: \`${OLCBOX_VERSION_CODE}\`"
             echo "- Android APKs: universal and \`armeabi-v7a\`"
+            echo "- Android App Bundle: the \`play\` flavor, as uploaded to Google Play (no self-updater)"
             echo "- Workflow: \`.github/workflows/release.yml\`"
             echo "- Workflow run: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
             echo
