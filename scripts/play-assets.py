@@ -2,8 +2,8 @@
 # Google Play store assets from the app's own tokens and bundled fonts -> docs/play/.
 # Needs Pillow. Re-run after a copy or screenshot change; see docs/play-listing.md.
 import os
+
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
-import os
 
 FORK = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 F = FORK + '/sharedUI/src/commonMain/composeResources/font/'
