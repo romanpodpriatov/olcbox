@@ -60,9 +60,14 @@ def main() -> int:
     args = parser.parse_args()
 
     credentials = service_account.Credentials.from_service_account_file(args.service_account, scopes=[SCOPE])
-    authorized = google_auth_httplib2.AuthorizedHttp(
-        credentials, http=httplib2.Http(timeout=HTTP_TIMEOUT_SEC)
-    )
+    transport = httplib2.Http(timeout=HTTP_TIMEOUT_SEC)
+    # A resumable upload answers each chunk with 308 "Resume Incomplete",
+    # which httplib2 treats as a permanent redirect and then rejects for
+    # having no Location header. googleapiclient's own build_http() drops 308
+    # from the redirect codes for exactly this reason; supplying our own
+    # transport to raise the timeout means supplying that too.
+    transport.redirect_codes = transport.redirect_codes - {308}
+    authorized = google_auth_httplib2.AuthorizedHttp(credentials, http=transport)
     play = build("androidpublisher", "v3", http=authorized, cache_discovery=False)
     edits = play.edits()
 
