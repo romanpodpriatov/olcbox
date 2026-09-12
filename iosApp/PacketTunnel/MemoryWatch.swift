@@ -26,14 +26,23 @@ import os
 /// debugging facility: set `enabled` to false once it has answered.
 enum MemoryWatch {
 
-    /// Off.
+    /// On, for the speed-test kill.
     ///
-    /// It answered its question — the extension was not dying of memory, and the
-    /// eight-second olcRTC timeout was — and what it costs is a file rewritten
-    /// four times a second inside a process with a ~50 MB ceiling. Flip to true
-    /// while chasing a kill nobody can explain; leave it false in anything that
-    /// ships.
-    static let enabled = false
+    /// It was switched off after answering a different question: a start that
+    /// died in two seconds, which turned out to be the eight-second olcRTC
+    /// timeout rather than memory. This is the other case it was written for —
+    /// the extension disappearing a minute into a speed test, with nothing in
+    /// the log but the app's own "the packet tunnel is down".
+    ///
+    /// Measured on a workstation under that load, olcRTC alone held 48.8 MB of
+    /// dirty memory before the windows were shrunk and 36.8 MB after, against a
+    /// ceiling of about 50 MB that sing-box and Xray share. Whether the smaller
+    /// windows are enough is a question only a phone can answer, and this is
+    /// what answers it: the file that survives the kill says whether the
+    /// footprint was climbing.
+    ///
+    /// Switch it off again once it has.
+    static let enabled = true
 
     /// 250 ms, because the window being explained is about two seconds long —
     /// a slower tick could miss the whole climb.

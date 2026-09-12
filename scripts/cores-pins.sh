@@ -81,7 +81,14 @@ LIBXRAY_VERSION="${LIBXRAY_VERSION:-v1.260711.0}"
 # a whole data backlog out as "record too old"; and liveness counted a pong
 # queued behind megabytes of the user's own traffic as a missed pong, four of
 # which tore the session down. Both ends interoperate with the build before it.
-OLCRTC_VERSION="${OLCRTC_VERSION:-v0.0.0-20260912043856-333b10f0e3c5}"
+#
+# 333b10f0e3c5 -> 7f913e8e6e84: receive windows a phone can afford. With the
+# two faults above fixed an iPhone finally moved a speed test's traffic, and
+# the extension was then killed for exceeding its ~50 MB ceiling: smux had a
+# 32 MB session buffer and vp8channel two KCP sessions at ~5.7 MB per
+# direction. Measured on the same load, anonymous memory went from 48.8 MB
+# peak to 36.8 MB with every transfer still completing.
+OLCRTC_VERSION="${OLCRTC_VERSION:-v0.0.0-20260912114847-7f913e8e6e84}"
 
 # Bumped when the framework's *shape* changes while its pins do not — adding the
 # macOS slice being the first case. The versions alone cannot express that: they
