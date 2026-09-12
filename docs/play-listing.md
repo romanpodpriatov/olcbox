@@ -117,6 +117,13 @@ releases page, unchanged) and **`play`**:
 Do not put a runtime check in place of the flavor: the manifest is judged at
 upload, before any code runs.
 
+**State 2026-09-12:** our key is Play's app signing key (uploaded via the
+export workflow, RSA-AES mode); 1.0.398 (398) went to internal testing by
+hand from run 34667107374; 1.0.399 (399) was uploaded to the internal track
+by the workflow itself (run 34670196501, `Uploaded … versionCode 399 to the
+internal track`). From here every `android`, `mobile` or `all` run lands on
+internal without anyone touching the console.
+
 ---
 
 ## Store listing
