@@ -73,7 +73,15 @@ LIBXRAY_VERSION="${LIBXRAY_VERSION:-v1.260711.0}"
 # layer v2, handshake v3, per-session resolver, the mobile.Runtime API). Not
 # wire-compatible with the build before it: a room served by the old engine
 # answers this one with a handshake timeout, which the app now names.
-OLCRTC_VERSION="${OLCRTC_VERSION:-v0.0.0-20260910180915-9da2735b06c4}"
+#
+# 9da2735b06c4 → 333b10f0e3c5: two load failures, both of which showed up as a
+# session that came up fine and then died during a speedtest (olcbox#15). Every
+# lane — data, control, datagram — was numbered from one counter and checked
+# against one replay window, so an idle control record numbered far ahead aged
+# a whole data backlog out as "record too old"; and liveness counted a pong
+# queued behind megabytes of the user's own traffic as a missed pong, four of
+# which tore the session down. Both ends interoperate with the build before it.
+OLCRTC_VERSION="${OLCRTC_VERSION:-v0.0.0-20260912043856-333b10f0e3c5}"
 
 # Bumped when the framework's *shape* changes while its pins do not — adding the
 # macOS slice being the first case. The versions alone cannot express that: they
