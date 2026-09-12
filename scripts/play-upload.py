@@ -18,15 +18,26 @@ import argparse
 import json
 import sys
 
+import google_auth_httplib2
+import httplib2
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaFileUpload
 
 SCOPE = "https://www.googleapis.com/auth/androidpublisher"
-# A multiple of 256 KiB, as the resumable protocol wants; 32 MiB keeps a
-# 200 MB bundle to a handful of requests.
-CHUNK = 32 * 1024 * 1024
+# A multiple of 256 KiB, as the resumable protocol wants. 32 MiB was one
+# request per chunk of a 200 MB bundle and one of them outran the 60 s
+# default timeout on a runner's uplink, which ended the release with
+# "TimeoutError: The read operation timed out"; 8 MiB keeps each request
+# short enough that a slow minute is a slow chunk rather than a failure.
+CHUNK = 8 * 1024 * 1024
+# Long enough for a chunk on a bad uplink, short enough that a genuinely
+# dead connection does not hold the job for the whole run.
+HTTP_TIMEOUT_SEC = 300
+# googleapiclient retries socket timeouts and 5xx with backoff, but only
+# when asked: the default is zero and one flaky chunk fails the upload.
+RETRIES = 5
 
 
 def describe(error: HttpError) -> str:
@@ -49,17 +60,20 @@ def main() -> int:
     args = parser.parse_args()
 
     credentials = service_account.Credentials.from_service_account_file(args.service_account, scopes=[SCOPE])
-    play = build("androidpublisher", "v3", credentials=credentials, cache_discovery=False)
+    authorized = google_auth_httplib2.AuthorizedHttp(
+        credentials, http=httplib2.Http(timeout=HTTP_TIMEOUT_SEC)
+    )
+    play = build("androidpublisher", "v3", http=authorized, cache_discovery=False)
     edits = play.edits()
 
     try:
-        edit_id = edits.insert(packageName=args.package, body={}).execute()["id"]
+        edit_id = edits.insert(packageName=args.package, body={}).execute(num_retries=RETRIES)["id"]
 
         media = MediaFileUpload(args.bundle, mimetype="application/octet-stream", resumable=True, chunksize=CHUNK)
         uploaded = (
             edits.bundles()
             .upload(packageName=args.package, editId=edit_id, media_body=media, ackBundleInstallationWarning=True)
-            .execute()
+            .execute(num_retries=RETRIES)
         )
         version_code = uploaded["versionCode"]
 
@@ -73,17 +87,17 @@ def main() -> int:
             editId=edit_id,
             track=args.track,
             body={"track": args.track, "releases": [release]},
-        ).execute()
+        ).execute(num_retries=RETRIES)
 
         try:
-            edits.commit(packageName=args.package, editId=edit_id).execute()
+            edits.commit(packageName=args.package, editId=edit_id).execute(num_retries=RETRIES)
         except HttpError as error:
             # Play refuses to send an edit for review by itself when the app has
             # other changes pending in the console. The upload is still wanted;
             # the review is then started from the console, as the message says.
             if "changesNotSentForReview" not in describe(error):
                 raise
-            edits.commit(packageName=args.package, editId=edit_id, changesNotSentForReview=True).execute()
+            edits.commit(packageName=args.package, editId=edit_id, changesNotSentForReview=True).execute(num_retries=RETRIES)
             print("Committed without sending for review: the console has other pending changes.")
     except HttpError as error:
         print(f"Google Play refused: {describe(error)}", file=sys.stderr)
