@@ -567,6 +567,25 @@ final class SwiftPacketTunnelBridge: NSObject, @unchecked Sendable, IosPacketTun
                 contentsOf: container.appendingPathComponent(name), encoding: .utf8
             )
         }
+        // The memory trace, when MemoryWatch is on. It was readable only
+        // through the status pill's death message, which needs the app to have
+        // caught the death — so an exported log, the thing a tester actually
+        // sends, carried no memory evidence at all. Each line already names the
+        // peak, so a short tail is enough to say whether the footprint was
+        // climbing toward the ceiling.
+        if let memory = try? String(
+            contentsOf: container.appendingPathComponent("memory.txt"), encoding: .utf8
+        ) {
+            let tail = memory
+                .split(separator: "\n")
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+                .filter { !$0.isEmpty }
+                .suffix(20)
+            if !tail.isEmpty {
+                both.append("--- extension memory ---\n" + tail.joined(separator: "\n"))
+            }
+        }
+
         #if DEBUG
         // Debug builds also carry sing-box's own log (SingBoxDebugLog in the
         // extension): the last few hundred lines, where the connection being
