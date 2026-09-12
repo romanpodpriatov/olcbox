@@ -88,7 +88,13 @@ LIBXRAY_VERSION="${LIBXRAY_VERSION:-v1.260711.0}"
 # 32 MB session buffer and vp8channel two KCP sessions at ~5.7 MB per
 # direction. Measured on the same load, anonymous memory went from 48.8 MB
 # peak to 36.8 MB with every transfer still completing.
-OLCRTC_VERSION="${OLCRTC_VERSION:-v0.0.0-20260912114847-7f913e8e6e84}"
+#
+# 7f913e8e6e84 -> 74cc79c363e3: an iPhone's own packet tunnel is utun6, and the
+# interface prefixes kept out of ICE gathering were tun/ppp/pptp — so the engine
+# gathered a candidate on the tunnel it was carrying and tried every STUN and
+# TURN server from 172.19.0.1, the tun's own address. Dozens of "can't assign
+# requested address" per connection, out of the eight seconds a start is given.
+OLCRTC_VERSION="${OLCRTC_VERSION:-v0.0.0-20260912132410-74cc79c363e3}"
 
 # Bumped when the framework's *shape* changes while its pins do not — adding the
 # macOS slice being the first case. The versions alone cannot express that: they
