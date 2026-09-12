@@ -1013,8 +1013,14 @@ jobs:
             fi
             echo "ok   no ${perm}"
           done
+          # The listing is read once into a file: a bundle lists thousands of
+          # entries, and `unzip -l | grep -q` under pipefail races — grep exits
+          # on the first match, unzip takes EPIPE on its next write, and the
+          # pipeline reports failure for a core that is there.
+          listing="$(mktemp)"
+          unzip -l "$aab" > "$listing"
           for core in libsingboxcore.so libxraycore.so libgojni.so; do
-            unzip -l "$aab" | grep -q "base/lib/arm64-v8a/${core}" \
+            grep -q "base/lib/arm64-v8a/${core}" "$listing" \
               || { echo "MISSING arm64-v8a/${core} in the bundle" >&2; exit 1; }
             echo "ok   arm64-v8a/${core}"
           done
