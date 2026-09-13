@@ -1096,11 +1096,15 @@ jobs:
       #
       # `continue-on-error`, because this step is a distribution channel and not
       # the build. Without it a refusal from Play fails this job, and
-      # publish-nightly is gated on `!contains(needs.*.result, 'failure')` — so a
-      # permissions error on a brand-new Play listing would throw away a whole
-      # `all` run, macOS legs and their 10x minutes included, over an upload that
-      # was never load-bearing. The outcome is reported in the step summary below
-      # so a silent skip is not possible either.
+      # publish-nightly is gated on `!contains(needs.*.result, 'failure')` — so
+      # one rejected bundle would throw away a whole `all` run, macOS legs and
+      # their 10x minutes included, over an upload that was never load-bearing.
+      #
+      # The path works: 1.0.399 reached the internal track from CI. What it is
+      # not is guaranteed — a version code Play already holds is refused
+      # outright, a track can be closed, and a token can expire — and none of
+      # those should cost the release. The outcome is reported in the step
+      # summary below, so making the failure non-fatal does not make it silent.
       - name: Upload the play bundle to Google Play
         id: play_upload
         continue-on-error: true
