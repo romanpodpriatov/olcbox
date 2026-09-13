@@ -40,13 +40,13 @@ class HomeScreenStateTest {
 
     /**
      * A server that dropped our key never answers, which the engine reports as a
-     * silent peer and describes as a protocol mismatch. When the status probe has
-     * already said the key is gone, the notice says that instead.
+     * silent peer. On its own that names no cause; when the status probe has
+     * already said the key is gone, the notice can name one.
      */
     @Test
     fun aRevokedKeyExplainsASilentServer() {
         val state = idle.applying(VpnStatus.Error("handshake: peer did not answer the handshake"))
-        assertEquals(OlcrtcFailure.PROTOCOL, state.notice())
+        assertEquals(OlcrtcFailure.SILENT, state.notice())
         assertEquals(OlcrtcFailure.KEY_GONE, state.notice(keyGone = true))
         assertEquals("carrier auth failed", failed.notice(keyGone = true))
     }

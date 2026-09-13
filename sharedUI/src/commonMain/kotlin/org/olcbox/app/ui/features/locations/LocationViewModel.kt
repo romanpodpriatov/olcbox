@@ -566,7 +566,7 @@ class LocationViewModel(
     fun refreshOlcrtcSlots() {
         olcrtcSlotsJob?.cancel()
         olcrtcSlotsJob = viewModelScope.launch {
-            val targets = OlcrtcProbePlan.targets(locations)
+            val targets = OlcrtcProbePlan.targets(locations, OlcrtcStatusClient.DEFAULT_BASE_URL)
             if (targets.isEmpty()) return@launch
 
             val fetched = mutableMapOf<String, OlcrtcSlots>()

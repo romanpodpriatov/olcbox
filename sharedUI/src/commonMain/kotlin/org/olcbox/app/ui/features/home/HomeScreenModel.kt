@@ -557,7 +557,12 @@ data class HomeScreenState(
      * older server, so the protocol text is replaced by the one remedy that works.
      */
     fun notice(keyGone: Boolean = false): String? = failure
-        ?.let { if (keyGone && (it == OlcrtcFailure.PROTOCOL || it == OlcrtcFailure.KEY)) OlcrtcFailure.KEY_GONE else it }
+        ?.let {
+            val revocable = it == OlcrtcFailure.PROTOCOL ||
+                it == OlcrtcFailure.KEY ||
+                it == OlcrtcFailure.SILENT
+            if (keyGone && revocable) OlcrtcFailure.KEY_GONE else it
+        }
         ?: startBlockedReason?.takeIf { selectedLocation != null && !canStartVpn }
 
     /** The state after the platform reports [status]. Pure, so it can be tested. */

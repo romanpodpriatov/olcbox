@@ -11,9 +11,19 @@ class OlcrtcFailureTest {
         assertEquals(OlcrtcFailure.PROTOCOL, OlcrtcFailure.describe(raw))
     }
 
+    // This used to assert PROTOCOL, on the reasoning that a server too old to
+    // read our records cannot answer. So are three other causes, and the engine
+    // keeps ErrPeerSilent apart from its protocol errors on purpose.
     @Test
-    fun aSilentPeerIsMostLikelyAnOlderServer() {
-        assertEquals(OlcrtcFailure.PROTOCOL, OlcrtcFailure.describe("handshake: peer did not answer the handshake"))
+    fun aSilentPeerIsNotAnAccusationAboutVersions() {
+        assertEquals(OlcrtcFailure.SILENT, OlcrtcFailure.describe("handshake: peer did not answer the handshake"))
+        assertEquals(
+            OlcrtcFailure.SILENT,
+            OlcrtcFailure.describe(
+                "olcRTC start failed: run public client: client: handshake: " +
+                    "peer did not answer the handshake: handshake client: read welcome: handshake: read hdr: timeout"
+            )
+        )
     }
 
     @Test
