@@ -94,7 +94,13 @@ LIBXRAY_VERSION="${LIBXRAY_VERSION:-v1.260711.0}"
 # gathered a candidate on the tunnel it was carrying and tried every STUN and
 # TURN server from 172.19.0.1, the tun's own address. Dozens of "can't assign
 # requested address" per connection, out of the eight seconds a start is given.
-OLCRTC_VERSION="${OLCRTC_VERSION:-v0.0.0-20260912132410-74cc79c363e3}"
+#
+# 74cc79c363e3 -> 5e199b54ed8f: "cannot join any room". A GET built with
+# http.NoBody has a non-nil body and no GetBody, so the retry guard called it
+# unreplayable and refused a second attempt — and then reported that instead of
+# what the transport had said, hiding the real failure. An iPhone moving
+# between cellular interfaces made the first attempt fail routinely.
+OLCRTC_VERSION="${OLCRTC_VERSION:-v0.0.0-20260913012854-5e199b54ed8f}"
 
 # Bumped when the framework's *shape* changes while its pins do not — adding the
 # macOS slice being the first case. The versions alone cannot express that: they
