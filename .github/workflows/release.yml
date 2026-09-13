@@ -1093,7 +1093,17 @@ jobs:
       # has to go through the console by hand, and a version code Play already
       # holds is refused — still leaves the APKs downloadable. Same shape as the
       # TestFlight upload: secret present means upload, absent means build only.
+      #
+      # `continue-on-error`, because this step is a distribution channel and not
+      # the build. Without it a refusal from Play fails this job, and
+      # publish-nightly is gated on `!contains(needs.*.result, 'failure')` — so a
+      # permissions error on a brand-new Play listing would throw away a whole
+      # `all` run, macOS legs and their 10x minutes included, over an upload that
+      # was never load-bearing. The outcome is reported in the step summary below
+      # so a silent skip is not possible either.
       - name: Upload the play bundle to Google Play
+        id: play_upload
+        continue-on-error: true
         if: env.PLAY_SERVICE_ACCOUNT_JSON != '' && inputs.play_track != 'none'
         working-directory: olcbox
         env:
@@ -1114,6 +1124,31 @@ jobs:
             --release-name "${OLCBOX_VERSION}" \
             --notes "ProofKit ${OLCBOX_VERSION}"
           rm -f "$sa"
+
+      # Says what happened to the Play upload in the run summary, so that
+      # "continue-on-error" cannot turn a refusal into silence. Never fails.
+      - name: Report the Google Play upload
+        if: always() && env.PLAY_SERVICE_ACCOUNT_JSON != '' && inputs.play_track != 'none'
+        env:
+          PLAY_TRACK: ${{ inputs.play_track || 'internal' }}
+          PLAY_OUTCOME: ${{ steps.play_upload.outcome }}
+        run: |
+          set -euo pipefail
+          if [ "$PLAY_OUTCOME" = "success" ]; then
+            echo "Google Play: uploaded ${OLCBOX_VERSION} (${OLCBOX_VERSION_CODE}) to the ${PLAY_TRACK} track." \
+              >> "$GITHUB_STEP_SUMMARY"
+          else
+            {
+              echo "### Google Play upload did NOT happen"
+              echo
+              echo "Track \`${PLAY_TRACK}\`, version ${OLCBOX_VERSION} (${OLCBOX_VERSION_CODE}) — step outcome: \`${PLAY_OUTCOME}\`."
+              echo
+              echo "The rest of the release is unaffected; the bundle is in the \`ProofKit-android-apks\` artifact."
+              echo "Common causes: the service account has not been granted access in Play Console yet,"
+              echo "the app has never had a release created by hand (Play requires the first one through the console),"
+              echo "or this version code was already used."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
 
   build-ios:
     needs: [release_version, plan]
