@@ -1336,7 +1336,13 @@ class OlcboxVpnService : VpnService() {
     private fun stopMobile() {
         val provider = lastMobileProvider
         val wasRunning = olcrtc.isRunning()
+        // Logged rather than swallowed. A stop that misses its deadline is the
+        // difference between the next room joining and "olcRTC runtime is
+        // already active", and for one whole debugging session this line threw
+        // that away: the phone reported a start refused by a runtime nobody
+        // could see had failed to stop.
         runCatching { olcrtc.stop(MOBILE_STOP_TIMEOUT_MS) }
+            .onFailure { addLog("olcRTC stop did not finish in time: ${it.message ?: it}") }
         // Also tear down any active sing-box / Xray core (no-op if none running).
         runCatching { stopCoreProcesses() }
         if (wasRunning && provider == LocationConfig.PROVIDER_JITSI) {
