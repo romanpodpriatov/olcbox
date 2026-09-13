@@ -24,6 +24,10 @@ struct OlcboxIosApp: App {
             olcRtcBridge: olcRtcBridge,
             packetTunnelBridge: packetTunnelBridge
         )
+        // What this process holds, on the transitions that matter. The
+        // extension is not what runs out of memory; the device is, and this
+        // app is the largest thing on it that we control. See AppMemoryWatch.
+        AppMemoryWatch.start()
     }
 
     var body: some Scene {
@@ -622,6 +626,7 @@ final class SwiftPacketTunnelBridge: NSObject, @unchecked Sendable, IosPacketTun
         // the live trace describes a healthy new process and the dead one is
         // only in memory-prev.txt.
         for (name, title) in [
+            ("app-memory.txt", "--- app memory, by transition ---"),
             ("memory-prev.txt", "--- extension memory (the run that ended) ---"),
             ("memory.txt", "--- extension memory (current run) ---"),
         ] {
