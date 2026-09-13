@@ -562,7 +562,11 @@ final class SwiftPacketTunnelBridge: NSObject, @unchecked Sendable, IosPacketTun
         ) else { return "" }
         // olcRTC's first, since it is the engine that fails on its own; the
         // other two write to stderr, which lands in engine.log.
-        var both = ["network-diagnostics.log", "olcrtc.log", "engine.log"].compactMap { name -> String? in
+        // The previous run's trace first: its last line is why the tunnel
+        // stopped, and that run is the one worth reading.
+        var both = [
+            "network-diagnostics-prev.log", "network-diagnostics.log", "olcrtc.log", "engine.log",
+        ].compactMap { name -> String? in
             try? String(
                 contentsOf: container.appendingPathComponent(name), encoding: .utf8
             )

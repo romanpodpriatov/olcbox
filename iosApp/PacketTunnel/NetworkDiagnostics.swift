@@ -15,11 +15,27 @@ enum NetworkDiagnostics {
             .appendingPathComponent("network-diagnostics.log")
     }
 
+    /// Keeps the previous run before starting a new one.
+    ///
+    /// The last line of a run that ended is `stop reason=<NEProviderStopReason>`,
+    /// which says whether the system stopped the tunnel and why — or, by its
+    /// absence, that the process was killed outright and never got to run
+    /// stopTunnel at all. Truncating here destroyed exactly that: a provider
+    /// that dies is followed within seconds by a restart, so every log anyone
+    /// exported described the run that replaced the interesting one.
     static func reset() {
         lock.lock()
         defer { lock.unlock() }
         entries = 0
-        if let file { try? Data().write(to: file, options: .atomic) }
+        guard let file else { return }
+        let files = FileManager.default
+        let previous = file.deletingLastPathComponent()
+            .appendingPathComponent("network-diagnostics-prev.log")
+        if files.fileExists(atPath: file.path) {
+            try? files.removeItem(at: previous)
+            try? files.moveItem(at: file, to: previous)
+        }
+        try? Data().write(to: file, options: .atomic)
     }
 
     static func record(_ event: String) {
