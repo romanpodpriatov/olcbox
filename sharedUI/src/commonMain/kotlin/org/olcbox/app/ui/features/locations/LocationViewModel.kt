@@ -566,7 +566,10 @@ class LocationViewModel(
     fun refreshOlcrtcSlots() {
         olcrtcSlotsJob?.cancel()
         olcrtcSlotsJob = viewModelScope.launch {
-            val targets = OlcrtcProbePlan.targets(locations, OlcrtcStatusClient.DEFAULT_BASE_URL)
+            val targets = OlcrtcProbePlan.targets(locations)
+            // Everyone with a list is asked for occupancy; only these may have a
+            // 404 read as revocation. See OlcrtcProbePlan.revocable.
+            val revocable = OlcrtcProbePlan.revocable(locations, OlcrtcStatusClient.DEFAULT_BASE_URL)
             if (targets.isEmpty()) return@launch
 
             val fetched = mutableMapOf<String, OlcrtcSlots>()
@@ -578,14 +581,17 @@ class LocationViewModel(
                         fetched[storageId] = status.slots
                         alive += storageId
                     }
-                    OlcrtcNodeStatus.KeyGone -> gone += storageId
+                    OlcrtcNodeStatus.KeyGone -> if (storageId in revocable) gone += storageId
                     // No answer changes nothing either way.
                     OlcrtcNodeStatus.Unavailable -> Unit
                 }
             }
             olcrtcRevoked = OlcrtcProbePlan.nextRevoked(
                 previous = olcrtcRevoked,
-                probed = targets.map { it.first }.toSet(),
+                // Only the rooms whose 404 carries meaning. A room outside this
+                // set is not being judged, so a mark left on it by an earlier
+                // pass is dropped rather than renewed.
+                probed = targets.map { it.first }.toSet() intersect revocable,
                 alive = alive,
                 gone = gone
             )

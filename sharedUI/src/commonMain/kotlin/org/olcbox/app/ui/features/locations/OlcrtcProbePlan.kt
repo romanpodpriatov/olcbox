@@ -17,28 +17,42 @@ object OlcrtcProbePlan {
 
     /**
      * The (storageId, key) pairs worth asking about: olcRTC rooms that carry a
-     * key, came from a server list, **and** came from the list this coordinator
-     * issues.
+     * key **and** came from a server list. A location without a subscription was
+     * added by hand, and the coordinator has no opinion about it.
      *
-     * The first two rules were here already. The third was the missing one, and
-     * it cost the same false accusation the other two were added to stop.
-     * A 404 was read as "this key is revoked", but the coordinator answers 404
-     * for two different facts: a key it issued and withdrew, and a key it never
-     * issued. A room bought from a partner, or served by someone running their
-     * own olcRTC node, is the second — and the board printed KEY NO LONGER
-     * VALID over a room that was connected and carrying traffic.
-     *
-     * So the question is only asked where a 404 can mean revocation: where the
-     * list that supplied the key is served by the host being asked.
+     * Deliberately not narrowed any further. Occupancy is an enrichment that
+     * costs one request and is wanted for every room on the board; the first
+     * cut of the olcbox#21 fix filtered *this* list by the coordinator's host
+     * and took the seat counts and the graphs down with it. What the host has
+     * to gate is [revocable], not who gets asked.
      */
-    fun targets(locations: List<LocationItem>, coordinatorBaseUrl: String): List<Pair<String, String>> {
-        val coordinator = hostOf(coordinatorBaseUrl) ?: return emptyList()
-        return locations.mapNotNull { item ->
+    fun targets(locations: List<LocationItem>): List<Pair<String, String>> =
+        locations.mapNotNull { item ->
             val config = item.config ?: return@mapNotNull null
             if (config.kind != LocationKind.Olcrtc) return@mapNotNull null
-            val subscription = item.subscriptionUrl?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
-            if (!hostOf(subscription).equals(coordinator, ignoreCase = true)) return@mapNotNull null
+            if (item.subscriptionUrl.isNullOrBlank()) return@mapNotNull null
             config.key.takeIf { it.isNotBlank() }?.let { item.storageId to it }
+        }
+
+    /**
+     * Of those, the ones whose `404` may be read as "revoked".
+     *
+     * The coordinator answers `404` for two different facts: a key it issued
+     * and withdrew, and a key it never issued. Only the first is revocation.
+     * A room bought from a partner, or served by an operator running their own
+     * node, is the second — and olcbox#21 is the board printing KEY NO LONGER
+     * VALID · REFRESH THIS LIST across one of those while it carried traffic.
+     *
+     * So a `404` counts only where the list that supplied the key is served by
+     * the host being asked. Everywhere else it means nothing, the room keeps
+     * its seat count, and a key that really is dead is reported by the next
+     * connection attempt instead.
+     */
+    fun revocable(locations: List<LocationItem>, coordinatorBaseUrl: String): Set<String> {
+        val coordinator = hostOf(coordinatorBaseUrl) ?: return emptySet()
+        return locations.mapNotNullTo(mutableSetOf()) { item ->
+            val subscription = item.subscriptionUrl?.takeIf { it.isNotBlank() } ?: return@mapNotNullTo null
+            item.storageId.takeIf { hostOf(subscription).equals(coordinator, ignoreCase = true) }
         }
     }
 
