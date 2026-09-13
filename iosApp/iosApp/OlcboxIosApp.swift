@@ -567,22 +567,28 @@ final class SwiftPacketTunnelBridge: NSObject, @unchecked Sendable, IosPacketTun
                 contentsOf: container.appendingPathComponent(name), encoding: .utf8
             )
         }
-        // The memory trace, when MemoryWatch is on. It was readable only
-        // through the status pill's death message, which needs the app to have
-        // caught the death — so an exported log, the thing a tester actually
-        // sends, carried no memory evidence at all. Each line already names the
-        // peak, so a short tail is enough to say whether the footprint was
-        // climbing toward the ceiling.
-        if let memory = try? String(
-            contentsOf: container.appendingPathComponent("memory.txt"), encoding: .utf8
-        ) {
-            let tail = memory
+        // The memory trace, when MemoryWatch is on. Each line names the peak as
+        // well as the current footprint, so a short tail says whether the
+        // process was climbing toward the ceiling.
+        //
+        // The previous run comes first and matters more: a provider that was
+        // killed is followed by a restart, so by the time anyone exports a log
+        // the live trace describes a healthy new process and the dead one is
+        // only in memory-prev.txt.
+        for (name, title) in [
+            ("memory-prev.txt", "--- extension memory (the run that ended) ---"),
+            ("memory.txt", "--- extension memory (current run) ---"),
+        ] {
+            guard let text = try? String(
+                contentsOf: container.appendingPathComponent(name), encoding: .utf8
+            ) else { continue }
+            let tail = text
                 .split(separator: "\n")
                 .map { $0.trimmingCharacters(in: .whitespaces) }
                 .filter { !$0.isEmpty }
                 .suffix(20)
             if !tail.isEmpty {
-                both.append("--- extension memory ---\n" + tail.joined(separator: "\n"))
+                both.append(title + "\n" + tail.joined(separator: "\n"))
             }
         }
 

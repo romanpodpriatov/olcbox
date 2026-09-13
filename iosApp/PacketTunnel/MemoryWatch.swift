@@ -81,6 +81,18 @@ enum MemoryWatch {
             samples.removeAll(keepingCapacity: true)
             peak = 0
             let file = container.appendingPathComponent("memory.txt")
+            // The run that died is the one worth reading, and this is the
+            // moment its trace would be lost: a provider that was killed is
+            // followed by a restart, and the restart wrote over the evidence.
+            // The app's own death message read the file in time; an exported
+            // log, which is what a tester actually sends, arrived afterwards
+            // and carried five seconds of a healthy new process instead.
+            let previous = container.appendingPathComponent("memory-prev.txt")
+            let files = FileManager.default
+            if files.fileExists(atPath: file.path) {
+                try? files.removeItem(at: previous)
+                try? files.moveItem(at: file, to: previous)
+            }
             let source = DispatchSource.makeTimerSource(queue: queue)
             source.schedule(deadline: .now(), repeating: interval)
             source.setEventHandler { sample(into: file) }
