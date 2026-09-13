@@ -63,14 +63,29 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
 
     /// The soft ceiling handed to the Go runtime. See its use in startTunnel.
     ///
-    /// 28 MiB rather than 32 because a limit only works while it is below what
-    /// the heap would otherwise reach, and the transports differ: olcRTC alone
-    /// measured a 38 MB peak on a workstation, but a phone on Vless — Xray and
-    /// sing-box together — ran at 36–43 MB of footprint and died at 47.5 MB. A
-    /// ceiling above that is not a ceiling. Raise it if a transport is starved;
-    /// the trace in an exported log names both the limit and the footprint, so
-    /// the next report says which way to move.
-    private static let goMemoryLimit: Int64 = 28 * 1024 * 1024
+    /// 40 MiB, raised from 28 once the trace could say what 28 was doing.
+    ///
+    /// `debug.SetMemoryLimit` is measured against everything the runtime holds
+    /// and has not returned, not against the live heap. On a phone running
+    /// olcRTC that came to 33.8 MB — 45.6 MB taken from the OS, 11.8 MB handed
+    /// back — while the live heap was only 19 MB. So the runtime sat 5.8 MB
+    /// above a limit it could never get under, and did the only thing it can:
+    /// collect, without stopping. The trace counted 3797 collections at one
+    /// sample and 4287 less than five seconds later, about a hundred a second.
+    /// Go caps that work at half the process's CPU, which is what the tunnel
+    /// was paying, continuously, for the whole session. It did not prevent the
+    /// death either.
+    ///
+    /// So the number has to clear what the runtime genuinely needs and still
+    /// sit under the point where the process is killed. Measured: 33.8 MB in
+    /// normal operation, deaths at 46.0, 47.5 and 47.5 MB of footprint. 40 MiB
+    /// leaves the collector idle in the steady state and still catches the one
+    /// thing a limit is for, a heap that doubles between collections.
+    ///
+    /// Reading the next trace: `gc` climbing by more than a few per second
+    /// means this is too low again, and `sys` minus `rel` is the figure to
+    /// compare against, never `heap`.
+    private static let goMemoryLimit: Int64 = 40 * 1024 * 1024
 
     private static func failure(_ reason: String) -> NSError {
         NSError(domain: "org.proofkit.tunnel", code: 10,
