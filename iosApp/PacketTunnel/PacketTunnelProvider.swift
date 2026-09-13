@@ -61,6 +61,9 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         try? Data(stage.utf8).write(to: container.appendingPathComponent("stage.txt"))
     }
 
+    /// The soft ceiling handed to the Go runtime. See its use in startTunnel.
+    private static let goMemoryLimit: Int64 = 32 * 1024 * 1024
+
     private static func failure(_ reason: String) -> NSError {
         NSError(domain: "org.proofkit.tunnel", code: 10,
                 userInfo: [NSLocalizedDescriptionKey: reason])
@@ -73,6 +76,20 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         log.info("startTunnel")
         NetworkDiagnostics.reset()
         NetworkDiagnostics.record("start os=\(ProcessInfo.processInfo.operatingSystemVersionString)")
+        // Before any engine allocates. A provider is given roughly 50 MB and is
+        // killed for exceeding it, and Go reaches a ceiling in one step rather
+        // than climbing to it: a phone's trace showed 35.1 MB on one sample and
+        // 46.0 MB on the next, 250 ms later, then nothing. This is the whole
+        // runtime's limit — olcRTC, sing-box and Xray share it inside
+        // Cores.xcframework, and they share the process that gets killed, which
+        // is why it belongs here and not in whichever engine happens to run.
+        //
+        // Measured against the upload that breaks it: peak 38.0 MB unlimited,
+        // 26.0 MB at 32 MiB, with throughput unchanged. Raise it if a
+        // transport is ever starved; lower it if a phone still dies with
+        // headroom to spare in the trace.
+        MobileSetMemoryLimit(Self.goMemoryLimit)
+        NetworkDiagnostics.record("go memory limit \(Self.goMemoryLimit / 1_048_576) MB")
         LibboxPlatform.invalidatePinCache()
         LibboxPlatform.tracePhysicalInterfaces("before-tun")
         // First thing, so the sentinel the app leaves in stage.txt is replaced

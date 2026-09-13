@@ -100,7 +100,14 @@ LIBXRAY_VERSION="${LIBXRAY_VERSION:-v1.260711.0}"
 # unreplayable and refused a second attempt — and then reported that instead of
 # what the transport had said, hiding the real failure. An iPhone moving
 # between cellular interfaces made the first attempt fail routinely.
-OLCRTC_VERSION="${OLCRTC_VERSION:-v0.0.0-20260913012854-5e199b54ed8f}"
+#
+# 5e199b54ed8f -> e1c4890c189e: MobileSetMemoryLimit, so the extension can give
+# the Go runtime a ceiling. A phone's trace caught the kill: 35.1 MB one sample,
+# 46.0 MB the next, 250 ms later — the heap doubling between collections rather
+# than climbing. Not olcRTC's appetite either: the same phone on Hysteria2, with
+# olcRTC never started, sat at 34.8 MB peaking 39.2 MB. One runtime carries all
+# three engines, so one limit covers them.
+OLCRTC_VERSION="${OLCRTC_VERSION:-v0.0.0-20260913021239-e1c4890c189e}"
 
 # Bumped when the framework's *shape* changes while its pins do not — adding the
 # macOS slice being the first case. The versions alone cannot express that: they
