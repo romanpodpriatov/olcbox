@@ -84,20 +84,6 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         log.info("startTunnel")
         NetworkDiagnostics.reset()
         NetworkDiagnostics.record("start os=\(ProcessInfo.processInfo.operatingSystemVersionString)")
-        // Before any engine allocates. A provider is given roughly 50 MB and is
-        // killed for exceeding it, and Go reaches a ceiling in one step rather
-        // than climbing to it: a phone's trace showed 35.1 MB on one sample and
-        // 46.0 MB on the next, 250 ms later, then nothing. This is the whole
-        // runtime's limit — olcRTC, sing-box and Xray share it inside
-        // Cores.xcframework, and they share the process that gets killed, which
-        // is why it belongs here and not in whichever engine happens to run.
-        //
-        // Measured against the upload that breaks it: peak 38.0 MB unlimited,
-        // 26.0 MB at 32 MiB, with throughput unchanged. Raise it if a
-        // transport is ever starved; lower it if a phone still dies with
-        // headroom to spare in the trace.
-        MobileSetMemoryLimit(Self.goMemoryLimit)
-        NetworkDiagnostics.record("go memory limit \(Self.goMemoryLimit / 1_048_576) MB")
         LibboxPlatform.invalidatePinCache()
         LibboxPlatform.tracePhysicalInterfaces("before-tun")
         // First thing, so the sentinel the app leaves in stage.txt is replaced
@@ -222,6 +208,21 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
             // more now than it did with one core: sing-box, Xray and olcRTC share
             // that one runtime, and WebRTC is not the cheap one.
             LibboxSetMemoryLimit(true)
+
+            // After libbox, never before: LibboxSetMemoryLimit sets the very
+            // ceiling being replaced here, so a call ahead of it is simply
+            // overwritten. Its 45 MB is above where this process actually dies
+            // — three traces from a phone show the kill at 46.0, 47.5 and
+            // 47.5 MB of footprint, since the footprint counts what the Go heap
+            // does not. A ceiling above the kill is not a ceiling.
+            //
+            // Measured on the upload that breaks it: peak 38.0 MB unlimited,
+            // 26.0 MB at 32 MiB, throughput unchanged. 28 MiB because Vless
+            // runs higher than olcRTC and 32 would still sit above it.
+            MobileSetMemoryLimit(Self.goMemoryLimit)
+            NetworkDiagnostics.record(
+                "go memory limit \(Self.goMemoryLimit / 1_048_576) MB (libbox default replaced)"
+            )
 
             // Setup initializes libbox's UID/GID. Redirecting before it attempts
             // chown with zero-valued IDs and fails with EPERM on iOS. In this
