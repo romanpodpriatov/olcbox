@@ -62,7 +62,15 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     }
 
     /// The soft ceiling handed to the Go runtime. See its use in startTunnel.
-    private static let goMemoryLimit: Int64 = 32 * 1024 * 1024
+    ///
+    /// 28 MiB rather than 32 because a limit only works while it is below what
+    /// the heap would otherwise reach, and the transports differ: olcRTC alone
+    /// measured a 38 MB peak on a workstation, but a phone on Vless — Xray and
+    /// sing-box together — ran at 36–43 MB of footprint and died at 47.5 MB. A
+    /// ceiling above that is not a ceiling. Raise it if a transport is starved;
+    /// the trace in an exported log names both the limit and the footprint, so
+    /// the next report says which way to move.
+    private static let goMemoryLimit: Int64 = 28 * 1024 * 1024
 
     private static func failure(_ reason: String) -> NSError {
         NSError(domain: "org.proofkit.tunnel", code: 10,
