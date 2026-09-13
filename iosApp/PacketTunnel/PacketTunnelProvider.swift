@@ -339,6 +339,12 @@ final class LibboxCommandHandler: NSObject, LibboxCommandServerHandlerProtocol {
     /// engine, which is the failure that cost a night once already.
     func serviceStop() throws {
         log.error("engine asked to stop")
+        // Into the trace as well, not just os_log: this is the difference
+        // between "libbox gave up" and "the system took the tunnel away", and
+        // the two look identical from the app, which sees only that the
+        // session is gone. stopTunnel's own reason will then be providerFailed,
+        // which says who asked but not which component.
+        NetworkDiagnostics.record("libbox asked the provider to stop")
         provider?.cancelTunnelWithError(nil)
     }
 
