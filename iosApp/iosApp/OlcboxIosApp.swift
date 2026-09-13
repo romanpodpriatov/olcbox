@@ -556,6 +556,35 @@ final class SwiftPacketTunnelBridge: NSObject, @unchecked Sendable, IosPacketTun
         IcmpProbe.measure(host: host, timeout: TimeInterval(timeoutMillis) / 1000)
     }
 
+    /// The engine's stderr from the run that ended, trimmed to the part that
+    /// explains it.
+    ///
+    /// A Go crash writes its reason first and then a stack for every goroutine,
+    /// which on a tunnel carrying a speed test is hundreds of them. So the tail
+    /// of the file is the least useful part of it: the reason is at the top of
+    /// the crash, and that is what gets kept.
+    private static func lastRunStderr(container: URL) -> String? {
+        guard let text = try? String(
+            contentsOf: container.appendingPathComponent("engine.log.old"), encoding: .utf8
+        ) else { return nil }
+
+        let lines = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        let markers = ["panic:", "fatal error:", "signal SIG", "runtime: out of memory"]
+        let crash = lines.firstIndex { line in markers.contains { line.contains($0) } }
+
+        let kept: [String]
+        let title: String
+        if let crash {
+            kept = Array(lines[crash...].prefix(120))
+            title = "--- engine stderr, the run that ended: IT CRASHED ---"
+        } else {
+            kept = Array(lines.suffix(40))
+            title = "--- engine stderr, the run that ended: no crash recorded ---"
+        }
+        let body = kept.map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        return body.isEmpty ? nil : title + "\n" + body.joined(separator: "\n")
+    }
+
     func engineLog() -> String {
         guard let container = FileManager.default.containerURL(
             forSecurityApplicationGroupIdentifier: Self.appGroupId
@@ -570,6 +599,19 @@ final class SwiftPacketTunnelBridge: NSObject, @unchecked Sendable, IosPacketTun
             try? String(
                 contentsOf: container.appendingPathComponent(name), encoding: .utf8
             )
+        }
+
+        // First, ahead of everything: why the last run ended, when it said so.
+        //
+        // libbox points Go's crash output at engine.log — `debug.SetCrashOutput`
+        // in its RedirectStderr — and on the next start renames the previous
+        // file to engine.log.old. A panic or a fatal runtime error that killed
+        // the extension is therefore in `.old` by the time anyone exports a log,
+        // and this reader has never opened that name. 1.0.411 died with 10.9 MB
+        // of headroom, which rules out the memory allowance and leaves a crash
+        // as the thing to look for; the trace was on the phone the whole time.
+        if let ended = Self.lastRunStderr(container: container) {
+            both.insert(ended, at: 0)
         }
         // The memory trace, when MemoryWatch is on. Each line names the peak as
         // well as the current footprint, so a short tail says whether the

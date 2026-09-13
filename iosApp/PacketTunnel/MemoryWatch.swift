@@ -1,3 +1,4 @@
+import Cores
 import Darwin
 import Foundation
 import os
@@ -110,6 +111,16 @@ enum MemoryWatch {
         }
     }
 
+    /// One sample: what the system charges the process, and what the Go runtime
+    /// admits to holding.
+    ///
+    /// Both halves are needed and neither is enough. The footprint is what the
+    /// process is killed for, but it counts stacks, the allocator's spans and
+    /// every byte the process holds that Go never allocated, so it cannot say
+    /// whether a climb is the engine's at all. The runtime's own figures say
+    /// exactly that, and say whether the ceiling set by `MobileSetMemoryLimit`
+    /// is binding — a collection count racing upward is a limit doing work, and
+    /// a limit doing too much work is throughput spent on staying alive.
     private static func sample(into file: URL) {
         let footprint = footprintBytes()
         // Bytes the process may still allocate before the system kills it. This
@@ -119,12 +130,13 @@ enum MemoryWatch {
         peak = max(peak, footprint)
 
         let line = String(
-            format: "%7.2fs  footprint %6.1f MB  headroom %6.1f MB  peak %6.1f MB  %@",
+            format: "%7.2fs  footprint %6.1f MB  headroom %6.1f MB  peak %6.1f MB  %@  |  %@",
             Date().timeIntervalSince(started),
             Double(footprint) / 1_048_576,
             Double(headroom) / 1_048_576,
             Double(peak) / 1_048_576,
-            note
+            note,
+            MobileMemoryStats()
         )
         samples.append(line)
         if samples.count > window { samples.removeFirst(samples.count - window) }

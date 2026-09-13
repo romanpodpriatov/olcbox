@@ -114,6 +114,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         // nothing in it and the climb afterwards is attributable. The record
         // outlives the process; that is the whole point of it. See MemoryWatch.
         MemoryWatch.start(container: container)
+        MemoryPressure.start()
 
         let configURL = container.appendingPathComponent("config.json")
         guard let config = try? String(contentsOf: configURL, encoding: .utf8), !config.isEmpty else {
@@ -328,6 +329,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         commandHandler = nil
         XrayEngine.stop()
         OlcrtcEngine.stop()
+        MemoryPressure.stop()
         // Last, so a stop that is itself slow or fatal is still on the trace.
         MemoryWatch.stop()
         completionHandler()
